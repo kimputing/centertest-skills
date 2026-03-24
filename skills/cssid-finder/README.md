@@ -35,13 +35,21 @@ The script auto-detects which layout is present:
 | **Properties** (new) | `cssids/<app>/<Page>.properties` | `cssId=getterChain` |
 | **Legacy** | `<app>.cssids` | JSON-like `"cssId"` / `"hierarchyPath"` pairs |
 
+## Prerequisites
+
+- Python 3 (`python3` or `python`)
+
 ## Configuration
 
-Set the `CENTERTEST_CSSIDS_DIR` environment variable to point to your resources directory:
+On first run, the script prompts for the path to the generated project's resources directory and saves it to `~/.centertest/cssid-finder.json`.
+
+To override later:
 
 ```bash
-export CENTERTEST_CSSIDS_DIR="/path/to/generated/src/main/resources"
+python3 find_getter.py --set-path "/path/to/generated/src/main/resources"
 ```
+
+The `CENTERTEST_CSSIDS_DIR` environment variable takes priority over saved config if set.
 
 ## Supported Apps
 

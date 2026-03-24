@@ -31,8 +31,10 @@ Examples:
 
 ### Step 2: Run the script
 
+Determine the Python command available on the system (`python3` or `python`) and use it:
+
 ```bash
-python3 ~/.claude/skills/cssid-finder/scripts/find_getter.py <app> "<cssId>"
+PYTHON=$(command -v python3 || command -v python) && "$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py <app> "<cssId>"
 ```
 
 **First run**: the script will prompt for the path to the generated project's resources directory and save it to `~/.centertest/cssid-finder.json`.
@@ -40,13 +42,13 @@ python3 ~/.claude/skills/cssid-finder/scripts/find_getter.py <app> "<cssId>"
 **Override path**: if the user asks to change the path or you need to point to a different project:
 
 ```bash
-python3 ~/.claude/skills/cssid-finder/scripts/find_getter.py --set-path "/path/to/generated/src/main/resources"
+"$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py --set-path "/path/to/generated/src/main/resources"
 ```
 
 **Show current path**:
 
 ```bash
-python3 ~/.claude/skills/cssid-finder/scripts/find_getter.py --show-path
+"$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py --show-path
 ```
 
 ### Step 3: Present result
