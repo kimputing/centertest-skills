@@ -21,6 +21,7 @@ centertest-skills/
 | Skill | Description | Status |
 |-------|-------------|--------|
 | [cssid-finder](skills/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs | Active |
+| [ddt-tools](skills/ddt-tools/) | Validate DC references, diff xlsx, report unused codes | Active |
 
 ## Installation
 
