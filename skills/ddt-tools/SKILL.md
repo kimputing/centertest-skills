@@ -30,7 +30,7 @@ On first run, the scripts will prompt for the project path and save it to `~/.ce
 
 ```bash
 # Set/override project path
-PYTHON=$(command -v python3 || command -v python)
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 "$PYTHON" ~/.claude/skills/ddt-tools/scripts/ddt_config.py --set-path "/path/to/centertest-project"
 
 # Show current path
@@ -44,7 +44,7 @@ PYTHON=$(command -v python3 || command -v python)
 Validates that DC DataCombination sheets only reference codes that exist in their reference data sheets.
 
 ```bash
-PYTHON=$(command -v python3 || command -v python)
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Validate all DC files
 "$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-validate-refs.py
@@ -67,7 +67,7 @@ PYTHON=$(command -v python3 || command -v python)
 Smart cell-level diff for xlsx test data files.
 
 ```bash
-PYTHON=$(command -v python3 || command -v python)
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Diff working copy vs origin/main
 "$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-diff.py testdata/WorkersCompDC.xlsx
@@ -86,7 +86,7 @@ PYTHON=$(command -v python3 || command -v python)
 Reports codes in Data files that are not referenced by any DC DataCombination sheet. This is a **report-only** tool — it never modifies files.
 
 ```bash
-PYTHON=$(command -v python3 || command -v python)
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 "$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-cleanup-unused.py
 ```
 
@@ -95,7 +95,7 @@ PYTHON=$(command -v python3 || command -v python)
 Validates that hardcoded string codes in `DDTHelper.getXxx("code")` Java calls reference codes that actually exist in the corresponding xlsx files. This is a **report-only** tool.
 
 ```bash
-PYTHON=$(command -v python3 || command -v python)
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Check all Java source files
 "$PYTHON" ~/.claude/skills/ddt-tools/scripts/ddt-check-code-usages.py
@@ -117,7 +117,7 @@ PYTHON=$(command -v python3 || command -v python)
 Converts xlsx to human-readable text. Useful as a git textconv driver.
 
 ```bash
-PYTHON=$(command -v python3 || command -v python)
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 "$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-textconv.py testdata/WorkersCompDC.xlsx
 ```
 

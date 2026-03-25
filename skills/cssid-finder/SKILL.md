@@ -34,7 +34,7 @@ Examples:
 Determine the Python command available on the system (`python3` or `python`) and use it:
 
 ```bash
-PYTHON=$(command -v python3 || command -v python) && "$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py <app> "<cssId>"
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python) && "$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py <app> "<cssId>"
 ```
 
 **First run**: the script will prompt for the path to the generated project's resources directory and save it to `~/.centertest/cssid-finder.json`.
