@@ -1,6 +1,6 @@
 # ddt-analyzer
 
-Analyze CenterTest Data-Driven Testing structure and generate an Excel report.
+Analyze CenterTest Data-Driven Testing structure and generate a comprehensive 15-sheet Excel report.
 
 ## Latest Version
 
@@ -34,15 +34,25 @@ python3 ddt-analyzer.py
 python3 ddt-analyzer.py --exclude testdata/archive,testdata/old
 ```
 
-## Report Sheets
+## Report Sheets (15)
 
-| Sheet | Content |
-|-------|---------|
-| `DataCombination_References` | DC files vs referenced Data files |
-| `ReferencedFiles_DataCombination` | Data files vs DC files that reference them |
-| `Codes_Usage` | Code usage counts across all DC files |
-| `Codes_Usage_Detail` | Per-DC-file code usage breakdown |
-| `DataCombination_Tests` | Test classes mapped to datasources |
+| # | Sheet | Content |
+|---|-------|---------|
+| 1 | DC_References | DC files vs referenced Data files |
+| 2 | RefFiles_DC | Data files vs DC files that reference them |
+| 3 | Codes_Usage | Code usage counts |
+| 4 | Codes_Usage_Detail | Per-DC code usage |
+| 5 | DC_Tests | Test classes mapped to datasources |
+| 6 | Orphaned_DataFiles | Unreferenced xlsx files |
+| 7 | Broken_Datasources | @DataDriven pointing to missing files |
+| 8 | Untested_DC_Files | DC files with no tests |
+| 9 | Unused_Codes | Dead codes in Data files |
+| 10 | Hardcoded_DDTHelper | DDTHelper string code validation |
+| 11 | Hierarchy_Validation | DataDrivenHierarchy.json checks |
+| 12 | Code_Coverage | Usage % per Data file sheet |
+| 13 | Duplicate_Codes | Same code in multiple files |
+| 14 | DC_Metrics | Complexity metrics per DC |
+| 15 | Impact_Analysis | Blast radius per Data file |
 
 ## Configuration
 
