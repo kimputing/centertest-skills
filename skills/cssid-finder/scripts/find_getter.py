@@ -118,13 +118,29 @@ def show_path() -> None:
         print("No path configured. Run a search or use --set-path to configure.")
 
 
-def normalize_css_id(css_id: str) -> str:
-    """Replace purely numeric segments with '[ROW]' and strip trailing '_Input' suffix."""
+def normalize_css_id(css_id: str) -> list[str]:
+    """Replace purely numeric segments with row placeholders and strip trailing '_Input' suffix.
+
+    Returns list of normalized forms to try (both [ROW] and # are used in properties files).
+    """
     if css_id.endswith("_Input"):
         css_id = css_id[:-6]
     parts = css_id.split("-")
-    normalized = [("[ROW]" if part.isdigit() else part) for part in parts]
-    return "-".join(normalized)
+    has_numeric = any(part.isdigit() for part in parts)
+
+    row_form = "-".join("[ROW]" if part.isdigit() else part for part in parts)
+    hash_form = "-".join("#" if part.isdigit() else part for part in parts)
+
+    if not has_numeric:
+        return [row_form]
+
+    # Both forms may exist — try both
+    forms = []
+    if row_form not in forms:
+        forms.append(row_form)
+    if hash_form not in forms:
+        forms.append(hash_form)
+    return forms
 
 
 def get_page_name(css_id: str) -> str:
@@ -228,12 +244,12 @@ def find_getter(app: str, css_id: str) -> None:
 
     cssids_dir = get_cssids_dir()
     app_key, app_name = APP_MAP[app_lower]
-    normalized = normalize_css_id(css_id)
-    was_normalized = normalized != css_id
+    normalized_forms = normalize_css_id(css_id)
+    was_normalized = normalized_forms[0] != css_id
 
     print(f"Searching in {app.upper()} ({app_name}) for: {css_id}")
     if was_normalized:
-        print(f"Normalized to: {normalized}")
+        print(f"Normalized to: {', '.join(normalized_forms)}")
 
     layout, path = detect_layout(cssids_dir, app_key)
     if layout is None:
@@ -246,15 +262,22 @@ def find_getter(app: str, css_id: str) -> None:
     print(f"Layout: {layout} ({path})")
     print()
 
-    if layout == "properties":
-        found = search_properties(path, normalized)
-    else:
-        found = search_legacy(path, normalized)
+    # Try each normalized form until we find results
+    found = []
+    matched_form = None
+    for form in normalized_forms:
+        if layout == "properties":
+            found = search_properties(path, form)
+        else:
+            found = search_legacy(path, form)
+        if found:
+            matched_form = form
+            break
 
     if not found:
-        print(f"Not found: {normalized}")
+        print(f"Not found: {normalized_forms[0]}")
         if was_normalized:
-            print("(searched using normalized form)")
+            print(f"(searched forms: {', '.join(normalized_forms)})")
         sys.exit(0)
 
     if len(found) == 1:
