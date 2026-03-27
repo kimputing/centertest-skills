@@ -286,9 +286,12 @@ def _count_items(result: RuleResult) -> int:
     """Count total items in a RuleResult."""
     if result.error:
         return 0
-    count = len(result.rows)
-    count += sum(len(s.items) + sum(len(ss.items) for ss in s.subsections) for s in result.sections)
-    return count
+    section_count = sum(len(s.items) + sum(len(ss.items) for ss in s.subsections) for s in result.sections)
+    # If rule has both rows (summary table) and sections (detail findings),
+    # count only the sections — the rows are informational summaries, not issues
+    if result.sections and section_count > 0:
+        return section_count
+    return len(result.rows)
 
 
 def _html_escape(text: str) -> str:
