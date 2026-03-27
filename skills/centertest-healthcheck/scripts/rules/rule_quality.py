@@ -1,10 +1,12 @@
 """
-Rules 15001, 15002, 15004, 15005: Common Java quality issues (beyond Eir).
+Rules 15001-15016: Common Java quality issues (beyond Eir).
 
 15001 — Null pointer risk detection
 15002 — Potential IndexOutOfBoundsException (.get(N) on lists)
 15004 — String comparison issues (== instead of .equals())
 15005 — Exception handling anti-patterns (empty catch blocks)
+15006 — Unused variable detection
+15016 — Logging best practices (System.out.println detection)
 """
 
 from __future__ import annotations
@@ -214,5 +216,96 @@ def empty_catch_blocks(commits: CommitsDict, config) -> RuleResult:
                     continue
                 if _EMPTY_CATCH_RE.search(method.body):
                     result.rows.append([mc.class_name, method.name])
+
+    return result
+
+
+# Pattern for variable declarations: var x = ...; or Type x = ...;
+_VAR_DECL_RE = re.compile(r'(?:var|final\s+\w+|\w+(?:<[^>]+>)?)\s+(\w+)\s*=')
+
+
+@rule(id="15006", description="Unused variable detection", category="Quality")
+def unused_variables(commits: CommitsDict, config) -> RuleResult:
+    """
+    Find local variables that are declared but never referenced again.
+
+    Detects: var x = someCall(); where x is not used in subsequent lines.
+    Skips common patterns like loop variables and return values.
+    """
+    result = RuleResult(
+        rule_id="15006",
+        description="Unused variable detection",
+        category="Quality",
+        headers=["Class", "Method", "Variable", "Declaration"],
+    )
+
+    # Common variable names that are typically used implicitly (e.g. by framework)
+    skip_names = {"context", "scenarioContext", "data", "producer", "e", "ex", "ignored", "_"}
+
+    for commit_info, files in sorted(commits.items()):
+        for f in get_implemented_classes(files):
+            mc = f.main_class
+            if mc is None:
+                continue
+            for method in mc.methods:
+                if not method.body:
+                    continue
+                lines = method.body.splitlines()
+                for i, line in enumerate(lines):
+                    stripped = line.strip()
+                    m = _VAR_DECL_RE.search(stripped)
+                    if not m:
+                        continue
+                    var_name = m.group(1)
+                    if var_name in skip_names or len(var_name) <= 1:
+                        continue
+                    # Check if the variable is referenced in any subsequent line
+                    remaining = "\n".join(lines[i + 1:])
+                    if var_name not in remaining:
+                        result.rows.append([
+                            mc.class_name,
+                            method.name,
+                            var_name,
+                            stripped[:150],
+                        ])
+
+    return result
+
+
+# Patterns for System.out/err usage
+_SYSOUT_RE = re.compile(r'System\.(out|err)\.(print|println)\(')
+
+
+@rule(id="15016", description="System.out.println usage instead of logger", category="Quality")
+def logging_best_practices(commits: CommitsDict, config) -> RuleResult:
+    """
+    Find System.out.println and System.err.println calls.
+
+    CenterTest projects should use the framework's logging mechanism
+    instead of writing directly to stdout/stderr.
+    """
+    result = RuleResult(
+        rule_id="15016",
+        description="System.out.println usage instead of logger",
+        category="Quality",
+        headers=["Class", "Method", "Line"],
+    )
+
+    for commit_info, files in sorted(commits.items()):
+        for f in get_implemented_classes(files):
+            mc = f.main_class
+            if mc is None:
+                continue
+            for method in mc.methods:
+                if not method.body:
+                    continue
+                for line in method.body.splitlines():
+                    stripped = line.strip()
+                    if _SYSOUT_RE.search(stripped):
+                        result.rows.append([
+                            mc.class_name,
+                            method.name,
+                            stripped[:150],
+                        ])
 
     return result

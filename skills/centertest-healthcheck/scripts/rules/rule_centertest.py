@@ -1,9 +1,11 @@
 """
-Rules 9001, 9003, 9007: CenterTest framework compliance (beyond Eir).
+Rules 9001, 9003, 9005, 9007, 9008: CenterTest framework compliance (beyond Eir).
 
 9001 — Direct Selenium usage instead of CenterTest widgets
 9003 — @DataDriven annotation patterns
+9005 — CenterTest assertion framework usage
 9007 — Thread.sleep anti-pattern detection
+9008 — ImplicitSleep.sleep usage detection
 """
 
 from __future__ import annotations
@@ -137,5 +139,114 @@ def thread_sleep_detection(commits: CommitsDict, config) -> RuleResult:
                     continue
                 if "Thread.sleep(" in method.body:
                     result.rows.append([mc.class_name, method.name])
+
+    return result
+
+
+# JUnit raw assertion patterns (anti-pattern in CenterTest)
+_JUNIT_ASSERT_PATTERNS = [
+    "Assert.assertEquals(",
+    "Assert.assertTrue(",
+    "Assert.assertFalse(",
+    "Assert.assertNull(",
+    "Assert.assertNotNull(",
+    "Assert.fail(",
+    "org.junit.Assert",
+]
+
+
+@rule(id="9005", description="CenterTest assertion framework usage", category="CenterTest")
+def assertion_framework_usage(commits: CommitsDict, config) -> RuleResult:
+    """
+    Find incorrect assertion patterns in CenterTest code.
+
+    CORRECT patterns (widget-based assertions):
+      - widget.assertEquals(value)
+      - widget.assertContains(substring)
+      - widget.assertNotEmpty()
+      - widget.assertNotNull()
+      - widget.assertEqualsNumeric(value)
+      - CenterTestAssertion.withContext(...).assertThat(...)
+
+    ANTI-PATTERNS (raw JUnit/Java assertions):
+      - Assert.assertEquals(expected, actual)
+      - Assert.assertTrue(condition)
+      - assert keyword
+      - Direct Assertions.assertThat() without CenterTestAssertion wrapper
+    """
+    result = RuleResult(
+        rule_id="9005",
+        description="CenterTest assertion framework usage",
+        category="CenterTest",
+        headers=["Class", "Method", "Issue", "Line"],
+    )
+
+    for commit_info, files in sorted(commits.items()):
+        for f in get_implemented_classes(files):
+            mc = f.main_class
+            if mc is None:
+                continue
+            for method in mc.methods:
+                if not method.body:
+                    continue
+                for line in method.body.splitlines():
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+
+                    # Check for raw JUnit Assert usage
+                    for pattern in _JUNIT_ASSERT_PATTERNS:
+                        if pattern in stripped:
+                            result.rows.append([
+                                mc.class_name,
+                                method.name,
+                                "Raw JUnit Assert — use widget.assertXxx() or CenterTestAssertion",
+                                stripped[:150],
+                            ])
+                            break
+
+                    # Check for Assertions.assertThat without CenterTestAssertion wrapper
+                    if "Assertions.assertThat(" in stripped and "CenterTestAssertion" not in method.body:
+                        result.rows.append([
+                            mc.class_name,
+                            method.name,
+                            "Unwrapped AssertJ — wrap with CenterTestAssertion.withContext()",
+                            stripped[:150],
+                        ])
+
+    return result
+
+
+@rule(id="9008", description="ImplicitSleep.sleep usage", category="CenterTest")
+def implicit_sleep_detection(commits: CommitsDict, config) -> RuleResult:
+    """
+    Find ImplicitSleep.sleep() calls in test code.
+
+    ImplicitSleep adds fixed delays that slow down test execution.
+    Consider using explicit waits or widget-level wait mechanisms instead.
+    """
+    result = RuleResult(
+        rule_id="9008",
+        description="ImplicitSleep.sleep usage",
+        category="CenterTest",
+        headers=["Class", "Method", "Line"],
+    )
+
+    for commit_info, files in sorted(commits.items()):
+        for f in get_implemented_classes(files):
+            mc = f.main_class
+            if mc is None:
+                continue
+            for method in mc.methods:
+                if not method.body:
+                    continue
+                for line in method.body.splitlines():
+                    stripped = line.strip()
+                    if "ImplicitSleep.sleep(" in stripped:
+                        result.rows.append([
+                            mc.class_name,
+                            method.name,
+                            stripped[:150],
+                        ])
 
     return result
