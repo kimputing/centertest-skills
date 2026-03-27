@@ -623,73 +623,98 @@ def generate_html(results: list[RuleResult], output_dir: str,
 """
     html += "      </tbody>\n    </table>\n  </div>\n"
 
-    # Detail sections (expandable)
+    # Detail sections (grouped by category, collapsible)
     html += '  <div class="detail">\n    <h2>Detailed Findings</h2>\n'
 
+    # Group results by category, preserving order
+    from collections import OrderedDict
+    cat_results: OrderedDict[str, list] = OrderedDict()
     for r in results:
-        count = _count_items(r)
-        if count == 0 and not r.error:
-            continue  # skip passed rules
+        cat_results.setdefault(r.category, []).append(r)
 
-        open_class = " open" if count > 0 and count <= 20 else ""
-        html += f'    <div class="rule-detail{open_class}">\n'
+    for cat_name, cat_rules in cat_results.items():
+        cat_issue_count = sum(_count_items(r) for r in cat_rules)
+        cat_has_content = any(_count_items(r) > 0 or r.error for r in cat_rules)
+        if not cat_has_content:
+            continue
+
+        # Category wrapper (collapsible)
+        cat_open = " open" if cat_issue_count <= 40 else ""
+        html += f'    <div class="rule-detail{cat_open}">\n'
         html += f'      <div class="rule-detail-header" onclick="this.parentElement.classList.toggle(\'open\')">\n'
-        html += f'        <span class="rule-detail-title">{r.rule_id}: {_html_escape(r.description)}</span>\n'
-        count_text = f"{count} finding{'s' if count != 1 else ''}" if not r.error else "ERROR"
-        html += f'        <span><span style="margin-right:8px;color:var(--text-muted)">{count_text}</span><span class="toggle-arrow">&#9654;</span></span>\n'
+        html += f'        <span class="rule-detail-title" style="font-size:16px">{_html_escape(cat_name)}</span>\n'
+        cat_rule_count = sum(1 for r in cat_rules if _count_items(r) > 0 or r.error)
+        html += f'        <span><span style="margin-right:8px;color:var(--text-muted)">{cat_issue_count} finding{"s" if cat_issue_count != 1 else ""} in {cat_rule_count} rule{"s" if cat_rule_count != 1 else ""}</span><span class="toggle-arrow">&#9654;</span></span>\n'
         html += '      </div>\n'
         html += '      <div class="rule-detail-body">\n'
 
-        if r.error:
-            html += f'        <p style="color:var(--amber)">Error: {_html_escape(r.error)}</p>\n'
+        # Individual rules within category
+        for r in cat_rules:
+            count = _count_items(r)
+            if count == 0 and not r.error:
+                continue
 
-        # Flat table
-        if r.headers and r.rows:
-            html += '        <table class="detail-table"><thead><tr>'
-            for h in r.headers:
-                html += f'<th>{_html_escape(h)}</th>'
-            html += '</tr></thead><tbody>\n'
-            for row in r.rows[:100]:  # cap at 100 rows in HTML
-                html += '          <tr>'
-                for val in row:
-                    html += f'<td>{_html_escape(val)}</td>'
-                html += '</tr>\n'
-            if len(r.rows) > 100:
-                html += f'          <tr><td colspan="{len(r.headers)}" style="color:var(--text-muted);text-align:center">... and {len(r.rows) - 100} more (see Excel for full list)</td></tr>\n'
-            html += '        </tbody></table>\n'
+            open_class = " open" if count > 0 and count <= 20 else ""
+            html += f'        <div class="rule-detail{open_class}" style="margin-left:8px;border-color:var(--surface2)">\n'
+            html += f'          <div class="rule-detail-header" onclick="this.parentElement.classList.toggle(\'open\')">\n'
+            html += f'            <span class="rule-detail-title">{r.rule_id}: {_html_escape(r.description)}</span>\n'
+            count_text = f"{count} finding{'s' if count != 1 else ''}" if not r.error else "ERROR"
+            html += f'            <span><span style="margin-right:8px;color:var(--text-muted)">{count_text}</span><span class="toggle-arrow">&#9654;</span></span>\n'
+            html += '          </div>\n'
+            html += '          <div class="rule-detail-body">\n'
 
-        # Sections
-        for section in r.sections:
-            html += f'        <div class="section-title">{_html_escape(section.title)}</div>\n'
-            if section.headers and section.rows:
-                html += '        <table class="detail-table"><thead><tr>'
-                for h in section.headers:
+            if r.error:
+                html += f'            <p style="color:var(--amber)">Error: {_html_escape(r.error)}</p>\n'
+
+            # Flat table
+            if r.headers and r.rows:
+                html += '            <table class="detail-table"><thead><tr>'
+                for h in r.headers:
                     html += f'<th>{_html_escape(h)}</th>'
                 html += '</tr></thead><tbody>\n'
-                for row in section.rows:
-                    html += '          <tr>'
+                for row in r.rows[:100]:
+                    html += '              <tr>'
                     for val in row:
                         html += f'<td>{_html_escape(val)}</td>'
                     html += '</tr>\n'
-                html += '        </tbody></table>\n'
-            if section.items:
-                html += '        <ul class="finding-list">\n'
-                for item in section.items[:50]:
-                    html += f'          <li>{_html_escape(item)}</li>\n'
-                if len(section.items) > 50:
-                    html += f'          <li style="color:var(--text-muted)">... and {len(section.items) - 50} more</li>\n'
-                html += '        </ul>\n'
-            for sub in section.subsections:
-                html += f'        <div class="subsection-title">{_html_escape(sub.title)}</div>\n'
-                if sub.items:
-                    html += '        <ul class="finding-list">\n'
-                    for item in sub.items[:30]:
-                        html += f'          <li>{_html_escape(item)}</li>\n'
-                    if len(sub.items) > 30:
-                        html += f'          <li style="color:var(--text-muted)">... and {len(sub.items) - 30} more</li>\n'
-                    html += '        </ul>\n'
+                if len(r.rows) > 100:
+                    html += f'              <tr><td colspan="{len(r.headers)}" style="color:var(--text-muted);text-align:center">... and {len(r.rows) - 100} more (see Excel)</td></tr>\n'
+                html += '            </tbody></table>\n'
 
-        html += '      </div>\n    </div>\n'
+            # Sections
+            for section in r.sections:
+                html += f'            <div class="section-title">{_html_escape(section.title)}</div>\n'
+                if section.headers and section.rows:
+                    html += '            <table class="detail-table"><thead><tr>'
+                    for h in section.headers:
+                        html += f'<th>{_html_escape(h)}</th>'
+                    html += '</tr></thead><tbody>\n'
+                    for row in section.rows:
+                        html += '              <tr>'
+                        for val in row:
+                            html += f'<td>{_html_escape(val)}</td>'
+                        html += '</tr>\n'
+                    html += '            </tbody></table>\n'
+                if section.items:
+                    html += '            <ul class="finding-list">\n'
+                    for item in section.items[:50]:
+                        html += f'              <li>{_html_escape(item)}</li>\n'
+                    if len(section.items) > 50:
+                        html += f'              <li style="color:var(--text-muted)">... and {len(section.items) - 50} more</li>\n'
+                    html += '            </ul>\n'
+                for sub in section.subsections:
+                    html += f'            <div class="subsection-title">{_html_escape(sub.title)}</div>\n'
+                    if sub.items:
+                        html += '            <ul class="finding-list">\n'
+                        for item in sub.items[:30]:
+                            html += f'              <li>{_html_escape(item)}</li>\n'
+                        if len(sub.items) > 30:
+                            html += f'              <li style="color:var(--text-muted)">... and {len(sub.items) - 30} more</li>\n'
+                        html += '            </ul>\n'
+
+            html += '          </div>\n        </div>\n'  # close rule
+
+        html += '      </div>\n    </div>\n'  # close category
 
     html += '  </div>\n'
 
