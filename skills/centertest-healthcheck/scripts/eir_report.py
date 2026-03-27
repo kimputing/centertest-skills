@@ -631,7 +631,15 @@ def generate_html(results: list[RuleResult], output_dir: str,
     html += "      </tbody>\n    </table>\n      </div>\n    </div>\n  </div>\n"
 
     # Detail sections (grouped by category, collapsible)
-    html += '  <div class="detail">\n    <h2>Detailed Findings</h2>\n'
+    html += """  <div class="detail">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">Detailed Findings</h2>
+      <div style="display:flex;gap:8px">
+        <button onclick="toggleAll(true)" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px">Expand All</button>
+        <button onclick="toggleAll(false)" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px">Collapse All</button>
+      </div>
+    </div>
+"""
 
     # Group results by category, preserving order
     from collections import OrderedDict
@@ -739,6 +747,11 @@ def generate_html(results: list[RuleResult], output_dir: str,
 </div>
 """
     html += """<script>
+function toggleAll(expand) {
+  document.querySelectorAll('.detail .rule-detail').forEach(function(el) {
+    if (expand) el.classList.add('open'); else el.classList.remove('open');
+  });
+}
 function navigateTo(ruleId, catId) {
   var cat = catId ? document.getElementById(catId) : null;
   if (cat && !cat.classList.contains('open')) cat.classList.add('open');
