@@ -598,9 +598,14 @@ def generate_html(results: list[RuleResult], output_dir: str,
 """
     html += '  </div>\n'
 
-    # Rules summary table
+    # Rules summary table (collapsible)
     html += """  <div class="rules-section">
-    <h2>Rules Summary</h2>
+    <div class="rule-detail open">
+      <div class="rule-detail-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="rule-detail-title" style="font-size:18px">Rules Summary</span>
+        <span class="toggle-arrow">&#9654;</span>
+      </div>
+      <div class="rule-detail-body">
     <table>
       <thead><tr><th>Rule</th><th>Category</th><th>Description</th><th>Findings</th><th>Status</th></tr></thead>
       <tbody>
@@ -621,7 +626,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
           <td>{badge}</td>
         </tr>
 """
-    html += "      </tbody>\n    </table>\n  </div>\n"
+    html += "      </tbody>\n    </table>\n      </div>\n    </div>\n  </div>\n"
 
     # Detail sections (grouped by category, collapsible)
     html += '  <div class="detail">\n    <h2>Detailed Findings</h2>\n'
@@ -638,8 +643,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
         if not cat_has_content:
             continue
 
-        # Category wrapper (collapsible)
-        cat_open = " open" if cat_issue_count <= 40 else ""
+        # Category wrapper (collapsed by default)
+        cat_open = ""
         html += f'    <div class="rule-detail{cat_open}">\n'
         html += f'      <div class="rule-detail-header" onclick="this.parentElement.classList.toggle(\'open\')">\n'
         html += f'        <span class="rule-detail-title" style="font-size:16px">{_html_escape(cat_name)}</span>\n'
@@ -654,7 +659,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
             if count == 0 and not r.error:
                 continue
 
-            open_class = " open" if count > 0 and count <= 20 else ""
+            open_class = ""  # collapsed by default
             html += f'        <div class="rule-detail{open_class}" style="margin-left:8px;border-color:var(--surface2)">\n'
             html += f'          <div class="rule-detail-header" onclick="this.parentElement.classList.toggle(\'open\')">\n'
             html += f'            <span class="rule-detail-title">{r.rule_id}: {_html_escape(r.description)}</span>\n'
