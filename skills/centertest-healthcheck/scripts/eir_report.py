@@ -583,7 +583,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
     # Category breakdown
     html += '  <div class="categories">\n    <h2>By Category</h2>\n'
     max_issues = max((c["issues"] for c in categories.values()), default=1) or 1
-    for cat_name, cat_data in sorted(categories.items(), key=lambda x: -x[1]["issues"]):
+    for cat_name, cat_data in categories.items():
         total_cat = cat_data["passed"] + cat_data["failed"]
         pct = cat_data["passed"] / total_cat * 100 if total_cat > 0 else 100
         bar_pct = cat_data["issues"] / max_issues * 100
