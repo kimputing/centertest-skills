@@ -52,6 +52,7 @@ from eir_parser import parse_directory
 from eir_rules import discover_rules, run_rules, list_rules, list_rulesets, get_registry
 from eir_report import generate_excel, generate_markdown, generate_html, print_terminal_summary
 from eir_git import parse_commits_from_git
+from eir_suppressions import load_suppressions, apply_suppressions, show_suppressions
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +87,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--set-path", metavar="DIR", help="Save project path to config")
     p.add_argument("--show-path", action="store_true", help="Show configured project path")
 
+    # Suppressions
+    p.add_argument("--show-suppressions", action="store_true", help="Show current suppressions")
+
     # Info
     p.add_argument("--list-rules", action="store_true", help="List all available rules")
     p.add_argument("--list-rulesets", action="store_true", help="List all rule sets")
@@ -111,6 +115,12 @@ def main():
 
     if args.show_path:
         show_path()
+        return
+
+    if args.show_suppressions:
+        config = EirConfig(args)
+        output_dir = os.path.join(config.repository_dir, "healthcheck")
+        show_suppressions(output_dir)
         return
 
     if args.list_rules:
@@ -190,11 +200,21 @@ def main():
         return
 
     # Step 2: Run rules
-    print(f"\n[2/3] Running {len(active_ids)} analysis rule(s)...")
+    print(f"\n[2/4] Running {len(active_ids)} analysis rule(s)...")
     results = run_rules(commits, config)
 
-    # Step 3: Generate reports
-    print(f"\n[3/3] Generating reports...")
+    # Step 3: Apply suppressions
+    output_dir = os.path.join(config.repository_dir, "healthcheck")
+    suppressions = load_suppressions(output_dir)
+    suppressed_count = 0
+    if suppressions:
+        results, suppressed_count = apply_suppressions(results, suppressions)
+        print(f"\n[3/4] Applied {len(suppressions)} suppression(s) — {suppressed_count} finding(s) suppressed")
+    else:
+        print(f"\n[3/4] No suppressions configured")
+
+    # Step 4: Generate reports
+    print(f"\n[4/4] Generating reports...")
     output_dir = os.path.join(config.repository_dir, "healthcheck")
     generated = []
     elapsed = time.time() - start_time
@@ -217,6 +237,7 @@ def main():
             total_files=total_files,
             elapsed=elapsed,
             excel_filename=excel_filename,
+            suppressed_count=suppressed_count,
         )
         if filepath:
             generated.append(filepath)
@@ -229,7 +250,7 @@ def main():
             print(f"  Markdown: {filepath}")
 
     if "terminal" in config.output_formats:
-        print_terminal_summary(results)
+        print_terminal_summary(results, suppressed_count)
 
     print(f"\n  Completed in {elapsed:.1f}s")
     if generated:

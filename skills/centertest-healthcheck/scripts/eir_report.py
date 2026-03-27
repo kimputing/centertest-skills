@@ -301,7 +301,8 @@ def _html_escape(text: str) -> str:
 
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
-                  elapsed: float = 0, excel_filename: str = "") -> str:
+                  elapsed: float = 0, excel_filename: str = "",
+                  suppressed_count: int = 0) -> str:
     """Generate a dashboard-style HTML health check report."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -569,6 +570,10 @@ def generate_html(results: list[RuleResult], output_dir: str,
         <div class="stat-label">Total Findings</div>
       </div>
       <div class="stat-card">
+        <div class="stat-value" style="color:var(--text-muted)">{suppressed_count}</div>
+        <div class="stat-label">Suppressed</div>
+      </div>
+      <div class="stat-card">
         <div class="stat-value stat-blue">{total_files}</div>
         <div class="stat-label">Files Analyzed</div>
       </div>
@@ -780,7 +785,7 @@ function navigateTo(ruleId, catId) {
 # Terminal output
 # ---------------------------------------------------------------------------
 
-def print_terminal_summary(results: list[RuleResult]):
+def print_terminal_summary(results: list[RuleResult], suppressed_count: int = 0):
     """Print a concise summary to the terminal."""
     print("\n" + "=" * 60)
     print("  HEALTH CHECK RESULTS")
@@ -810,5 +815,6 @@ def print_terminal_summary(results: list[RuleResult]):
         print(f"  [{indicator}] {result.rule_id}: {result.description:<50} {status}")
 
     print("-" * 60)
-    print(f"  Total issues: {total_issues}  |  Errors: {errors}  |  Rules: {len(results)}")
+    sup_text = f"  |  Suppressed: {suppressed_count}" if suppressed_count > 0 else ""
+    print(f"  Total issues: {total_issues}{sup_text}  |  Errors: {errors}  |  Rules: {len(results)}")
     print("=" * 60)

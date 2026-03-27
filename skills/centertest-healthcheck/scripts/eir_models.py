@@ -156,6 +156,21 @@ CommitsDict = dict[CommitInfo, list[SourceCodeFile]]
 
 
 # ---------------------------------------------------------------------------
+# Suppression model
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Suppression:
+    """A suppressed finding — stored in healthcheck/suppressions.json."""
+    rule_id: str
+    class_name: str = "*"      # matches row[0], "*" = any
+    method: str = "*"          # matches row[1], "*" = any
+    match: str = ""            # substring match against any column
+    reason: str = ""           # why this was suppressed
+    added: str = ""            # date added (YYYY-MM-DD)
+
+
+# ---------------------------------------------------------------------------
 # Rule result models
 # ---------------------------------------------------------------------------
 
