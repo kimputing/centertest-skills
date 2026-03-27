@@ -97,6 +97,11 @@ def generate_excel(results: list[RuleResult], output_dir: str) -> str:
         if result.error:
             cell.fill = error_fill
 
+        # Skip detail sheet if no content (no rows, no sections, no error)
+        has_content = result.error or result.rows or result.sections
+        if not has_content:
+            continue
+
         # Detail sheet
         sheet_name = _safe_sheet_name(result.rule_id, result.description, existing_names)
         existing_names.add(sheet_name)
