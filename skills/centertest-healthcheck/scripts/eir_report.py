@@ -562,7 +562,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
       </div>
       <div class="stat-card">
         <div class="stat-value stat-red">{rules_failed}</div>
-        <div class="stat-label">Issues Found</div>
+        <div class="stat-label">Rules Failed</div>
       </div>
       <div class="stat-card">
         <div class="stat-value stat-amber">{total_issues}</div>
@@ -588,7 +588,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
         pct = cat_data["passed"] / total_cat * 100 if total_cat > 0 else 100
         bar_pct = cat_data["issues"] / max_issues * 100
         bar_class = "green" if cat_data["issues"] == 0 else ("amber" if cat_data["issues"] < 10 else "red")
-        html += f"""    <div class="cat-row">
+        cat_id = cat_name.lower().replace(" ", "-")
+        html += f"""    <div class="cat-row" style="cursor:pointer" onclick="navigateTo('cat-{cat_id}')">
       <div class="cat-name">{_html_escape(cat_name)}</div>
       <div class="cat-bar-bg">
         <div class="cat-bar-fill {bar_class}" style="width:{bar_pct:.0f}%"></div>
@@ -618,7 +619,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
             badge = f'<span class="badge badge-issues">{count} issue{"s" if count != 1 else ""}</span>'
         else:
             badge = '<span class="badge badge-ok">Passed</span>'
-        html += f"""        <tr>
+        cat_id = r.category.lower().replace(" ", "-")
+        html += f"""        <tr style="cursor:pointer" onclick="navigateTo('rule-{r.rule_id}', 'cat-{cat_id}')">
           <td><strong>{r.rule_id}</strong></td>
           <td><span class="badge-cat">{_html_escape(r.category)}</span></td>
           <td>{_html_escape(r.description)}</td>
@@ -645,7 +647,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
         # Category wrapper (collapsed by default)
         cat_open = ""
-        html += f'    <div class="rule-detail{cat_open}">\n'
+        cat_id = cat_name.lower().replace(" ", "-")
+        html += f'    <div id="cat-{cat_id}" class="rule-detail{cat_open}">\n'
         html += f'      <div class="rule-detail-header" onclick="this.parentElement.classList.toggle(\'open\')">\n'
         html += f'        <span class="rule-detail-title" style="font-size:16px">{_html_escape(cat_name)}</span>\n'
         cat_rule_count = sum(1 for r in cat_rules if _count_items(r) > 0 or r.error)
@@ -660,7 +663,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
                 continue
 
             open_class = ""  # collapsed by default
-            html += f'        <div class="rule-detail{open_class}" style="margin-left:8px;border-color:var(--surface2)">\n'
+            html += f'        <div id="rule-{r.rule_id}" class="rule-detail{open_class}" style="margin-left:8px;border-color:var(--surface2)">\n'
             html += f'          <div class="rule-detail-header" onclick="this.parentElement.classList.toggle(\'open\')">\n'
             html += f'            <span class="rule-detail-title">{r.rule_id}: {_html_escape(r.description)}</span>\n'
             count_text = f"{count} finding{'s' if count != 1 else ''}" if not r.error else "ERROR"
@@ -725,14 +728,29 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
     # Footer
     excel_link = f'<a href="{_html_escape(excel_filename)}">{_html_escape(excel_filename)}</a>' if excel_filename else ""
+    footer_data = f"&nbsp;&bull;&nbsp; Full data: {excel_link}" if excel_link else ""
     html += f"""
   <div class="footer">
     CenterTest Health Check &mdash; Generated {generated_at}
-    {f"&nbsp;&bull;&nbsp; Full data: {excel_link}" if excel_link else ""}
+    {footer_data}
     <br>Powered by <a href="https://github.com/Kimputing/centertest-skills">centertest-skills</a>
   </div>
 
 </div>
+"""
+    html += """<script>
+function navigateTo(ruleId, catId) {
+  var cat = catId ? document.getElementById(catId) : null;
+  if (cat && !cat.classList.contains('open')) cat.classList.add('open');
+  var el = document.getElementById(ruleId);
+  if (el) {
+    if (!el.classList.contains('open')) el.classList.add('open');
+    var parent = el.parentElement ? el.parentElement.closest('.rule-detail') : null;
+    if (parent && !parent.classList.contains('open')) parent.classList.add('open');
+    setTimeout(function() { el.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 50);
+  }
+}
+</script>
 </body>
 </html>
 """
