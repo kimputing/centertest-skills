@@ -23,7 +23,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from eir_models import CommitInfo, CommitsDict, SourceCodeFile, LOCAL_COMMIT
-from eir_parser import parse_file, get_package_from_path
+from eir_parser import parse_file, get_package_from_path, is_excluded
 
 
 def _run_git(args: list[str], repo_dir: str) -> subprocess.CompletedProcess:
@@ -222,6 +222,11 @@ def parse_commits_from_git(config) -> CommitsDict:
         parsed_files = []
 
         for file_path in java_files:
+            # Apply package/file exclusion filters (same as local mode)
+            pkg = get_package_from_path(file_path, repo_dir, source_root)
+            if is_excluded(file_path, pkg, config.exclude_packages, config.exclude_files):
+                continue
+
             content = get_file_at_commit(commit.sha, file_path, repo_dir)
             if content is None:
                 sf = SourceCodeFile(

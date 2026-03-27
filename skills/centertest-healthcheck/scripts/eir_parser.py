@@ -383,6 +383,49 @@ def parse_file(content: str, file_path: str, repo_dir: str,
     return sf
 
 
+def is_excluded(file_path: str, package_name: str,
+                exclude_packages: list[str] = None,
+                exclude_files: list[str] = None) -> bool:
+    """Check if a file should be excluded based on package and file patterns."""
+    if exclude_packages is None:
+        exclude_packages = []
+    if exclude_files is None:
+        exclude_files = []
+
+    # Package exclusion (full-string regex match, matching Java .matches())
+    for pattern in exclude_packages:
+        try:
+            if re.fullmatch(pattern, package_name):
+                return True
+        except re.error:
+            if pattern in package_name:
+                return True
+
+    # File exclusion
+    fname = os.path.basename(file_path)
+    for pattern in exclude_files:
+        try:
+            if "." in pattern and os.sep not in pattern and "/" not in pattern:
+                # Pattern with dot: match against package.filename
+                target = package_name + "." + fname
+                if re.fullmatch(pattern, target):
+                    return True
+            elif os.sep in pattern or "/" in pattern:
+                # Pattern with separator: match against full path
+                target = os.path.dirname(file_path) + "/" + fname
+                if re.fullmatch(pattern, target):
+                    return True
+            else:
+                # Simple pattern: match against filename
+                if re.fullmatch(pattern, fname):
+                    return True
+        except re.error:
+            if pattern in fname:
+                return True
+
+    return False
+
+
 def parse_directory(repo_dir: str, source_root: str = "src/main/java",
                     exclude_packages: list[str] = None,
                     exclude_files: list[str] = None,
@@ -418,46 +461,7 @@ def parse_directory(repo_dir: str, source_root: str = "src/main/java",
         # Derive package for exclusion check
         pkg = get_package_from_path(file_path, repo_dir, source_root)
 
-        # Package exclusion (full-string regex match, matching Java .matches())
-        excluded = False
-        for pattern in exclude_packages:
-            try:
-                if re.fullmatch(pattern, pkg):
-                    excluded = True
-                    break
-            except re.error:
-                if pattern in pkg:
-                    excluded = True
-                    break
-        if excluded:
-            continue
-
-        # File exclusion
-        fname = os.path.basename(file_path)
-        for pattern in exclude_files:
-            try:
-                if "." in pattern and os.sep not in pattern:
-                    # Pattern with dot: match against package.filename
-                    target = pkg + "." + fname
-                    if re.fullmatch(pattern, target):
-                        excluded = True
-                        break
-                elif os.sep in pattern:
-                    # Pattern with separator: match against full path
-                    target = os.path.dirname(file_path) + os.sep + fname
-                    if re.fullmatch(pattern, target):
-                        excluded = True
-                        break
-                else:
-                    # Simple pattern: match against filename
-                    if re.fullmatch(pattern, fname):
-                        excluded = True
-                        break
-            except re.error:
-                if pattern in fname:
-                    excluded = True
-                    break
-        if excluded:
+        if is_excluded(file_path, pkg, exclude_packages, exclude_files):
             continue
 
         # Read and parse
