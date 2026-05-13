@@ -1,5 +1,5 @@
 """
-Rules 15001-15017: Common Java quality issues (beyond Eir).
+Rules 15001-15018: Common Java quality issues (beyond Eir).
 
 15001 — Null pointer risk detection
 15002 — Potential IndexOutOfBoundsException (.get(N) on lists)
@@ -8,6 +8,7 @@ Rules 15001-15017: Common Java quality issues (beyond Eir).
 15006 — Unused variable detection
 15016 — Logging best practices (System.out.println detection)
 15017 — Unbounded busy-waits and recursion (no deadline / no iteration cap)
+15018 — Discarded .equals() return value (silent no-op masquerading as assertion)
 """
 
 from __future__ import annotations
@@ -505,6 +506,128 @@ def logging_best_practices(commits: CommitsDict, config) -> RuleResult:
                             mc.class_name,
                             method.name,
                             stripped[:150],
+                        ])
+
+    return result
+
+
+# --- Rule 15018 -------------------------------------------------------------
+# Discarded `.equals()` return value as a standalone statement.
+#
+# In CenterTest scenarios, the common bug is muscle-memory: developer types
+# `widget.getValue().equals("expected");` thinking it's an assertion, when it
+# only returns a boolean that's silently discarded. The line passes review
+# because it looks like a verification step.
+#
+# Detection is precise: the call must be the outermost expression of the
+# statement. Walks forward from `.equals(` matching parens to confirm only
+# `;` follows. Excludes assignments, conditionals, returns, and nested calls.
+#
+# Java's `boolean equals(Object)` contract makes this impossible for the
+# compiler to warn about. PMD's MethodReturnValueIgnored is too noisy for
+# general use; this rule targets only the equals-family methods that almost
+# always indicate a bug when their result is discarded.
+
+_DISCARDED_EQUALS_RE = re.compile(r"\.(equals|equalsIgnoreCase|contentEquals)\s*\(")
+_STATEMENT_CONTROL_PREFIXES = (
+    "return", "if ", "if(", "while ", "while(", "for ", "for(",
+    "assert ", "throw ", "} else", "else ", "case ", "default",
+)
+
+
+def _is_discarded_equals_statement(line: str):
+    """Check if a line is a standalone .equals(...) statement with discarded result.
+
+    Returns (is_bug, method_name_matched) tuple.
+    """
+    stripped = line.strip()
+    if not stripped.endswith(";"):
+        return False, ""
+    for kw in _STATEMENT_CONTROL_PREFIXES:
+        if stripped.startswith(kw):
+            return False, ""
+    m = _DISCARDED_EQUALS_RE.search(stripped)
+    if not m:
+        return False, ""
+    # If anything to the left of `.equals(` indicates a consumed return
+    # (assignment, logical/ternary operator, negation), skip.
+    prefix = stripped[:m.start()]
+    for marker in ("=", "&&", "||", "!", "?", "return"):
+        if marker in prefix:
+            return False, ""
+    # Walk forward from the matched '(' to find its matching ')'.
+    open_paren = m.end() - 1
+    depth = 0
+    end_idx = -1
+    in_string = False
+    in_char = False
+    i = open_paren
+    while i < len(stripped):
+        c = stripped[i]
+        if in_string:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                in_string = False
+        elif in_char:
+            if c == "\\":
+                i += 2
+                continue
+            if c == "'":
+                in_char = False
+        else:
+            if c == '"':
+                in_string = True
+            elif c == "'":
+                in_char = True
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    end_idx = i
+                    break
+        i += 1
+    if end_idx == -1:
+        return False, ""
+    # Only `;` (with optional whitespace) may follow the matching `)`.
+    after = stripped[end_idx + 1:].strip()
+    if after != ";":
+        return False, ""
+    return True, m.group(1)
+
+
+@rule(id="15018", description="Discarded .equals() return value (silent assertion bug)", category="Quality")
+def discarded_equals_return(commits: CommitsDict, config) -> RuleResult:
+    """
+    Detect standalone `expr.equals(...);` statements where the boolean return
+    value is discarded. Almost always a typo for `.assertEquals(...)` or a
+    similar widget assertion — the line silently does nothing.
+    """
+    result = RuleResult(
+        rule_id="15018",
+        description="Discarded .equals() return value (silent assertion bug)",
+        category="Quality",
+        headers=["Class", "Method", "Method Called", "Line"],
+    )
+
+    for _, files in sorted(commits.items()):
+        for f in get_implemented_classes(files):
+            mc = f.main_class
+            if mc is None:
+                continue
+            for method in mc.methods:
+                if not method.body:
+                    continue
+                for line in method.body.splitlines():
+                    is_bug, called = _is_discarded_equals_statement(line)
+                    if is_bug:
+                        result.rows.append([
+                            mc.class_name,
+                            method.name,
+                            called,
+                            line.strip()[:160],
                         ])
 
     return result

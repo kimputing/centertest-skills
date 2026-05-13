@@ -22,7 +22,7 @@ scripts/
     ├── rule_complexity.py   # 5001, 5002
     ├── rule_security.py     # 7001
     ├── rule_centertest.py   # 9001, 9003, 9005, 9007, 9008
-    ├── rule_quality.py      # 15001, 15002, 15004, 15005, 15006, 15016, 15017
+    ├── rule_quality.py      # 15001, 15002, 15004, 15005, 15006, 15016, 15017, 15018
     └── rule_ddt.py          # 14002, 14003
 ```
 
@@ -76,7 +76,7 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 | 7001 | Security | Hardcoded credentials |
 | 9001-9008 | CenterTest | Widget compliance, assertions, sleep |
 | 14002-14003 | DDT | Datasource existence, reference integrity |
-| 15001-15017 | Quality | NPE, IndexOOB, catch, unused vars, logging, unbounded loops/recursion |
+| 15001-15018 | Quality | NPE, IndexOOB, catch, unused vars, logging, unbounded loops/recursion, discarded .equals() |
 
 ## Gotchas
 
@@ -85,4 +85,5 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 - Rule 1001 has `suffix_exceptions` set for `CheckEnvironmentAvailability`
 - Rule 15001 is very targeted — only Gson JSON patterns, not page object chains
 - Rule 15017 only inspects `while` loops and direct self-recursion. `for`, foreach, and `do/while` are out of scope by design to avoid false positives. The loop is exempt if the body contains `break`, `return`, `throw`, a `System.currentTimeMillis`/`Instant.now`/`nanoTime` deadline, or a counter mutation (`++`/`--`/`+=`/`-=`). Recursion is exempt if the body contains any of `max|attempt|depth|limit|count|tries|retries`.
+- Rule 15018 flags `expr.equals(args);` (and `.equalsIgnoreCase`, `.contentEquals`) only when the call is the outermost expression of a standalone statement — i.e., the line ends `);` immediately after the matched closing paren. Skipped when the line starts with control keywords (`if`, `while`, `return`, `assert`, `throw`, `for`, `else`, `case`), when an `=`/`&&`/`||`/`!`/`?` appears before `.equals(`, or when the call is nested (a `)` precedes the trailing `;`).
 - HTML report score uses weighted formula, not simple pass/fail count

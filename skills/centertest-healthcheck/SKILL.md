@@ -82,7 +82,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 | **XPath** | 3001 | Selenium XPath optimization |
 | **Methods** | 4001, 4002 | Method-level analysis |
 | **CenterTest** | 9001, 9003, 9007, 3001 | CenterTest framework compliance |
-| **Quality** | 5001, 5002, 15001, 15004, 15017, 7001 | Code quality and security |
+| **Quality** | 5001, 5002, 15001, 15004, 15017, 15018, 7001 | Code quality and security |
 | **Security** | 7001 | Hardcoded credentials detection |
 | **CenterTestFull** | All 20 rules | Complete health check |
 
@@ -111,6 +111,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 | 15004 | Quality | String comparison with == |
 | 15005 | Quality | Empty catch blocks |
 | 15017 | Quality | Unbounded busy-waits and recursion (no deadline / no iteration cap) |
+| 15018 | Quality | Discarded .equals() return value (silent assertion bug — likely meant .assertEquals()) |
 
 ## Report Output
 
