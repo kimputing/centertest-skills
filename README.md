@@ -1,56 +1,62 @@
-# CenterTest Skills
+# CenterTest Skills — Claude Code plugin marketplace
 
-A collection of Claude Code skills for CenterTest development and automation.
+A Claude Code plugin marketplace distributing skills for CenterTest test automation development.
 
 **GitHub**: `https://github.com/Kimputing/centertest-skills`
+
+## Plugins
+
+| Plugin | Description | Status |
+|--------|-------------|--------|
+| [centertest-healthcheck](plugins/centertest-healthcheck/) | Java code quality analysis — 27 rules, HTML dashboard + Excel reports | Active |
+| [cssid-finder](plugins/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs | Active |
+| [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure and generate 15-sheet Excel report | Active |
+| [ddt-tools](plugins/ddt-tools/) | Validate DC references, diff xlsx, report unused codes | Active |
+
+## Installation
+
+Inside Claude Code, add the marketplace and install the plugins you want:
+
+```text
+/plugin marketplace add Kimputing/centertest-skills
+/plugin install centertest-healthcheck@centertest-skills
+/plugin install cssid-finder@centertest-skills
+/plugin install ddt-analyzer@centertest-skills
+/plugin install ddt-tools@centertest-skills
+```
+
+Each plugin is independent — install only the ones you need.
+
+## Updating
+
+```text
+/plugin marketplace update centertest-skills
+```
+
+Every commit to `main` becomes a new version automatically (no `version` field is pinned in `plugin.json`).
 
 ## Structure
 
 ```
-centertest-skills/
-├── skills/
-│   └── <skill-name>/
-│       ├── SKILL.md          # Skill definition (frontmatter + instructions)
-│       ├── scripts/          # Supporting scripts (if any)
-│       └── README.md         # Skill documentation & latest version info
-└── README.md                 # This file
+centertest-skills/                                  # marketplace repo
+├── .claude-plugin/
+│   └── marketplace.json                            # catalog of plugins
+├── plugins/
+│   └── <plugin-name>/
+│       ├── .claude-plugin/plugin.json              # plugin manifest
+│       ├── skills/<plugin-name>/SKILL.md           # skill definition
+│       ├── scripts/                                # python scripts (resolved via ${CLAUDE_PLUGIN_ROOT})
+│       ├── README.md                               # public docs
+│       └── CLAUDE.md                               # dev context for Claude Code
+└── README.md                                       # this file
 ```
 
-## Skills
+## Contributing a new plugin
 
-| Skill | Description | Status |
-|-------|-------------|--------|
-| [centertest-healthcheck](skills/centertest-healthcheck/) | Java code quality analysis — 27 rules, HTML dashboard + Excel reports | Active |
-| [cssid-finder](skills/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs | Active |
-| [ddt-tools](skills/ddt-tools/) | Validate DC references, diff xlsx, report unused codes | Active |
-| [ddt-analyzer](skills/ddt-analyzer/) | Analyze DDT structure and generate Excel report | Active |
+1. Create `plugins/<plugin-name>/` with `.claude-plugin/plugin.json`, `skills/<plugin-name>/SKILL.md`, and `scripts/`
+2. In `SKILL.md`, reference scripts via `${CLAUDE_PLUGIN_ROOT}/scripts/<file>.py` so the path resolves to the plugin's install location
+3. Add a new entry to `.claude-plugin/marketplace.json` under `plugins`
+4. Update the table above
+5. Run `claude plugin validate .` from the repo root to catch JSON / frontmatter errors
 
-## Installation
-
-Copy a skill folder into your Claude Code skills directory:
-
-```bash
-# Copy a single skill
-cp -r skills/cssid-finder ~/.claude/skills/cssid-finder
-
-# Or symlink for auto-updates when you pull
-ln -s "$(pwd)/skills/cssid-finder" ~/.claude/skills/cssid-finder
-```
-
-## Updating Skills
-
-Each skill's `README.md` contains a link to its latest version on GitHub. To update:
-
-```bash
-git pull origin main
-```
-
-If you installed via symlink, skills update automatically on pull.
-
-## Contributing
-
-1. Create a new folder under `skills/` with your skill name
-2. Add `SKILL.md` with frontmatter (`name`, `description`) and usage instructions
-3. Add `README.md` with latest version info and GitHub link
-4. Add any supporting scripts in `scripts/`
-5. Update this README's skills table
+See the [Claude Code plugin marketplace docs](https://code.claude.com/docs/en/plugin-marketplaces) for the full schema.

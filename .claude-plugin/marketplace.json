@@ -1,0 +1,40 @@
+{
+  "name": "centertest-skills",
+  "description": "Claude Code plugins for CenterTest test automation development",
+  "owner": {
+    "name": "Kimputing"
+  },
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "centertest-healthcheck",
+      "source": "./plugins/centertest-healthcheck",
+      "description": "Java code quality analysis for CenterTest projects — 27 rules, HTML+Excel reports",
+      "category": "code-quality",
+      "keywords": ["centertest", "java", "healthcheck", "code-quality"]
+    },
+    {
+      "name": "cssid-finder",
+      "source": "./plugins/cssid-finder",
+      "description": "Find Java getter chains for Guidewire UI CSS IDs",
+      "category": "developer-tools",
+      "keywords": ["centertest", "guidewire", "cssid"]
+    },
+    {
+      "name": "ddt-analyzer",
+      "source": "./plugins/ddt-analyzer",
+      "description": "Analyze CenterTest Data-Driven Testing structure — 15-sheet Excel report",
+      "category": "test-data",
+      "keywords": ["centertest", "ddt", "test-data", "excel"]
+    },
+    {
+      "name": "ddt-tools",
+      "source": "./plugins/ddt-tools",
+      "description": "Validate DC references, diff xlsx, report unused codes",
+      "category": "test-data",
+      "keywords": ["centertest", "ddt", "xlsx"]
+    }
+  ]
+}

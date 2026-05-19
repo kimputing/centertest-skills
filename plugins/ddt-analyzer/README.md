@@ -2,39 +2,23 @@
 
 Analyze CenterTest Data-Driven Testing structure and generate a comprehensive 15-sheet Excel report.
 
-## Latest Version
+## Install
 
-**GitHub**: [https://github.com/Kimputing/centertest-skills/tree/main/skills/ddt-analyzer](https://github.com/Kimputing/centertest-skills/tree/main/skills/ddt-analyzer)
-
-To update to the latest version:
-
-```bash
-# If cloned
-cd centertest-skills && git pull origin main
-
-# Or download directly
-curl -o ~/.claude/skills/ddt-analyzer/scripts/ddt-analyzer.py \
-  https://raw.githubusercontent.com/Kimputing/centertest-skills/main/skills/ddt-analyzer/scripts/ddt-analyzer.py
-curl -o ~/.claude/skills/ddt-analyzer/SKILL.md \
-  https://raw.githubusercontent.com/Kimputing/centertest-skills/main/skills/ddt-analyzer/SKILL.md
+```text
+/plugin marketplace add Kimputing/centertest-skills
+/plugin install ddt-analyzer@centertest-skills
 ```
+
+To update later: `/plugin marketplace update centertest-skills`.
+
+See [`skills/ddt-analyzer/SKILL.md`](skills/ddt-analyzer/SKILL.md) for trigger phrases and the full skill definition.
 
 ## Prerequisites
 
 - Python 3 (`python3` or `python`)
 - `openpyxl` Python package (`pip install openpyxl`)
 
-## Usage
-
-```bash
-# Analyze and generate report
-python3 ddt-analyzer.py
-
-# Exclude paths
-python3 ddt-analyzer.py --exclude testdata/archive,testdata/old
-```
-
-## Report Sheets (15)
+## Report sheets (15)
 
 | # | Sheet | Content |
 |---|-------|---------|
@@ -56,4 +40,4 @@ python3 ddt-analyzer.py --exclude testdata/archive,testdata/old
 
 ## Configuration
 
-Uses the same project path as ddt-tools (`~/.centertest/ddt-tools.json`).
+Reuses the project path saved by `ddt-tools` in `~/.centertest/ddt-tools.json`. The `CENTERTEST_PROJECT_DIR` environment variable overrides saved config.

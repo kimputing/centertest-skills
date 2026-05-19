@@ -31,10 +31,10 @@ On first run, the scripts will prompt for the project path and save it to `~/.ce
 ```bash
 # Set/override project path
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/ddt_config.py --set-path "/path/to/centertest-project"
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt_config.py" --set-path "/path/to/centertest-project"
 
 # Show current path
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/ddt_config.py --show-path
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt_config.py" --show-path
 ```
 
 ## Tools
@@ -47,10 +47,10 @@ Validates that DC DataCombination sheets only reference codes that exist in thei
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Validate all DC files
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-validate-refs.py
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-validate-refs.py"
 
 # Validate a specific DC file
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-validate-refs.py testdata/WorkersCompDC.xlsx
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-validate-refs.py" testdata/WorkersCompDC.xlsx
 ```
 
 **What it checks:**
@@ -70,13 +70,13 @@ Smart cell-level diff for xlsx test data files.
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Diff working copy vs origin/main
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-diff.py testdata/WorkersCompDC.xlsx
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-diff.py" testdata/WorkersCompDC.xlsx
 
 # Diff vs a specific git ref
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-diff.py --ref HEAD~1 testdata/WorkersCompDC.xlsx
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-diff.py" --ref HEAD~1 testdata/WorkersCompDC.xlsx
 
 # Diff two files directly
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-diff.py old.xlsx new.xlsx
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-diff.py" old.xlsx new.xlsx
 ```
 
 **Output includes:** new/removed sheets, added/removed columns, cell-level changes grouped by code, added/removed rows.
@@ -87,7 +87,7 @@ Reports codes in Data files that are not referenced by any DC DataCombination sh
 
 ```bash
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-cleanup-unused.py
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-cleanup-unused.py"
 ```
 
 ### 4. Check Code Usages (`ddt-check-code-usages.py`)
@@ -98,10 +98,10 @@ Validates that hardcoded string codes in `DDTHelper.getXxx("code")` Java calls r
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Check all Java source files
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/ddt-check-code-usages.py
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-check-code-usages.py"
 
 # Check a specific file
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/ddt-check-code-usages.py src/main/java/com/example/SomeTest.java
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-check-code-usages.py" src/main/java/com/example/SomeTest.java
 ```
 
 **How it works:**
@@ -118,7 +118,7 @@ Converts xlsx to human-readable text. Useful as a git textconv driver.
 
 ```bash
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
-"$PYTHON" ~/.claude/skills/ddt-tools/scripts/xlsx-textconv.py testdata/WorkersCompDC.xlsx
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-textconv.py" testdata/WorkersCompDC.xlsx
 ```
 
 ## Script Details

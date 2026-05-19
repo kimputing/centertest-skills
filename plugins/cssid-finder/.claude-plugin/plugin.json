@@ -1,0 +1,8 @@
+{
+  "name": "cssid-finder",
+  "description": "Find Java getter chains for Guidewire UI CSS IDs",
+  "author": { "name": "Kimputing" },
+  "homepage": "https://github.com/Kimputing/centertest-skills",
+  "repository": "https://github.com/Kimputing/centertest-skills",
+  "license": "MIT"
+}

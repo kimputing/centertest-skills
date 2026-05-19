@@ -27,10 +27,10 @@ Trigger this skill when the user:
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 # Analyze everything
-"$PYTHON" ~/.claude/skills/ddt-analyzer/scripts/ddt-analyzer.py
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py"
 
 # Exclude specific paths
-"$PYTHON" ~/.claude/skills/ddt-analyzer/scripts/ddt-analyzer.py --exclude testdata/archive,testdata/old
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py" --exclude testdata/archive,testdata/old
 ```
 
 ### Report output

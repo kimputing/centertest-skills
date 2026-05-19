@@ -1,0 +1,8 @@
+{
+  "name": "centertest-healthcheck",
+  "description": "Java code quality analysis for CenterTest projects — 27 rules, HTML+Excel reports",
+  "author": { "name": "Kimputing" },
+  "homepage": "https://github.com/Kimputing/centertest-skills",
+  "repository": "https://github.com/Kimputing/centertest-skills",
+  "license": "MIT"
+}

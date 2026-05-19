@@ -27,48 +27,48 @@ Analyze the current project with the Full ruleset:
 
 ```bash
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/centertest/project"
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/centertest/project"
 ```
 
 ### Choose a Ruleset
 
 ```bash
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --ruleset Statistics
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --ruleset CenterTest
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --ruleset Quality
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --ruleset Statistics
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --ruleset CenterTest
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --ruleset Quality
 ```
 
 ### Run Specific Rules
 
 ```bash
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --rules "0001,1002,3001"
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --rules "0001,1002,3001"
 ```
 
 ### Git History Analysis
 
 ```bash
 # Date range
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --commit-from 2024-01-01 --commit-to 2024-06-30
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --commit-from 2024-01-01 --commit-to 2024-06-30
 
 # Monthly sampling
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --monthly --commit-from 2023-01-01
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --monthly --commit-from 2023-01-01
 
 # PR diff
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --path "/path/to/project" --pr main feature/new-tests
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --pr main feature/new-tests
 ```
 
 ### Configuration
 
 ```bash
 # Save project path
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --set-path "/path/to/project"
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --set-path "/path/to/project"
 
 # Show current path
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --show-path
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --show-path
 
 # List rules and rulesets
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --list-rules
-"$PYTHON" ~/.claude/skills/centertest-healthcheck/scripts/eir_analyzer.py --list-rulesets
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --list-rules
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --list-rulesets
 ```
 
 ## Available Rule Sets

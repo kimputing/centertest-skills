@@ -34,7 +34,7 @@ Examples:
 Determine the Python command available on the system (`python3` or `python`) and use it:
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python) && "$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py <app> "<cssId>"
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python) && "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/find_getter.py" <app> "<cssId>"
 ```
 
 **First run**: the script will prompt for the path to the generated project's resources directory and save it to `~/.centertest/cssid-finder.json`.
@@ -42,13 +42,13 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python) && "$
 **Override path**: if the user asks to change the path or you need to point to a different project:
 
 ```bash
-"$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py --set-path "/path/to/generated/src/main/resources"
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/find_getter.py" --set-path "/path/to/generated/src/main/resources"
 ```
 
 **Show current path**:
 
 ```bash
-"$PYTHON" ~/.claude/skills/cssid-finder/scripts/find_getter.py --show-path
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/find_getter.py" --show-path
 ```
 
 ### Step 3: Present result
