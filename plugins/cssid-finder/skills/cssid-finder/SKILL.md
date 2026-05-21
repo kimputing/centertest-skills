@@ -59,7 +59,10 @@ Show the getter chain as a code snippet the developer can paste into their test:
 new AccountFile_SummaryPage(getContext()).getAccountHolder()
 ```
 
-If not found, show the normalized form that was searched so the user can verify the CSS ID.
+If the result contains an iterator placeholder `#` (e.g. `getClauseIterator(#)`), tell the
+user to replace it with the concrete row index, for example `getClauseIterator(0)`.
+
+If not found, the script reports how many forms it searched so the user can verify the CSS ID.
 
 ## Script Details
 
@@ -68,8 +71,14 @@ If not found, show the normalized form that was searched so the user can verify 
 - **Auto-detects** two layouts:
   1. **Properties** (new): `<resources>/cssids/<app>/<Page>.properties` — key=value format, one file per page
   2. **Legacy**: `<resources>/<app>.cssids` — single JSON-like file per app
-- **Normalization**: numeric segments replaced with `[ROW]` (e.g. `LV-5-Name` → `LV-[ROW]-Name`), and trailing `_Input` suffix is stripped
-- **Matching**: exact match first, then contains match for partial CSS IDs
+- **Normalization** mirrors how the generator builds the stored keys:
+  - Each numeric segment maps to either an iterator index (`#`) or a table-row index (`[ROW]`).
+    A single id can mix both (e.g. `ClauseIterator-3-...-RiskTermsLV-0-...`), so the script tries
+    every `#`/`[ROW]` combination of the numeric segments and matches the one that exists.
+  - Conditional toolbar segments `[X_tb]` are expanded into three variants: kept as-is,
+    brackets removed, and the whole segment dropped (matching `AbstractWidget.findElement`).
+  - Trailing `_Input` suffix is stripped.
+- **Matching**: exact key match across all candidate forms first, then partial (contains) match
 - **Search**: uses `grep -F` for fast literal search
 
 ## Configuration

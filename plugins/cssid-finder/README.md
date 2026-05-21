@@ -28,6 +28,19 @@ The script auto-detects which layout is present:
 | **Properties** (new) | `cssids/<app>/<Page>.properties` | `cssId=getterChain` |
 | **Legacy** | `<app>.cssids` | JSON-like `"cssId"` / `"hierarchyPath"` pairs |
 
+## How matching works
+
+A copied runtime CSS ID rarely matches a stored key verbatim, because the generator stores
+*normalized* keys. The script reproduces that normalization:
+
+- numeric iterator indices become `#`, table/list-view row indices become `[ROW]` — and since
+  one id can contain both, the script tries every `#`/`[ROW]` combination and matches the key
+  that exists;
+- conditional toolbar segments `[X_tb]` are tried kept, with brackets removed, and dropped;
+- a trailing `_Input` suffix is stripped.
+
+When a result keeps a literal `#` (e.g. `getClauseIterator(#)`), replace it with the row index.
+
 ## Supported apps
 
 | App | Folder/File | Guidewire Product |
