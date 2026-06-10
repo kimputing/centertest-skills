@@ -37,6 +37,21 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt_config.py" --show-path
 ```
 
+## PR-Review Reports
+
+Every report tool (validate-refs, diff, cleanup-unused, check-code-usages) also saves its console output to a file inside the CenterTest project:
+
+```
+pr-review/<git user.name>/<yyyy-MM-dd_HH-mm-ss>_<tool-name>.txt
+```
+
+- The subfolder is the sanitized `git config user.name` (falls back to the OS username).
+- The report is written even when the tool fails (e.g. broken references) — the non-zero exit code is preserved.
+- Saving is skipped silently if the working directory has no `testdata/` folder (not a CenterTest project).
+- `xlsx-textconv.py` does NOT save reports — it is a git textconv driver and runs on every `git diff`.
+
+This mirrors the `DDT_check_differences` / `DDT_check_references` Gradle tasks, which save their reports to the same `pr-review/` structure.
+
 ## Tools
 
 ### 1. Validate References (`xlsx-validate-refs.py`)

@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Add script directory to path for config import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ddt_config import get_project_dir
+from ddt_config import get_project_dir, run_with_pr_review_report
 
 try:
     from openpyxl import load_workbook
@@ -268,4 +268,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_with_pr_review_report("xlsx-validate-refs", main)

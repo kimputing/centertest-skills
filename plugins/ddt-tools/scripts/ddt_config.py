@@ -8,9 +8,14 @@ Usage:
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/ddt-tools/scripts/ddt-config.py
 """
 
+import getpass
+import io
 import json
 import os
+import re
+import subprocess
 import sys
+from datetime import datetime
 
 CONFIG_DIR = os.path.expanduser("~/.centertest")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "ddt-tools.json")
@@ -103,6 +108,85 @@ def show_path():
         print(f"Active path: {saved}")
     else:
         print("No path configured. Run any DDT tool or use --set-path to configure.")
+
+
+# ─────────────────────────────────────────────────────────────
+# PR-review report saving — each report tool also saves its console
+# output to pr-review/<git user>/<timestamp>_<tool>.txt inside the
+# CenterTest project (mirrors the DDT_check_* Gradle tasks).
+# ─────────────────────────────────────────────────────────────
+
+
+def _resolve_git_user(root):
+    """Resolve the git user.name for the project, falling back to the OS user."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            cwd=root, capture_output=True, text=True,
+        )
+        user = result.stdout.strip()
+    except OSError:
+        user = ""
+    if not user:
+        user = getpass.getuser()
+    # user.name may contain spaces/special chars — keep the path safe
+    return re.sub(r"[^A-Za-z0-9._-]", "_", user)
+
+
+def save_pr_review_report(tool_name, text, root=None):
+    """Write report text to pr-review/<git user>/<timestamp>_<tool>.txt under root.
+
+    Returns the report file path, or None if root is not a CenterTest
+    project (no testdata/ directory) — avoids littering arbitrary cwds.
+    """
+    root = root or os.getcwd()
+    if not os.path.isdir(os.path.join(root, "testdata")):
+        return None
+    out_dir = os.path.join(root, "pr-review", _resolve_git_user(root))
+    os.makedirs(out_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = os.path.join(out_dir, f"{timestamp}_{tool_name}.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
+
+class _Tee:
+    """Duplicates writes to a real stream and a shared in-memory buffer."""
+
+    def __init__(self, stream, buffer):
+        self.stream = stream
+        self.buffer = buffer
+
+    def write(self, data):
+        self.stream.write(data)
+        self.buffer.write(data)
+
+    def flush(self):
+        self.stream.flush()
+
+
+def run_with_pr_review_report(tool_name, main_func):
+    """Run main_func with stdout+stderr teed into a pr-review report file.
+
+    The report is saved even when main_func exits non-zero (the exit
+    code is preserved), so failed validations still leave evidence.
+    """
+    buffer = io.StringIO()
+    real_out, real_err = sys.stdout, sys.stderr
+    sys.stdout = _Tee(real_out, buffer)
+    sys.stderr = _Tee(real_err, buffer)
+    exit_code = 0
+    try:
+        main_func()
+    except SystemExit as e:
+        exit_code = e.code if isinstance(e.code, int) else 1
+    finally:
+        sys.stdout, sys.stderr = real_out, real_err
+        path = save_pr_review_report(tool_name, buffer.getvalue())
+        if path:
+            print(f"\nReport saved to {path}")
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

@@ -33,3 +33,7 @@ See [`skills/ddt-tools/SKILL.md`](skills/ddt-tools/SKILL.md) for trigger phrases
 ## Configuration
 
 On first run, any tool will prompt for the CenterTest project path and save it to `~/.centertest/ddt-tools.json`. The `CENTERTEST_PROJECT_DIR` environment variable overrides saved config.
+
+## PR-Review Reports
+
+Each report tool (all except `xlsx-textconv.py` and `ddt_config.py`) also saves its console output to `pr-review/<git user.name>/<timestamp>_<tool>.txt` inside the CenterTest project — even when the tool exits non-zero. This mirrors the `DDT_check_*` Gradle tasks in the CenterTest project itself.

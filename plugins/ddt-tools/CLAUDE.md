@@ -20,6 +20,8 @@ scripts/
 
 `ddt_config.py` provides `get_project_dir()` used by all scripts. Resolution: `CENTERTEST_PROJECT_DIR` env var > `~/.centertest/ddt-tools.json` > interactive prompt.
 
+It also provides `run_with_pr_review_report(tool_name, main)` — wraps a tool's `main()`, tees stdout+stderr, and saves the output to `pr-review/<git user.name>/<timestamp>_<tool>.txt` in the project dir (skipped if cwd has no `testdata/`). Used by all report tools; NOT by `xlsx-textconv.py` (git diff driver — would spam files). Reports are saved even on non-zero exit; the exit code is preserved.
+
 ## Key Concepts
 
 - **`#` columns**: Reference columns in DC sheets (e.g., `#Payment` references the `payment` sheet in a Data file)
