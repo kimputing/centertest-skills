@@ -18,6 +18,7 @@ from pathlib import Path
 # Add script directory to path for config import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ddt_config import get_project_dir, run_with_pr_review_report
+from ddt_reference_scope import parse_references, resolve
 
 try:
     from openpyxl import load_workbook
@@ -74,9 +75,11 @@ def load_reference_codes(dc_path):
         for code, row_idx in codes.items():
             all_codes[lower][code] = (os.path.basename(dc_path), row_idx)
 
-    # Read References sheet to find external data files
-    if "References" in wb.sheetnames:
-        ref_headers, ref_codes = read_sheet(wb, "References")
+    # Determine the reference file locations: the DC's own References sheet (verbatim) when present,
+    # otherwise the reference-centric $references scope (mirror of the Java resolver).
+    has_refs_sheet = any(s.lower() == "references" for s in wb.sheetnames)
+    locations = []
+    if has_refs_sheet:
         ws = wb["References"]
         headers = None
         for row in ws.iter_rows(values_only=True):
@@ -86,40 +89,30 @@ def load_reference_codes(dc_path):
             if headers is None:
                 headers = [v.lower() for v in values]
                 continue
-            row_dict = dict(zip(headers, values))
-            location = row_dict.get("location", "")
+            location = dict(zip(headers, values)).get("location", "")
             if location:
-                ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
-                if not os.path.isfile(ref_path):
-                    ref_path = location
-                if os.path.isfile(ref_path):
-                    ref_wb = load_workbook(ref_path, read_only=True, data_only=True)
-                    for sheet_name in ref_wb.sheetnames:
-                        lower = sheet_name.lower()
-                        _, codes = read_sheet(ref_wb, sheet_name)
-                        if lower not in all_codes:
-                            all_codes[lower] = {}
-                        for code, row_idx in codes.items():
-                            if code not in all_codes[lower]:
-                                all_codes[lower][code] = (os.path.basename(ref_path), row_idx)
-                    ref_wb.close()
+                locations.append(location)
+    else:
+        entries = parse_references(load_hierarchy())
+        locations, _ = resolve(dc_path.replace("\\", "/"), None, entries)
 
     wb.close()
 
-    # Also load from parent DC if this is a child DC (via hierarchy)
-    hierarchy = load_hierarchy()
-    for parent_dc, child_patterns in hierarchy.items():
-        for pattern in child_patterns:
-            if re.match(pattern, dc_path):
-                if os.path.isfile(parent_dc):
-                    parent_codes = load_reference_codes(parent_dc)
-                    for sheet_lower, codes in parent_codes.items():
-                        if sheet_lower not in all_codes:
-                            all_codes[sheet_lower] = {}
-                        for code, source in codes.items():
-                            if code not in all_codes[sheet_lower]:
-                                all_codes[sheet_lower][code] = source
-                break
+    for location in locations:
+        ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
+        if not os.path.isfile(ref_path):
+            ref_path = location
+        if os.path.isfile(ref_path):
+            ref_wb = load_workbook(ref_path, read_only=True, data_only=True)
+            for sheet_name in ref_wb.sheetnames:
+                lower = sheet_name.lower()
+                _, codes = read_sheet(ref_wb, sheet_name)
+                if lower not in all_codes:
+                    all_codes[lower] = {}
+                for code, row_idx in codes.items():
+                    if code not in all_codes[lower]:
+                        all_codes[lower][code] = (os.path.basename(ref_path), row_idx)
+            ref_wb.close()
 
     return all_codes
 

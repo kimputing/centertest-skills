@@ -1,0 +1,138 @@
+{
+  "_comment": "Shared, language-neutral conformance fixture for DdtReferenceScopeResolver (Java) and the Python ddt-analyzer mirror. Reference-centric model: each reference file lists the DC-path patterns that consume it ($references). Both implementations MUST pass every case; edits to either resolver must update this file in the same change.",
+
+  "model": {
+    "$references": {
+      "testdata/SharedData.xlsx": [ "testdata/.*DC\\.xlsx" ],
+      "testdata/WorkersCompData.xlsx": [ "testdata/workerscomp/.*DC\\.xlsx" ],
+      "testdata/ClaimData.xlsx": [ "testdata/workerscomp/WC_Claim.*DC\\.xlsx", "testdata/personalauto/PA_Claim.*DC\\.xlsx" ]
+    }
+  },
+
+  "cases": [
+    {
+      "name": "local sheet present wins verbatim",
+      "dcLocation": "testdata/workerscomp/WC_SubmissionDC.xlsx",
+      "localSheetReferences": [ "testdata/Foo.xlsx", "testdata/Bar.xlsx" ],
+      "expect": { "origin": "LOCAL_SHEET", "locations": [ "testdata/Foo.xlsx", "testdata/Bar.xlsx" ] }
+    },
+    {
+      "name": "local sheet present and empty — verbatim empty list, still LOCAL_SHEET",
+      "dcLocation": "testdata/workerscomp/WC_SubmissionDC.xlsx",
+      "localSheetReferences": [],
+      "expect": { "origin": "LOCAL_SHEET", "locations": [] }
+    },
+    {
+      "name": "sheet absent — broad (.*DC) reference plus LOB reference, in model order",
+      "dcLocation": "testdata/workerscomp/WC_SubmissionDC.xlsx",
+      "localSheetReferences": null,
+      "expect": { "origin": "REFERENCE_MAP", "locations": [ "testdata/SharedData.xlsx", "testdata/WorkersCompData.xlsx" ] }
+    },
+    {
+      "name": "claim DC also picks up the cross-LOB ClaimData module",
+      "dcLocation": "testdata/workerscomp/WC_ClaimDC.xlsx",
+      "localSheetReferences": null,
+      "expect": { "origin": "REFERENCE_MAP", "locations": [ "testdata/SharedData.xlsx", "testdata/WorkersCompData.xlsx", "testdata/ClaimData.xlsx" ] }
+    },
+    {
+      "name": "PA claim DC reuses ClaimData across LOB (no WorkersCompData)",
+      "dcLocation": "testdata/personalauto/PA_ClaimSpecialityDC.xlsx",
+      "localSheetReferences": null,
+      "expect": { "origin": "REFERENCE_MAP", "locations": [ "testdata/SharedData.xlsx", "testdata/ClaimData.xlsx" ] }
+    },
+    {
+      "name": "non-DC path matches nothing — empty scope",
+      "dcLocation": "testdata/other/Thing.xlsx",
+      "localSheetReferences": null,
+      "expect": { "origin": "REFERENCE_MAP", "locations": [] }
+    }
+  ],
+
+  "collisionCases": [
+    {
+      "name": "two files in scope share a sheet name — collision reported",
+      "scopeLocations": [ "testdata/SharedData.xlsx", "testdata/WorkersCompData.xlsx", "testdata/CommercialAutoData.xlsx" ],
+      "sheetNamesByLocation": {
+        "testdata/SharedData.xlsx": [ "address", "producer" ],
+        "testdata/WorkersCompData.xlsx": [ "coverage", "coveredemployee" ],
+        "testdata/CommercialAutoData.xlsx": [ "coverage", "policychange" ]
+      },
+      "expectCollisions": [ "coverage" ]
+    },
+    {
+      "name": "clean scope — no shared sheet names",
+      "scopeLocations": [ "testdata/SharedData.xlsx", "testdata/WorkersCompData.xlsx" ],
+      "sheetNamesByLocation": {
+        "testdata/SharedData.xlsx": [ "address", "producer" ],
+        "testdata/WorkersCompData.xlsx": [ "coverage", "coveredemployee" ]
+      },
+      "expectCollisions": []
+    }
+  ],
+
+  "_validatorComment": "Cases for DataDrivenHierarchyValidator.validate. existingFiles = paths the fileExists predicate returns true for. Each expectedIssues entry is matched by {severity + messageContains substring}; empty expectedIssues means valid (zero issues).",
+  "validatorCases": [
+    {
+      "name": "valid config — no issues",
+      "rawHierarchy": { "$references": {
+        "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"],
+        "testdata/WorkersCompData.xlsx": ["testdata/workerscomp/.*DC\\.xlsx"]
+      } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx", "testdata/WorkersCompData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["address"], "testdata/WorkersCompData.xlsx": ["coverage"] },
+      "expectedIssues": []
+    },
+    {
+      "name": "ERROR — reference file does not exist",
+      "rawHierarchy": { "$references": { "testdata/Missing.xlsx": ["testdata/.*DC\\.xlsx"] } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": [],
+      "sheetNamesByFile": {},
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "does not exist" } ]
+    },
+    {
+      "name": "ERROR — invalid regex",
+      "rawHierarchy": { "$references": { "testdata/SharedData.xlsx": ["testdata/[unclosed"] } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["address"] },
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "invalid regex" } ]
+    },
+    {
+      "name": "ERROR — $references is not an object",
+      "rawHierarchy": { "$references": "oops" },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": [],
+      "sheetNamesByFile": {},
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "must be an object" } ]
+    },
+    {
+      "name": "ERROR — scope sheet-name collision",
+      "rawHierarchy": { "$references": {
+        "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"],
+        "testdata/WorkersCompData.xlsx": ["testdata/workerscomp/.*DC\\.xlsx"]
+      } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx", "testdata/WorkersCompData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["coverage"], "testdata/WorkersCompData.xlsx": ["coverage"] },
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "collision" } ]
+    },
+    {
+      "name": "WARNING — a pattern matches no DC file",
+      "rawHierarchy": { "$references": { "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx", "testdata/nonexistent/.*DC\\.xlsx"] } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["address"] },
+      "expectedIssues": [ { "severity": "WARNING", "messageContains": "matches no DC file" } ]
+    },
+    {
+      "name": "WARNING — reference file consumed by no DC",
+      "rawHierarchy": { "$references": { "testdata/OrphanData.xlsx": ["testdata/nope/.*DC\\.xlsx"] } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/OrphanData.xlsx"],
+      "sheetNamesByFile": { "testdata/OrphanData.xlsx": ["x"] },
+      "expectedIssues": [ { "severity": "WARNING", "messageContains": "consumed by no DC" } ]
+    }
+  ]
+}

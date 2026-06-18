@@ -41,8 +41,11 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 
-# Add script directory to path for shared config
+# Add script directories to path for shared config and the reference-scope mirror
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ddt-tools", "scripts"))
+
+from ddt_reference_scope import parse_references, resolve
 
 try:
     from ddt_config import get_project_dir
@@ -123,7 +126,7 @@ def find_all_xlsx_files():
 
 
 def find_dc_files(exclude_paths=None):
-    """Find all xlsx files with datacombination and references sheets."""
+    """Find all DC xlsx files (those with a DataCombination sheet; the References sheet is optional)."""
     exclude_paths = exclude_paths or []
     files = find_all_xlsx_files()
 
@@ -135,14 +138,29 @@ def find_dc_files(exclude_paths=None):
             wb = load_workbook(f, read_only=True, data_only=True)
             sheet_names_lower = [s.lower() for s in wb.sheetnames]
             has_dc = "datacombination" in sheet_names_lower
-            has_refs = "references" in sheet_names_lower
             wb.close()
-            if has_dc and has_refs:
+            if has_dc:
                 dc_files.append(f)
         except Exception:
             continue
 
     return dc_files
+
+
+_reference_entries_cache = None
+
+
+def reference_entries():
+    """Parsed $references entries from testdata/DataDrivenHierarchy.json (cached)."""
+    global _reference_entries_cache
+    if _reference_entries_cache is None:
+        path = "testdata/DataDrivenHierarchy.json"
+        hierarchy = {}
+        if os.path.isfile(path):
+            with open(path) as f:
+                hierarchy = json.load(f)
+        _reference_entries_cache = parse_references(hierarchy)
+    return _reference_entries_cache
 
 
 def parse_dc_file(dc_path):
@@ -191,6 +209,9 @@ def parse_dc_file(dc_path):
                         if code:
                             dc.references[sheet_name].append(code)
 
+    # Reference file locations: the DC's own References sheet (verbatim) when present, otherwise the
+    # reference-centric $references scope (mirror of the Java resolver).
+    locations = []
     if ref_sheet_name:
         ws = wb[ref_sheet_name]
         headers = None
@@ -201,15 +222,18 @@ def parse_dc_file(dc_path):
             if headers is None:
                 headers = [v.lower().strip() for v in values]
                 continue
-            row_dict = dict(zip(headers, values))
-            location = row_dict.get("location", "")
+            location = dict(zip(headers, values)).get("location", "")
             if location:
-                ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
-                if not os.path.isfile(ref_path):
-                    ref_path = location
-                if os.path.isfile(ref_path):
-                    ref_file = parse_referenced_file(ref_path)
-                    dc.referenced_files.append(ref_file)
+                locations.append(location)
+    else:
+        locations, _ = resolve(dc_path.replace("\\", "/"), None, reference_entries())
+
+    for location in locations:
+        ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
+        if not os.path.isfile(ref_path):
+            ref_path = location
+        if os.path.isfile(ref_path):
+            dc.referenced_files.append(parse_referenced_file(ref_path))
 
     wb.close()
     return dc
@@ -477,16 +501,16 @@ def analyze_hierarchy():
         hierarchy = json.load(f)
 
     all_xlsx = set(find_all_xlsx_files())
+    dc_files = find_dc_files()
 
-    # Check each parent and its child patterns
-    for parent_dc, child_patterns in hierarchy.items():
-        # Check parent exists
+    # Class-inheritance entries are the non-$ keys (parent DC -> child patterns).
+    class_entries = {k: v for k, v in hierarchy.items() if not k.startswith("$")}
+
+    for parent_dc, child_patterns in class_entries.items():
         if not os.path.isfile(parent_dc):
             results.append((parent_dc, "PARENT_MISSING", "Parent DC file not found"))
         else:
             results.append((parent_dc, "OK", f"Parent exists, {len(child_patterns)} pattern(s)"))
-
-        # Check which files each pattern matches
         for pattern in child_patterns:
             matched = [f for f in all_xlsx if re.match(pattern, f)]
             if not matched:
@@ -495,18 +519,29 @@ def analyze_hierarchy():
                 for m in matched:
                     results.append((f"  {m}", "MATCHED", f"Matched by {pattern}"))
 
-    # Check for child DC files NOT covered by any hierarchy pattern
-    all_patterns = []
-    for patterns in hierarchy.values():
-        all_patterns.extend(patterns)
+    # Reference-centric $references map: each reference file -> consuming DC patterns.
+    references = hierarchy.get("$references", {})
+    if isinstance(references, dict):
+        for ref_file, patterns in references.items():
+            if not os.path.isfile(ref_file):
+                results.append((f"$references {ref_file}", "REF_MISSING", "Reference file not found"))
+            patterns = patterns if isinstance(patterns, list) else []
+            for pattern in patterns:
+                try:
+                    rx = re.compile(pattern)
+                except re.error:
+                    results.append((f"  $references pattern: {pattern}", "BAD_REGEX", "Invalid regex"))
+                    continue
+                if not any(rx.fullmatch(d) for d in dc_files):
+                    results.append((f"  $references pattern: {pattern}", "NO_MATCH", "Matches no DC file"))
 
-    dc_files = find_dc_files()
-    parent_dcs = set(hierarchy.keys())
+    # Child DC files NOT covered by any class-inheritance pattern (informational)
+    all_patterns = [p for patterns in class_entries.values() for p in patterns]
+    parent_dcs = set(class_entries.keys())
     for dc in dc_files:
         if dc in parent_dcs:
             continue
-        covered = any(re.match(p, dc) for p in all_patterns)
-        if not covered:
+        if not any(re.match(p, dc) for p in all_patterns):
             results.append((dc, "UNCOVERED", "DC file not covered by any hierarchy pattern"))
 
     return results
