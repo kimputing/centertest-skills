@@ -134,5 +134,66 @@
       "sheetNamesByFile": { "testdata/OrphanData.xlsx": ["x"] },
       "expectedIssues": [ { "severity": "WARNING", "messageContains": "consumed by no DC" } ]
     }
+  ],
+
+  "_relationshipValidatorComment": "Cases for DataDrivenHierarchyValidator.validateRelationships ($identifiers + $relationships). existingFiles is the fileExists set for relationship target DC files.",
+  "relationshipValidatorCases": [
+    {
+      "name": "valid relationships — no issues",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx", "testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "expectedIssues": []
+    },
+    {
+      "name": "no relationship config — no issues",
+      "rawHierarchy": { "$references": { "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"] } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": [],
+      "expectedIssues": []
+    },
+    {
+      "name": "ERROR — relationship target DC file does not exist",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx"],
+      "existingFiles": [],
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "target DC file does not exist" } ]
+    },
+    {
+      "name": "ERROR — DC path matches multiple identifiers",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"], "DUP": ["testdata/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "matches multiple identifiers" } ]
+    },
+    {
+      "name": "WARNING — relationship identifier has no $identifiers entry",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx", "PA": "testdata/personalauto/PA_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx", "testdata/personalauto/PA_ClaimDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx", "testdata/personalauto/PA_SubmissionDC.xlsx"],
+      "expectedIssues": [ { "severity": "WARNING", "messageContains": "no $identifiers entry" } ]
+    },
+    {
+      "name": "ERROR — invalid identifier regex",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/[unclosed"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "invalid regex" } ]
+    }
   ]
 }

@@ -18,7 +18,8 @@ from pathlib import Path
 # Add script directory to path for config import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ddt_config import get_project_dir, run_with_pr_review_report
-from ddt_reference_scope import parse_references, resolve
+from ddt_reference_scope import (parse_references, resolve, parse_relationships,
+                                  default_identifier_for, identifier_of, strip_identifier)
 
 try:
     from openpyxl import load_workbook
@@ -133,6 +134,27 @@ def load_hierarchy():
     return _hierarchy_cache
 
 
+_dc_codes_cache = {}
+
+
+def load_dc_codes(dc_file):
+    """Return the set of Code values in a target DC's DataCombination sheet (cached)."""
+    if dc_file in _dc_codes_cache:
+        return _dc_codes_cache[dc_file]
+    codes = set()
+    try:
+        wb = load_workbook(dc_file, read_only=True, data_only=True)
+        dc_sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
+        if dc_sheet:
+            _, code_map = read_sheet(wb, dc_sheet)
+            codes = set(code_map.keys())
+        wb.close()
+    except Exception:
+        pass
+    _dc_codes_cache[dc_file] = codes
+    return codes
+
+
 def validate_dc(dc_path):
     """Validate a single DC file. Returns list of (row, col, code, sheet, message) errors."""
     if not os.path.isfile(dc_path):
@@ -173,44 +195,75 @@ def validate_dc(dc_path):
     if not headers:
         return []
 
-    # Find reference columns (start with #)
+    # Find reference columns (#) and relationship columns (@)
     ref_columns = [h for h in headers if h.startswith("#")]
-    if not ref_columns:
+    rel_columns = [h for h in headers if h.startswith("@")]
+    if not ref_columns and not rel_columns:
         return []
-
-    # Load all available codes from reference data
-    ref_codes = load_reference_codes(dc_path)
 
     errors = []
 
-    # First pass: check which # columns have no matching sheet at all
-    missing_sheets = set()
-    for col in ref_columns:
-        sheet_name = col[1:].lower()
-        if sheet_name not in ref_codes:
-            has_values = any(row_data.get(col, "") for _, row_data in dc_rows)
-            if has_values:
-                missing_sheets.add(col)
-                errors.append((0, col, "", sheet_name, "no matching sheet found in any reference file"))
+    # --- # reference columns: each code must exist in the resolved reference data ---
+    if ref_columns:
+        ref_codes = load_reference_codes(dc_path)
 
-    # Second pass: validate codes for columns that do have a matching sheet
-    for row_idx, row_data in dc_rows:
+        # First pass: check which # columns have no matching sheet at all
+        missing_sheets = set()
         for col in ref_columns:
-            if col in missing_sheets:
-                continue
-            cell_value = row_data.get(col, "")
-            if not cell_value:
-                continue
-
             sheet_name = col[1:].lower()
-            available = ref_codes[sheet_name]
+            if sheet_name not in ref_codes:
+                has_values = any(row_data.get(col, "") for _, row_data in dc_rows)
+                if has_values:
+                    missing_sheets.add(col)
+                    errors.append((0, col, "", sheet_name, "no matching sheet found in any reference file"))
 
-            codes = [c.strip() for c in cell_value.split(",")]
-            for code in codes:
-                if code and code not in available:
-                    similar = [c for c in available if c.lower() == code.lower()]
-                    hint = f" (did you mean '{similar[0]}'?)" if similar else ""
-                    errors.append((row_idx, col, code, sheet_name, f"code not found{hint}"))
+        # Second pass: validate codes for columns that do have a matching sheet
+        for row_idx, row_data in dc_rows:
+            for col in ref_columns:
+                if col in missing_sheets:
+                    continue
+                cell_value = row_data.get(col, "")
+                if not cell_value:
+                    continue
+
+                sheet_name = col[1:].lower()
+                available = ref_codes[sheet_name]
+
+                codes = [c.strip() for c in cell_value.split(",")]
+                for code in codes:
+                    if code and code not in available:
+                        similar = [c for c in available if c.lower() == code.lower()]
+                        hint = f" (did you mean '{similar[0]}'?)" if similar else ""
+                        errors.append((row_idx, col, code, sheet_name, f"code not found{hint}"))
+
+    # --- @ relationship columns: the resolved target DC file and referenced code must exist ---
+    if rel_columns:
+        by_relationship, identifiers = parse_relationships(load_hierarchy())
+        try:
+            default_id = default_identifier_for(dc_path.replace("\\", "/"), identifiers)
+        except ValueError as e:
+            default_id = ""
+            errors.append((0, "", "", "relationship", str(e)))
+        for row_idx, row_data in dc_rows:
+            for col in rel_columns:
+                cell_value = row_data.get(col, "")
+                if not cell_value:
+                    continue
+                rel_name = col[1:].lower()
+                targets = by_relationship.get(rel_name, {})
+                for raw in [c.strip() for c in cell_value.split(",")]:
+                    if not raw:
+                        continue
+                    ident = identifier_of(raw, default_id)
+                    bare = strip_identifier(raw)
+                    target_file = targets.get(ident)
+                    if target_file is None:
+                        errors.append((row_idx, col, raw, rel_name,
+                                       f"unknown identifier '{ident}' for relationship '{rel_name}' (add it under $relationships)"))
+                    elif not os.path.isfile(target_file):
+                        errors.append((row_idx, col, raw, rel_name, f"target DC file not found: {target_file}"))
+                    elif bare not in load_dc_codes(target_file):
+                        errors.append((row_idx, col, raw, rel_name, f"code '{bare}' not found in {target_file}"))
 
     return errors
 

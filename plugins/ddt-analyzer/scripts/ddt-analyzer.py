@@ -11,7 +11,7 @@ Usage:
 
 Output: DDT_Analysis_<timestamp>.xlsx in the project's results/ directory.
 
-Report sheets (15 total):
+Report sheets (16 total):
   Original:
    1. DataCombination_References  — which Data files each DC file references
    2. ReferencedFiles_DataCombination — which DC files reference each Data file
@@ -29,6 +29,7 @@ Report sheets (15 total):
   13. Duplicate_Codes — same code appearing in multiple Data files/sheets
   14. DC_Metrics — complexity metrics per DC file
   15. Impact_Analysis — blast radius of each Data file
+  16. DC_Relationships — @-relationship resolution: target DC file + referenced code existence
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/ddt-analyzer/scripts/ddt-analyzer.py
 """
@@ -45,7 +46,8 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ddt-tools", "scripts"))
 
-from ddt_reference_scope import parse_references, resolve
+from ddt_reference_scope import (parse_references, resolve, parse_relationships,
+                                  default_identifier_for, identifier_of, strip_identifier)
 
 try:
     from ddt_config import get_project_dir
@@ -107,6 +109,7 @@ class DataCombinationFile:
         self.path = path
         self.referenced_files = []  # list of ReferencedFile
         self.references = {}  # {sheet_name: [code_values_from_dc_rows]}
+        self.relationships = {}  # {relationship_name: [raw_code_values_from_dc_rows]} for @ columns
         self.dc_codes = []  # Code column values from DataCombination sheet
         self.ref_column_count = 0  # number of # columns
 
@@ -181,6 +184,7 @@ def parse_dc_file(dc_path):
         ws = wb[dc_sheet_name]
         headers = None
         ref_columns = {}
+        rel_columns = {}
         code_col_idx = None
         for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
             values = [format_value(c) for c in row]
@@ -192,6 +196,9 @@ def parse_dc_file(dc_path):
                     if h.startswith("#"):
                         ref_columns[i] = h[1:]
                         dc.references[h[1:]] = []
+                    elif h.startswith("@"):
+                        rel_columns[i] = h[1:]
+                        dc.relationships[h[1:]] = []
                     if h.lower() == "code":
                         code_col_idx = i
                 dc.ref_column_count = len(ref_columns)
@@ -208,6 +215,10 @@ def parse_dc_file(dc_path):
                         code = code.strip()
                         if code:
                             dc.references[sheet_name].append(code)
+            for col_idx, rel_name in rel_columns.items():
+                val = values[col_idx] if col_idx < len(values) else ""
+                if val:
+                    dc.relationships[rel_name].append(val)
 
     # Reference file locations: the DC's own References sheet (verbatim) when present, otherwise the
     # reference-centric $references scope (mirror of the Java resolver).
@@ -544,6 +555,106 @@ def analyze_hierarchy():
         if not any(re.match(p, dc) for p in all_patterns):
             results.append((dc, "UNCOVERED", "DC file not covered by any hierarchy pattern"))
 
+    # $identifiers + $relationships (DC -> DC relationships)
+    identifiers_raw = hierarchy.get("$identifiers", {})
+    relationships_raw = hierarchy.get("$relationships", {})
+    identifier_patterns = {}
+    if isinstance(identifiers_raw, dict):
+        for ident, patterns in identifiers_raw.items():
+            compiled = []
+            for pattern in (patterns if isinstance(patterns, list) else []):
+                try:
+                    rx = re.compile(pattern)
+                    compiled.append(rx)
+                    if not any(rx.fullmatch(d) for d in dc_files):
+                        results.append((f"  $identifiers {ident}: {pattern}", "NO_MATCH", "Matches no DC file"))
+                except re.error:
+                    results.append((f"  $identifiers {ident}: {pattern}", "BAD_REGEX", "Invalid regex"))
+            identifier_patterns[ident.upper()] = compiled
+        for dc in dc_files:
+            matched = [i for i, pats in identifier_patterns.items() if any(p.fullmatch(dc) for p in pats)]
+            if len(matched) > 1:
+                results.append((dc, "IDENTIFIER_OVERLAP", f"DC matches multiple identifiers: {matched}"))
+    if isinstance(relationships_raw, dict):
+        for rel, targets in relationships_raw.items():
+            if not isinstance(targets, dict):
+                results.append((f"$relationships {rel}", "BAD_STRUCTURE", "Value must be an identifier -> target DC object"))
+                continue
+            for ident, target in targets.items():
+                if not isinstance(target, str) or not os.path.isfile(target):
+                    results.append((f"$relationships {rel}[{ident}]", "TARGET_MISSING", f"Target DC file not found: {target}"))
+                else:
+                    results.append((f"$relationships {rel}[{ident}]", "OK", f"-> {target}"))
+                if isinstance(identifiers_raw, dict) and ident.upper() not in identifier_patterns:
+                    results.append((f"$relationships {rel}[{ident}]", "NO_IDENTIFIER", f"Identifier '{ident}' has no $identifiers entry"))
+
+    return results
+
+
+def analyze_relationships(dc_files_data):
+    """Resolve each @-relationship cell; report whether the target DC file + referenced code exist."""
+    hierarchy_path = "testdata/DataDrivenHierarchy.json"
+    if not os.path.isfile(hierarchy_path):
+        return []
+    with open(hierarchy_path) as f:
+        hierarchy = json.load(f)
+    by_relationship, identifiers = parse_relationships(hierarchy)
+    code_cache = {}
+
+    def codes_of(target):
+        if target in code_cache:
+            return code_cache[target]
+        codes = set()
+        try:
+            wb = load_workbook(target, read_only=True, data_only=True)
+            name = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
+            if name:
+                headers = None
+                code_idx = None
+                for row in wb[name].iter_rows(values_only=True):
+                    vals = [format_value(c) for c in row]
+                    if all(v == "" for v in vals):
+                        continue
+                    if headers is None:
+                        headers = [v.lower() for v in vals]
+                        code_idx = headers.index("code") if "code" in headers else None
+                        continue
+                    if code_idx is not None and code_idx < len(vals) and vals[code_idx]:
+                        codes.add(vals[code_idx])
+            wb.close()
+        except Exception:
+            pass
+        code_cache[target] = codes
+        return codes
+
+    results = []  # (dc, relationship, raw_code, identifier, bare_code, target_file, status)
+    for dc in dc_files_data:
+        if not dc.relationships:
+            continue
+        try:
+            default_id = default_identifier_for(dc.path.replace("\\", "/"), identifiers)
+        except ValueError:
+            default_id = ""
+        for rel_name, raw_values in dc.relationships.items():
+            rel = rel_name.lower()
+            targets = by_relationship.get(rel, {})
+            for raw_value in raw_values:
+                for code in raw_value.split(","):
+                    code = code.strip()
+                    if not code:
+                        continue
+                    ident = identifier_of(code, default_id)
+                    bare = strip_identifier(code)
+                    target = targets.get(ident)
+                    if target is None:
+                        status = "UNKNOWN_IDENTIFIER"
+                    elif not os.path.isfile(target):
+                        status = "MISSING_TARGET_FILE"
+                    elif bare not in codes_of(target):
+                        status = "MISSING_CODE"
+                    else:
+                        status = "OK"
+                    results.append((dc.path, rel, code, ident, bare, target or "", status))
     return results
 
 
@@ -666,7 +777,7 @@ def analyze_impact(dc_files_data, test_map, ddthelper_map, ddthelper_calls):
 # =============================================================================
 
 def generate_report(dc_files_data, test_map, ddthelper_map, ddthelper_calls):
-    """Generate the Excel analysis report with all 15 sheets."""
+    """Generate the Excel analysis report with all 16 sheets."""
     wb = Workbook()
 
     # --- Sheet 1: DataCombination_References ---
@@ -782,6 +893,12 @@ def generate_report(dc_files_data, test_map, ddthelper_map, ddthelper_calls):
     hierarchy_results = analyze_hierarchy()
     for item, status, detail in hierarchy_results:
         ws.append([item, status, detail])
+
+    # --- Sheet: DC_Relationships (@-relationship resolution: target file + code existence) ---
+    ws = wb.create_sheet("DC_Relationships")
+    ws.append(["DC File", "Relationship", "Raw Code", "Identifier", "Bare Code", "Target File", "Status"])
+    for row in analyze_relationships(dc_files_data):
+        ws.append(list(row))
 
     # --- Sheet 12: Code_Coverage ---
     ws = wb.create_sheet("Code_Coverage")
@@ -911,7 +1028,7 @@ def main():
     print(f"  DC files:          {len(dc_files_data)}")
     print(f"  Referenced files:  {len(_ref_file_cache)}")
     print(f"  Test methods:      {total_tests}")
-    print(f"  Report sheets:     15")
+    print(f"  Report sheets:     16")
     print(f"  Report:            {output_path}")
 
     issues = len(orphaned) + len(broken) + len(invalid_hc) + len(hierarchy_issues)

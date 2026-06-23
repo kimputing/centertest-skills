@@ -1,13 +1,13 @@
 ---
 name: ddt-analyzer
-description: Analyze CenterTest Data-Driven Testing structure and generate a 15-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
+description: Analyze CenterTest Data-Driven Testing structure and generate a 16-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
 ---
 
 # Skill: DDT Analyzer
 
 ## Purpose
 
-Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 15-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
+Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 16-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
 
 ## When to Use
 
@@ -35,7 +35,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 ### Report output
 
-The report is saved to `results/DDT_Analysis_<timestamp>.xlsx` with 15 sheets:
+The report is saved to `results/DDT_Analysis_<timestamp>.xlsx` with 16 sheets:
 
 | # | Sheet | Content |
 |---|-------|---------|
@@ -54,6 +54,7 @@ The report is saved to `results/DDT_Analysis_<timestamp>.xlsx` with 15 sheets:
 | 13 | `Duplicate_Codes` | Same code appearing in multiple Data files/sheets |
 | 14 | `DC_Metrics` | Complexity metrics per DC file (codes, refs, tests) |
 | 15 | `Impact_Analysis` | Blast radius of each Data file (DCs + tests + hardcoded) |
+| 16 | `DC_Relationships` | DC→DC `@`-relationship resolution: target DC file + referenced `Code` existence (`Hierarchy_Validation` also validates `$identifiers`/`$relationships`) |
 
 ## Configuration
 
