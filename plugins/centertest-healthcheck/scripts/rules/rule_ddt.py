@@ -4,6 +4,7 @@ Rules 14002–14004: DDT data source integrity (cross-skill with ddt-tools).
 14002 — @DataDriven datasource file existence check
 14003 — DDT reference column integrity (# columns point to valid sheets/codes)
 14004 — DDT relationship integrity (@ columns resolve to an existing target DC file + code)
+        Also validates #-columns on reference sheets (reference-to-reference edges).
 """
 
 from __future__ import annotations
@@ -418,5 +419,64 @@ def ddt_relationship_integrity(commits: CommitsDict, config) -> RuleResult:
                             continue
                         result.rows.append([fname, row_idx, f"@{rel_name}", raw, issue])
             wb.close()
+
+    # --- Reference-to-reference: #-columns on reference (non-DC) sheets ---
+    # Build a global scope: sheet_name_lower -> {code: row} from all non-DC xlsx in testdata/
+    ref_sheet_codes: dict[str, dict[str, int]] = {}
+    for root, _dirs, filenames in os.walk(testdata_dir):
+        for fname in filenames:
+            if not fname.endswith(".xlsx") or fname.startswith("~$"):
+                continue
+            full_path = os.path.join(root, fname)
+            try:
+                wb_ref = load_workbook(full_path, read_only=True, data_only=True)
+                for sheet_name in wb_ref.sheetnames:
+                    key = sheet_name.lower()
+                    codes = _load_sheet_codes(wb_ref, sheet_name)
+                    if codes and key not in ref_sheet_codes:
+                        ref_sheet_codes[key] = codes
+                wb_ref.close()
+            except Exception:
+                pass
+
+    # Validate #-columns on each reference (non-DC) file's sheets
+    for root, _dirs, filenames in os.walk(testdata_dir):
+        for fname in filenames:
+            if not fname.endswith(".xlsx") or fname.endswith("DC.xlsx") or fname.startswith("~$"):
+                continue
+            full_path = os.path.join(root, fname)
+            try:
+                wb_ref = load_workbook(full_path, read_only=True, data_only=True)
+            except Exception:
+                continue
+            for sheet_name in wb_ref.sheetnames:
+                ws = wb_ref[sheet_name]
+                header_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+                r2r_cols = []
+                for i, h in enumerate(header_row):
+                    if h and str(h).strip().startswith("#"):
+                        raw_target = str(h).strip()[1:]
+                        # Normalise: strip non-alphanumerics, lowercase (mirrors Java)
+                        target_lower = re.sub(r"[^a-z0-9]", "", raw_target.lower())
+                        r2r_cols.append((i, str(h).strip(), raw_target, target_lower))
+                if not r2r_cols:
+                    continue
+                for col_idx, col_header, raw_target, target_lower in r2r_cols:
+                    if target_lower not in ref_sheet_codes:
+                        result.rows.append([fname, sheet_name, "-", col_header, "-",
+                                            f"Referenced sheet '{raw_target}' not found"])
+                        continue
+                    available = ref_sheet_codes[target_lower]
+                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                        if col_idx >= len(row) or not row[col_idx]:
+                            continue
+                        cell_value = str(row[col_idx]).strip()
+                        if not cell_value:
+                            continue
+                        for code in [c.strip() for c in cell_value.split(",")]:
+                            if code and code not in available:
+                                result.rows.append([fname, sheet_name, row_idx, col_header,
+                                                    code, f"Code not found in '{raw_target}' sheet"])
+            wb_ref.close()
 
     return result

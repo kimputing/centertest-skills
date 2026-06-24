@@ -69,8 +69,9 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 ```
 
 **What it checks:**
-- Columns starting with `#` in the DataCombination sheet reference valid sheet names
-- Every code in those columns exists in the corresponding reference sheet
+- Columns starting with `#` in the DataCombination sheet reference valid sheet names and codes
+- `#`-prefixed columns on **reference sheets** (reference-to-reference edges, e.g. `Location.#Address`)
+  are also validated: the target sheet must exist in scope and every code must be a `Code` row in it
 - Columns starting with `@` (DC→DC relationships, e.g. `@Submission`) resolve to an existing
   target DC file and an existing `Code` in it — the identifier comes from the DC's `$identifiers`
   default or a `Prefix.` on the value, resolved via `$relationships` in `DataDrivenHierarchy.json`

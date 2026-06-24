@@ -55,6 +55,7 @@ The report is saved to `results/DDT_Analysis_<timestamp>.xlsx` with 16 sheets:
 | 14 | `DC_Metrics` | Complexity metrics per DC file (codes, refs, tests) |
 | 15 | `Impact_Analysis` | Blast radius of each Data file (DCs + tests + hardcoded) |
 | 16 | `DC_Relationships` | DC→DC `@`-relationship resolution: target DC file + referenced `Code` existence (`Hierarchy_Validation` also validates `$identifiers`/`$relationships`) |
+| 17 | `Reference_To_Reference` | `#`-columns on reference sheets (reference-to-reference edges): source file, source sheet, target sheet, and codes used |
 
 ## Configuration
 

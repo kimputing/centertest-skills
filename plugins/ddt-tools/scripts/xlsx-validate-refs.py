@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Validate that DC DataCombination sheets only reference codes that exist in their reference data sheets.
+"""Validate that DC DataCombination sheets only reference codes that exist in their reference data sheets,
+and that reference sheets' own #-columns (reference-to-reference edges) also point to valid codes.
 
 Usage:
     xlsx-validate-refs.py                          # validate all DC files
@@ -78,10 +79,11 @@ def load_reference_codes(dc_path):
 
     # Determine the reference file locations: the DC's own References sheet (verbatim) when present,
     # otherwise the reference-centric $references scope (mirror of the Java resolver).
-    has_refs_sheet = any(s.lower() == "references" for s in wb.sheetnames)
+    refs_sheet_name = next((s for s in wb.sheetnames if s.lower() == "references"), None)
+    has_refs_sheet = refs_sheet_name is not None
     locations = []
     if has_refs_sheet:
-        ws = wb["References"]
+        ws = wb[refs_sheet_name]
         headers = None
         for row in ws.iter_rows(values_only=True):
             values = [format_value(c) for c in row]
@@ -153,6 +155,112 @@ def load_dc_codes(dc_file):
         pass
     _dc_codes_cache[dc_file] = codes
     return codes
+
+
+def validate_reference_sheets(dc_path):
+    """Validate #-prefixed columns on reference sheets within a DC file's scope.
+
+    For each reference sheet (i.e. any non-DataCombination, non-References sheet in the DC
+    file or its referenced files), finds columns whose header starts with '#' and validates
+    every comma-split cell value against the resolved all_codes map for the target sheet
+    (header[1:] lowercased, non-alphanumeric stripped — same normalisation Java uses).
+
+    Returns list of (row, col, code, target_sheet, message) errors in the same shape as
+    validate_dc.
+    """
+    if not os.path.isfile(dc_path):
+        return []
+
+    try:
+        wb = load_workbook(dc_path, read_only=True, data_only=True)
+    except Exception:
+        return []
+
+    errors = []
+    all_codes = load_reference_codes(dc_path)
+
+    # Collect all reference sheets: non-DataCombination, non-References sheets in the DC
+    # file itself, plus all sheets in referenced files.
+    # all_codes already maps sheet_name_lower -> {code: (file, row)}, so we only need the
+    # actual sheet rows to walk.  Re-open the DC and referenced files to iterate rows.
+
+    def _validate_sheet(ws_wb, ws_name):
+        """Validate one reference sheet for #-column integrity; append to errors."""
+        ws = ws_wb[ws_name]
+        headers = None
+        ref_cols = []  # [(col_idx, target_sheet_name_lower)]
+        for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            values = [format_value(c) for c in row]
+            if all(v == "" for v in values):
+                continue
+            if headers is None:
+                headers = values
+                for i, h in enumerate(headers):
+                    if h.startswith("#"):
+                        # Normalise target sheet name: strip non-alphanumerics, lowercase
+                        # (mirrors Java ReferenceToReferenceValidator.normalise)
+                        target = re.sub(r"[^a-z0-9]", "", h[1:].lower())
+                        ref_cols.append((i, h, target))
+                continue
+            for col_idx, col_header, target_lower in ref_cols:
+                cell_value = values[col_idx] if col_idx < len(values) else ""
+                if not cell_value:
+                    continue
+                if target_lower not in all_codes:
+                    errors.append((row_idx, col_header, "", target_lower,
+                                   f"unknown sheet '{col_header[1:]}' (no matching sheet in scope)"))
+                    continue
+                available = all_codes[target_lower]
+                for code in [c.strip() for c in cell_value.split(",")]:
+                    if code and code not in available:
+                        similar = [c for c in available if c.lower() == code.lower()]
+                        hint = f" (did you mean '{similar[0]}'?)" if similar else ""
+                        errors.append((row_idx, col_header, code, target_lower,
+                                       f"code not found{hint}"))
+
+    # Walk reference sheets in the DC file itself
+    for sheet_name in wb.sheetnames:
+        lower = sheet_name.lower()
+        if lower in ("datacombination", "references"):
+            continue
+        _validate_sheet(wb, sheet_name)
+    wb.close()
+
+    # Walk referenced files' sheets
+    try:
+        wb2 = load_workbook(dc_path, read_only=True, data_only=True)
+        refs_sheet = next((s for s in wb2.sheetnames if s.lower() == "references"), None)
+        locations = []
+        if refs_sheet is not None:
+            ws = wb2[refs_sheet]
+            hdrs = None
+            for row in ws.iter_rows(values_only=True):
+                values = [format_value(c) for c in row]
+                if all(v == "" for v in values):
+                    continue
+                if hdrs is None:
+                    hdrs = [v.lower() for v in values]
+                    continue
+                location = dict(zip(hdrs, values)).get("location", "")
+                if location:
+                    locations.append(location)
+        else:
+            entries = parse_references(load_hierarchy())
+            locations, _ = resolve(dc_path.replace("\\", "/"), None, entries)
+        wb2.close()
+        for location in locations:
+            ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
+            if not os.path.isfile(ref_path):
+                ref_path = location
+            if os.path.isfile(ref_path):
+                ref_wb = load_workbook(ref_path, read_only=True, data_only=True)
+                for sheet_name in ref_wb.sheetnames:
+                    _validate_sheet(ref_wb, sheet_name)
+                ref_wb.close()
+    except Exception:
+        pass
+
+    return errors
 
 
 def validate_dc(dc_path):
@@ -292,7 +400,7 @@ def main():
 
     for dc_path in dc_files:
         try:
-            errors = validate_dc(dc_path)
+            errors = validate_dc(dc_path) + validate_reference_sheets(dc_path)
         except Exception as e:
             print(f"\n  {dc_path}")
             print(f"    ERROR: failed to validate — {e}")

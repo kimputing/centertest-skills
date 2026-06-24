@@ -591,6 +591,64 @@ def analyze_hierarchy():
     return results
 
 
+def analyze_reference_to_reference(dc_files_data):
+    """Find #-prefixed columns on reference sheets and report (file, source_sheet, target_sheet, codes).
+
+    A reference-to-reference edge is a '#<TargetSheet>' header on a reference (non-DC) sheet.
+    The target sheet name is normalised identically to the Java resolver: strip non-alphanumerics
+    and lowercase.  Validity is assessed against all codes known to that DC's scope.
+    """
+    # Build a per-DC scope map: sheet_name_lower -> set of codes
+    results = []  # (ref_file, source_sheet, target_sheet_normalised, status, codes_csv)
+
+    seen_files = set()
+    for dc in dc_files_data:
+        for ref in dc.referenced_files:
+            if ref.path in seen_files:
+                continue
+            seen_files.add(ref.path)
+            # Build available codes for this file's sheets
+            available = {sd.name.lower(): sd.codes for sd in ref.sheets}
+            try:
+                wb = load_workbook(ref.path, read_only=True, data_only=True)
+            except Exception:
+                continue
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                headers = None
+                ref_cols = []  # [(col_idx, col_header, target_lower)]
+                all_sheet_codes = {}  # col_header -> [code, ...]
+                for row in ws.iter_rows(values_only=True):
+                    values = [format_value(c) for c in row]
+                    if all(v == "" for v in values):
+                        continue
+                    if headers is None:
+                        headers = values
+                        for i, h in enumerate(headers):
+                            if h.startswith("#"):
+                                target = re.sub(r"[^a-z0-9]", "", h[1:].lower())
+                                ref_cols.append((i, h, target))
+                                all_sheet_codes[h] = []
+                        continue
+                    for col_idx, col_header, target_lower in ref_cols:
+                        cell_value = values[col_idx] if col_idx < len(values) else ""
+                        if not cell_value:
+                            continue
+                        for code in [c.strip() for c in cell_value.split(",")]:
+                            if code:
+                                all_sheet_codes[col_header].append(code)
+                for col_idx, col_header, target_lower in ref_cols:
+                    codes = sorted(set(all_sheet_codes[col_header]))
+                    results.append((
+                        ref.path,
+                        sheet_name,
+                        target_lower,
+                        codes,
+                    ))
+            wb.close()
+    return results
+
+
 def analyze_relationships(dc_files_data):
     """Resolve each @-relationship cell; report whether the target DC file + referenced code exist."""
     hierarchy_path = "testdata/DataDrivenHierarchy.json"
@@ -899,6 +957,12 @@ def generate_report(dc_files_data, test_map, ddthelper_map, ddthelper_calls):
     ws.append(["DC File", "Relationship", "Raw Code", "Identifier", "Bare Code", "Target File", "Status"])
     for row in analyze_relationships(dc_files_data):
         ws.append(list(row))
+
+    # --- Sheet: Reference_To_Reference (#-columns on reference sheets) ---
+    ws = wb.create_sheet("Reference_To_Reference")
+    ws.append(["Reference File", "Source Sheet", "Target Sheet", "Codes"])
+    for ref_file, source_sheet, target_sheet, codes in analyze_reference_to_reference(dc_files_data):
+        ws.append([ref_file, source_sheet, target_sheet, ", ".join(codes)])
 
     # --- Sheet 12: Code_Coverage ---
     ws = wb.create_sheet("Code_Coverage")
