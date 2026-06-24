@@ -29,6 +29,11 @@ except ImportError:
     sys.exit(1)
 
 
+def _norm_sheet(name):
+    """Normalise a sheet name the same way the Java resolver does: strip non-alphanumerics, lowercase."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
 def format_value(val):
     if val is None:
         return ""
@@ -68,14 +73,14 @@ def load_reference_codes(dc_path):
     # Collect codes from sheets within the DC file itself (excluding DataCombination and References)
     all_codes = {}
     for sheet_name in wb.sheetnames:
-        lower = sheet_name.lower()
-        if lower in ("datacombination", "references"):
+        if sheet_name.lower() in ("datacombination", "references"):
             continue
+        key = _norm_sheet(sheet_name)
         _, codes = read_sheet(wb, sheet_name)
-        if lower not in all_codes:
-            all_codes[lower] = {}
+        if key not in all_codes:
+            all_codes[key] = {}
         for code, row_idx in codes.items():
-            all_codes[lower][code] = (os.path.basename(dc_path), row_idx)
+            all_codes[key][code] = (os.path.basename(dc_path), row_idx)
 
     # Determine the reference file locations: the DC's own References sheet (verbatim) when present,
     # otherwise the reference-centric $references scope (mirror of the Java resolver).
@@ -108,13 +113,13 @@ def load_reference_codes(dc_path):
         if os.path.isfile(ref_path):
             ref_wb = load_workbook(ref_path, read_only=True, data_only=True)
             for sheet_name in ref_wb.sheetnames:
-                lower = sheet_name.lower()
+                key = _norm_sheet(sheet_name)
                 _, codes = read_sheet(ref_wb, sheet_name)
-                if lower not in all_codes:
-                    all_codes[lower] = {}
+                if key not in all_codes:
+                    all_codes[key] = {}
                 for code, row_idx in codes.items():
-                    if code not in all_codes[lower]:
-                        all_codes[lower][code] = (os.path.basename(ref_path), row_idx)
+                    if code not in all_codes[key]:
+                        all_codes[key][code] = (os.path.basename(ref_path), row_idx)
             ref_wb.close()
 
     return all_codes
@@ -188,7 +193,8 @@ def validate_reference_sheets(dc_path):
         """Validate one reference sheet for #-column integrity; append to errors."""
         ws = ws_wb[ws_name]
         headers = None
-        ref_cols = []  # [(col_idx, target_sheet_name_lower)]
+        ref_cols = []   # [(col_idx, col_header, target_key)]
+        data_rows = []  # [(row_idx, values)]
         for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
             values = [format_value(c) for c in row]
             if all(v == "" for v in values):
@@ -199,23 +205,41 @@ def validate_reference_sheets(dc_path):
                     if h.startswith("#"):
                         # Normalise target sheet name: strip non-alphanumerics, lowercase
                         # (mirrors Java ReferenceToReferenceValidator.normalise)
-                        target = re.sub(r"[^a-z0-9]", "", h[1:].lower())
+                        target = _norm_sheet(h[1:])
                         ref_cols.append((i, h, target))
                 continue
-            for col_idx, col_header, target_lower in ref_cols:
+            data_rows.append((row_idx, values))
+
+        if not ref_cols or not data_rows:
+            return
+
+        # First pass: one "unknown sheet" error per #-column (not one per row)
+        unknown_cols = set()
+        for col_idx, col_header, target_key in ref_cols:
+            if target_key not in all_codes:
+                has_values = any(
+                    (row_vals[col_idx] if col_idx < len(row_vals) else "")
+                    for _, row_vals in data_rows
+                )
+                if has_values:
+                    unknown_cols.add(col_header)
+                    errors.append((0, col_header, "", target_key,
+                                   f"unknown sheet '{col_header[1:]}' (no matching sheet in scope)"))
+
+        # Second pass: validate codes for columns whose target sheet exists
+        for row_idx, values in data_rows:
+            for col_idx, col_header, target_key in ref_cols:
+                if col_header in unknown_cols:
+                    continue
                 cell_value = values[col_idx] if col_idx < len(values) else ""
                 if not cell_value:
                     continue
-                if target_lower not in all_codes:
-                    errors.append((row_idx, col_header, "", target_lower,
-                                   f"unknown sheet '{col_header[1:]}' (no matching sheet in scope)"))
-                    continue
-                available = all_codes[target_lower]
+                available = all_codes[target_key]
                 for code in [c.strip() for c in cell_value.split(",")]:
                     if code and code not in available:
                         similar = [c for c in available if c.lower() == code.lower()]
                         hint = f" (did you mean '{similar[0]}'?)" if similar else ""
-                        errors.append((row_idx, col_header, code, target_lower,
+                        errors.append((row_idx, col_header, code, target_key,
                                        f"code not found{hint}"))
 
     # Walk reference sheets in the DC file itself
@@ -318,12 +342,12 @@ def validate_dc(dc_path):
         # First pass: check which # columns have no matching sheet at all
         missing_sheets = set()
         for col in ref_columns:
-            sheet_name = col[1:].lower()
-            if sheet_name not in ref_codes:
+            sheet_key = _norm_sheet(col[1:])
+            if sheet_key not in ref_codes:
                 has_values = any(row_data.get(col, "") for _, row_data in dc_rows)
                 if has_values:
                     missing_sheets.add(col)
-                    errors.append((0, col, "", sheet_name, "no matching sheet found in any reference file"))
+                    errors.append((0, col, "", sheet_key, "no matching sheet found in any reference file"))
 
         # Second pass: validate codes for columns that do have a matching sheet
         for row_idx, row_data in dc_rows:
@@ -334,15 +358,15 @@ def validate_dc(dc_path):
                 if not cell_value:
                     continue
 
-                sheet_name = col[1:].lower()
-                available = ref_codes[sheet_name]
+                sheet_key = _norm_sheet(col[1:])
+                available = ref_codes[sheet_key]
 
                 codes = [c.strip() for c in cell_value.split(",")]
                 for code in codes:
                     if code and code not in available:
                         similar = [c for c in available if c.lower() == code.lower()]
                         hint = f" (did you mean '{similar[0]}'?)" if similar else ""
-                        errors.append((row_idx, col, code, sheet_name, f"code not found{hint}"))
+                        errors.append((row_idx, col, code, sheet_key, f"code not found{hint}"))
 
     # --- @ relationship columns: the resolved target DC file and referenced code must exist ---
     if rel_columns:

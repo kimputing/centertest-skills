@@ -596,10 +596,9 @@ def analyze_reference_to_reference(dc_files_data):
 
     A reference-to-reference edge is a '#<TargetSheet>' header on a reference (non-DC) sheet.
     The target sheet name is normalised identically to the Java resolver: strip non-alphanumerics
-    and lowercase.  Validity is assessed against all codes known to that DC's scope.
+    and lowercase.  Returns the discovered edges without validating individual codes.
     """
-    # Build a per-DC scope map: sheet_name_lower -> set of codes
-    results = []  # (ref_file, source_sheet, target_sheet_normalised, status, codes_csv)
+    results = []  # (ref_file, source_sheet, target_sheet_normalised, codes_list)
 
     seen_files = set()
     for dc in dc_files_data:
@@ -607,8 +606,6 @@ def analyze_reference_to_reference(dc_files_data):
             if ref.path in seen_files:
                 continue
             seen_files.add(ref.path)
-            # Build available codes for this file's sheets
-            available = {sd.name.lower(): sd.codes for sd in ref.sheets}
             try:
                 wb = load_workbook(ref.path, read_only=True, data_only=True)
             except Exception:

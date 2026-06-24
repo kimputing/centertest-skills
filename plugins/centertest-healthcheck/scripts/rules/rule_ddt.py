@@ -260,6 +260,11 @@ def ddt_reference_integrity(commits: CommitsDict, config) -> RuleResult:
 _IDENTIFIER_PREFIX = re.compile(r"^([A-Za-z0-9_]+)\..+$")
 
 
+def _norm_sheet(name: str) -> str:
+    """Normalise a sheet name: strip non-alphanumerics, lowercase (mirrors Java resolver)."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
 def _identifier_of(raw_code: str, default_identifier: str) -> str:
     """Identifier (UPPER) of a relationship code: the ``token.`` prefix, else the default."""
     if raw_code is not None:
@@ -425,13 +430,13 @@ def ddt_relationship_integrity(commits: CommitsDict, config) -> RuleResult:
     ref_sheet_codes: dict[str, dict[str, int]] = {}
     for root, _dirs, filenames in os.walk(testdata_dir):
         for fname in filenames:
-            if not fname.endswith(".xlsx") or fname.startswith("~$"):
+            if not fname.endswith(".xlsx") or fname.endswith("DC.xlsx") or fname.startswith("~$"):
                 continue
             full_path = os.path.join(root, fname)
             try:
                 wb_ref = load_workbook(full_path, read_only=True, data_only=True)
                 for sheet_name in wb_ref.sheetnames:
-                    key = sheet_name.lower()
+                    key = _norm_sheet(sheet_name)
                     codes = _load_sheet_codes(wb_ref, sheet_name)
                     if codes and key not in ref_sheet_codes:
                         ref_sheet_codes[key] = codes
@@ -457,7 +462,7 @@ def ddt_relationship_integrity(commits: CommitsDict, config) -> RuleResult:
                     if h and str(h).strip().startswith("#"):
                         raw_target = str(h).strip()[1:]
                         # Normalise: strip non-alphanumerics, lowercase (mirrors Java)
-                        target_lower = re.sub(r"[^a-z0-9]", "", raw_target.lower())
+                        target_lower = _norm_sheet(raw_target)
                         r2r_cols.append((i, str(h).strip(), raw_target, target_lower))
                 if not r2r_cols:
                     continue
