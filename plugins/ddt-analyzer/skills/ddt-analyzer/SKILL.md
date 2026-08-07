@@ -60,6 +60,15 @@ Exit codes: 0 the analysis completed (regardless of findings); 1 only when a
 not found), or a failed `--xlsx` write. Findings do not gate by default; `--fail-on`
 opts into gating in CI.
 
+`--only` accepts any of the 15 list-valued analysis keys (see the sheet table below) —
+inspecting an inventory is a legitimate use even though it is never empty. `--fail-on` is
+narrower: it accepts only the 7 keys that are genuinely finding-shaped (empty on a
+healthy project) — `brokenDatasources`, `untestedDcFiles`, `unusedCodes`,
+`orphanedDataFiles`, `duplicateCodes`, `hierarchyValidation`, `hardcodedHelper` (the
+last graded on non-`ok` rows only, since it emits one row per hardcoded call including
+valid ones). The other 8 keys are project inventories, non-empty by construction, and a
+`--fail-on` naming one of them exits 2 rather than being a permanently red gate.
+
 `--analyze` also writes `pr-review/<sanitized git user.name>/<yyyy-MM-dd_HH-mm-ss>_analyze.txt`
 into the project (next to `testdata/`) every time it runs, mirroring the `DDT_check_*`
 Gradle tasks and the ddt-tools scripts' pr-review behavior. It is a courtesy artifact:
@@ -210,7 +219,7 @@ across the two reports** — compare sheet by sheet, not column by column.
 | 3 | `Codes_Usage` | Every code with aggregated usage count |
 | 4 | `Codes_Usage_Detail` | Per-DC-file code usage breakdown |
 | 5 | `DC_Tests` | Maps DC datasource paths to @DataDriven test methods |
-| 6 | `Orphaned_DataFiles` | xlsx files in testdata/ not referenced by any DC |
+| 6 | `Orphaned_DataFiles` | xlsx files in testdata/ that no reference edge reaches — Data Studio counts a Data-sheet-to-Data-sheet reference as reaching a file too, not only a DC reference (see the sheet-to-sheet ruling above) |
 | 7 | `Broken_Datasources` | @DataDriven annotations pointing to non-existent files |
 | 8 | `Untested_DC_Files` | DC files with no test method using them |
 | 9 | `Unused_Codes` | Codes in Data files never referenced from any DC |
@@ -219,7 +228,7 @@ across the two reports** — compare sheet by sheet, not column by column.
 | 12 | `Code_Coverage` | % of codes used per Data file sheet |
 | 13 | `Duplicate_Codes` | Same code appearing in multiple Data files/sheets |
 | 14 | `DC_Metrics` | Complexity metrics per DC file (codes, refs, tests) |
-| 15 | `Impact_Analysis` | Blast radius of each Data file (DCs + tests + hardcoded) |
+| 15 | `Impact_Analysis` | Blast radius of each Data file (referencing DCs, inbound ref count, tests) — Data Studio's `impactAnalysis` has no hardcoded-usage column |
 
 `--only <key>` emits a single analysis key's JSON instead of all 15 (the xlsx report
 still writes all 15 sheets regardless of `--only`). The 15 list-valued keys are:
