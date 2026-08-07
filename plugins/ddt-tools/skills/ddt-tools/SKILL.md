@@ -39,8 +39,8 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 ## PR-Review Reports
 
-The pr-review write is now split by which Data Studio command you're running, not
-uniform across all four retired tools:
+The pr-review write is now split by which command you're running, not uniform across
+all four scripts these map to:
 
 - **`DataStudio --validate`** (the replacement for `xlsx-validate-refs`) writes **no**
   pr-review file. It only prints the severity-sorted report to stdout.
@@ -76,20 +76,27 @@ directly rather than going through the CLI's `run_analysis`.
 
 ## Tools
 
-> **Replaced by Data Studio.** `xlsx-validate-refs`, `xlsx-cleanup-unused`, and
-> `ddt-check-code-usages` are now projections of one computation:
+> **Prefer Data Studio when it's installed.** `xlsx-validate-refs`, `xlsx-cleanup-unused`,
+> and `ddt-check-code-usages` are projections of one computation Data Studio also
+> performs — check first, same as the ddt-analyzer skill:
 >
 > ```bash
-> DataStudio --validate <testdata>                        # was xlsx-validate-refs
-> DataStudio --analyze <testdata> --only unusedCodes      # was xlsx-cleanup-unused
-> DataStudio --analyze <testdata> --only hardcodedHelper  # was ddt-check-code-usages
+> if command -v DataStudio >/dev/null 2>&1; then
+>     DataStudio --validate <testdata>                        # was xlsx-validate-refs
+>     DataStudio --analyze <testdata> --only unusedCodes      # was xlsx-cleanup-unused
+>     DataStudio --analyze <testdata> --only hardcodedHelper  # was ddt-check-code-usages
+> fi
 > ```
 >
-> `xlsx-diff.py` and `xlsx-textconv.py` remain here: they need git, and textconv is a
-> git driver invoked by every `git diff`, so it cannot be an HTTP call or depend on a
-> running server.
+> **When `DataStudio` is not on `PATH`, run the three scripts below instead — they are
+> a permanent fallback, not scripts pending removal.** Data Studio is the preferred,
+> actively-developed implementation; it is not the only path.
+>
+> `xlsx-diff.py` and `xlsx-textconv.py` remain here unconditionally, with no Data Studio
+> equivalent: they need git, and textconv is a git driver invoked by every `git diff`,
+> so it cannot be an HTTP call or depend on a running server.
 
-### 1. Validate References (`xlsx-validate-refs.py`) — replaced by Data Studio
+### 1. Validate References (`xlsx-validate-refs.py`) — fallback when Data Studio is unavailable
 
 Validates that DC DataCombination sheets only reference codes that exist in their reference data sheets.
 
@@ -131,7 +138,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 **Output includes:** new/removed sheets, added/removed columns, cell-level changes grouped by code, added/removed rows.
 
-### 3. Report Unused Codes (`xlsx-cleanup-unused.py`) — replaced by Data Studio
+### 3. Report Unused Codes (`xlsx-cleanup-unused.py`) — fallback when Data Studio is unavailable
 
 Reports codes in Data files that are not referenced by any DC DataCombination sheet. This is a **report-only** tool — it never modifies files.
 
@@ -140,7 +147,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-cleanup-unused.py"
 ```
 
-### 4. Check Code Usages (`ddt-check-code-usages.py`) — replaced by Data Studio
+### 4. Check Code Usages (`ddt-check-code-usages.py`) — fallback when Data Studio is unavailable
 
 Validates that hardcoded string codes in `DDTHelper.getXxx("code")` Java calls reference codes that actually exist in the corresponding xlsx files. This is a **report-only** tool.
 

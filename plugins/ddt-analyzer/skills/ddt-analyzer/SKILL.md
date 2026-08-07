@@ -9,6 +9,13 @@ description: Analyze CenterTest Data-Driven Testing structure and generate a 15-
 
 Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 15-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
 
+There are two implementations. **Prefer Data Studio's `--analyze` CLI when the
+`DataStudio` binary is installed** — it is the actively-developed, more accurate
+implementation. **`${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py` is a permanent
+fallback**, maintained for machines where Data Studio is not installed — it is not
+being retired. The two do not produce identical numbers (see "Which implementation ran"
+below), so always know which one you used.
+
 ## When to Use
 
 Trigger this skill when the user:
@@ -21,7 +28,25 @@ Trigger this skill when the user:
 
 ## How to Use
 
-Data Studio is the single implementation. Run its headless analyzer — no server needed:
+### Step 1: probe for Data Studio, fall back if absent
+
+```bash
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+
+if command -v DataStudio >/dev/null 2>&1; then
+    # Preferred path — Data Studio is installed.
+    DataStudio --analyze /path/to/project/testdata
+else
+    # Fallback path — Data Studio is not on PATH.
+    "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py"
+fi
+```
+
+`command -v DataStudio` only checks whether the binary exists on `PATH` — it does not
+start a server, open the app, or probe any port. There is nothing to "run and leave
+open"; the CLI exits when the analysis is done.
+
+### Preferred path: Data Studio's `--analyze`
 
 ```bash
 DataStudio --analyze /path/to/project/testdata            # JSON to stdout
@@ -35,37 +60,71 @@ Exit codes: 0 the analysis completed (regardless of findings); 1 only when a
 not found), or a failed `--xlsx` write. Findings do not gate by default; `--fail-on`
 opts into gating in CI.
 
-### PR-review file written by default
-
-`--analyze` writes `pr-review/<sanitized git user.name>/<yyyy-MM-dd_HH-mm-ss>_analyze.txt`
-into the project (next to `testdata/`) every time it runs, mirroring the
-`DDT_check_*` Gradle tasks and the ddt-tools scripts' pr-review behavior. It is a
-courtesy artifact: if it fails to write, Data Studio only prints a warning to stderr —
-the exit code is unaffected. The HTTP endpoint (`GET /api/analysis`, used by Data
-Studio's UI) never writes this file — the pr-review write is CLI-only.
-
-### Counts may differ from archived reports
-
-The retired `ddt-analyzer.py` bucketed codes by sheet NAME across the whole project, so
-several files each defining a `Coverage` sheet merged into one. Data Studio keys
-`(file, sheet, code)`, so those stay separate — **unused-code counts will typically be
-higher, and they are now correct**. It also counts hardcoded `DDTHelper` usage in both
-unused-codes and coverage, where the old report counted it in coverage only. A third
-correction: a reference from one Data sheet to another now counts as usage.
-
-### When Java sources are not found
+`--analyze` also writes `pr-review/<sanitized git user.name>/<yyyy-MM-dd_HH-mm-ss>_analyze.txt`
+into the project (next to `testdata/`) every time it runs, mirroring the `DDT_check_*`
+Gradle tasks and the ddt-tools scripts' pr-review behavior. It is a courtesy artifact:
+if it fails to write, Data Studio only prints a warning to stderr — the exit code is
+unaffected. The HTTP endpoint (`GET /api/analysis`, used by Data Studio's UI) never
+writes this file — the pr-review write is CLI-only, and only on this preferred path;
+the fallback script below has its own, separate pr-review behavior (see ddt-tools'
+"PR-Review Reports" section).
 
 Data Studio finds the Java root by walking up from the testdata path. If no
 `src/**/*.java` exists above it, `javaAvailable` is `false`, the four Java-dependent
 analyses (`dcTests`, `brokenDatasources`, `untestedDcFiles`, `hardcodedHelper`) are `null`
 (never `[]`), and `degraded` names the four whose numbers are affected instead
 (`unusedCodes`, `codeCoverage`, `dcMetrics`, `impactAnalysis`). Treat `null` as "could not
-look", not "nothing found".
+look", not "nothing found". **This javaAvailable/degraded/null contract only exists on
+this path — see below, the fallback script has none of it.**
 
-### Report output
+### Fallback path: `ddt-analyzer.py`
 
-`--xlsx` writes the same 15-sheet workbook the retired script produced (sheet names are
-unchanged, so an archived report lines up column-for-column):
+```bash
+PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+
+# Analyze everything
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py"
+
+# Exclude specific paths
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py" --exclude testdata/archive,testdata/old
+```
+
+The script has no `javaAvailable`/`degraded`/`null` semantics at all — it does not
+distinguish "Java sources could not be found" from "found nothing"; every analysis
+that touches Java source (tests, hardcoded-helper validation) simply reports what its
+regex-based scan found, silently, with no flag telling you the scan came up empty
+versus never ran. Do not expect those fields from this path's output.
+
+### Which implementation ran — read the output shape to tell
+
+The two paths don't just differ in numbers, they differ in output shape:
+- **Data Studio's `--analyze`** prints the full JSON result to stdout, and writes an
+  xlsx report only when you pass `--xlsx`.
+- **`ddt-analyzer.py`** prints a step-by-step console log (`[1/6] ... [6/6] ...` plus a
+  `Summary:` block) — never JSON — and *always* writes an xlsx report, unconditionally,
+  to `results/DDT_Analysis_<timestamp>.xlsx` (timestamp format `%Y%m%d_%H%M%S`, e.g.
+  `results/DDT_Analysis_20260807_113000.xlsx`).
+
+If you need to parse the result programmatically, use the preferred path — the fallback
+gives you a human-readable console summary and a file on disk, not structured stdout.
+
+### Counts differ by which implementation ran
+
+`ddt-analyzer.py` buckets codes by sheet NAME across the whole project, so several files
+each defining a `Coverage` sheet merge into one bucket — **on the fallback path,
+unused-code counts come out LOWER than reality, and are wrong for multi-LOB projects**.
+Data Studio keys `(file, sheet, code)`, so those stay separate and its unused-code counts
+are the correct ones. It also counts hardcoded `DDTHelper` usage in both unused-codes and
+coverage, where the fallback counts it in coverage only. A third difference: on Data
+Studio's path, a reference from one Data sheet to another counts as usage; the fallback
+does not credit that. Always note which path produced a given report before comparing
+numbers across runs.
+
+### Report output (Data Studio's `--xlsx`)
+
+`DataStudio --analyze ... --xlsx <path>` writes the same 15-sheet workbook the fallback
+script produces (sheet names are unchanged, so a report from either path lines up
+column-for-column):
 
 | # | Sheet | Content |
 |---|-------|---------|
@@ -94,13 +153,18 @@ still writes all 15 sheets regardless of `--only`). The 15 list-valued keys are:
 
 ## Configuration
 
-No config file needed — pass the testdata directory directly as an argument (or via
-Data Studio's `--project-root` / `--testdata-dir`, same as `--validate`).
+- **Data Studio path:** no config file needed — pass the testdata directory directly as
+  an argument (or via Data Studio's `--project-root` / `--testdata-dir`, same as
+  `--validate`).
+- **Fallback path:** `ddt-analyzer.py` uses the same project path as ddt-tools
+  (`~/.centertest/ddt-tools.json`), prompting for it on first run if unset. The
+  `CENTERTEST_PROJECT_DIR` environment variable overrides the saved config.
 
 ## Prerequisites
 
-- The `DataStudio` binary (self-contained, no Python required at runtime).
-
-The retired `ddt-analyzer.py` (Python 3 + `openpyxl`) is superseded and should be
-retired once parity with Data Studio's `--analyze` is confirmed; it has not been
-deleted yet.
+- **Preferred:** the `DataStudio` binary (self-contained, no Python required at
+  runtime) on `PATH`.
+- **Fallback:** Python 3 (`python3` or `python`) + the `openpyxl` package, always
+  available as `${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py` — this is a maintained,
+  permanent fallback for machines without Data Studio installed, not a script pending
+  removal.
