@@ -212,6 +212,15 @@ wide DC-by-file "X"-marked matrix in the fallback; `DC_Metrics` and `Impact_Anal
 4 columns in Data Studio vs. 7 in the fallback. **A cell-by-cell diff tool will not work
 across the two reports** — compare sheet by sheet, not column by column.
 
+That sheet-for-sheet parity is a property of the **exported workbook only**. The 15 sheets
+below keep the retired Java `DDTAnalyzer`'s original order (unchanged since ANALYZEDDTFILES
+existed) precisely so an archived pre-migration report still lines up row group for row
+group against a fresh export. Data Studio's **on-screen** analysis view does not use that
+order at all — it re-groups the same 15 analyses into three reading sections, "Problems",
+"Coverage", and "Reference", so the findings that need action surface before the reference
+tables. Do not expect the sheet numbering below to match what the screen shows; they are
+two different orderings of the same 15 analyses, chosen for two different readers.
+
 | # | Sheet | Content |
 |---|-------|---------|
 | 1 | `DC_References` | Matrix of DC files vs referenced Data files |
