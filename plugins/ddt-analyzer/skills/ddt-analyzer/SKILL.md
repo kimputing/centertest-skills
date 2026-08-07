@@ -21,21 +21,39 @@ Trigger this skill when the user:
 
 ## How to Use
 
-### Run the analyzer
+Data Studio is the single implementation. Run its headless analyzer — no server needed:
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
-
-# Analyze everything
-"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py"
-
-# Exclude specific paths
-"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py" --exclude testdata/archive,testdata/old
+DataStudio --analyze /path/to/project/testdata            # JSON to stdout
+DataStudio --analyze /path/to/project/testdata --xlsx results/DDT_Analysis.xlsx
+DataStudio --analyze /path/to/project/testdata --only unusedCodes
 ```
+
+Exit codes: 0 completed, 2 unusable directory. Findings do not gate; use
+`--fail-on <analysis>` to opt into gating in CI.
+
+### Counts may differ from archived reports
+
+The retired `ddt-analyzer.py` bucketed codes by sheet NAME across the whole project, so
+several files each defining a `Coverage` sheet merged into one. Data Studio keys
+`(file, sheet, code)`, so those stay separate — **unused-code counts will typically be
+higher, and they are now correct**. It also counts hardcoded `DDTHelper` usage in both
+unused-codes and coverage, where the old report counted it in coverage only. A third
+correction: a reference from one Data sheet to another now counts as usage.
+
+### When Java sources are not found
+
+Data Studio finds the Java root by walking up from the testdata path. If no
+`src/**/*.java` exists above it, `javaAvailable` is `false`, the four Java-dependent
+analyses (`dcTests`, `brokenDatasources`, `untestedDcFiles`, `hardcodedHelper`) are `null`
+(never `[]`), and `degraded` names the four whose numbers are affected instead
+(`unusedCodes`, `codeCoverage`, `dcMetrics`, `impactAnalysis`). Treat `null` as "could not
+look", not "nothing found".
 
 ### Report output
 
-The report is saved to `results/DDT_Analysis_<timestamp>.xlsx` with 15 sheets:
+`--xlsx` writes the same 15-sheet workbook the retired script produced (sheet names are
+unchanged, so an archived report lines up column-for-column):
 
 | # | Sheet | Content |
 |---|-------|---------|
@@ -55,13 +73,22 @@ The report is saved to `results/DDT_Analysis_<timestamp>.xlsx` with 15 sheets:
 | 14 | `DC_Metrics` | Complexity metrics per DC file (codes, refs, tests) |
 | 15 | `Impact_Analysis` | Blast radius of each Data file (DCs + tests + hardcoded) |
 
+`--only <key>` emits a single analysis key's JSON instead of all 15 (the xlsx report
+still writes all 15 sheets regardless of `--only`). The 15 list-valued keys are:
+`dcReferences`, `refFilesDc`, `codesUsage`, `codesUsageDetail`, `dcTests`,
+`orphanedDataFiles`, `brokenDatasources`, `untestedDcFiles`, `unusedCodes`,
+`hardcodedHelper`, `hierarchyValidation`, `codeCoverage`, `duplicateCodes`, `dcMetrics`,
+`impactAnalysis`.
+
 ## Configuration
 
-Uses the same project path as ddt-tools (`~/.centertest/ddt-tools.json`). On first run, prompts for the project path if not configured.
-
-The `CENTERTEST_PROJECT_DIR` environment variable overrides saved config.
+No config file needed — pass the testdata directory directly as an argument (or via
+Data Studio's `--project-root` / `--testdata-dir`, same as `--validate`).
 
 ## Prerequisites
 
-- Python 3 (`python3` or `python`)
-- `openpyxl` Python package
+- The `DataStudio` binary (self-contained, no Python required at runtime).
+
+The retired `ddt-analyzer.py` (Python 3 + `openpyxl`) is superseded and should be
+retired once parity with Data Studio's `--analyze` is confirmed; it has not been
+deleted yet.

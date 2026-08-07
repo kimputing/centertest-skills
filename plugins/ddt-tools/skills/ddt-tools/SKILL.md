@@ -54,7 +54,20 @@ This mirrors the `DDT_check_differences` / `DDT_check_references` Gradle tasks, 
 
 ## Tools
 
-### 1. Validate References (`xlsx-validate-refs.py`)
+> **Replaced by Data Studio.** `xlsx-validate-refs`, `xlsx-cleanup-unused`, and
+> `ddt-check-code-usages` are now projections of one computation:
+>
+> ```bash
+> DataStudio --validate <testdata>                        # was xlsx-validate-refs
+> DataStudio --analyze <testdata> --only unusedCodes      # was xlsx-cleanup-unused
+> DataStudio --analyze <testdata> --only hardcodedHelper  # was ddt-check-code-usages
+> ```
+>
+> `xlsx-diff.py` and `xlsx-textconv.py` remain here: they need git, and textconv is a
+> git driver invoked by every `git diff`, so it cannot be an HTTP call or depend on a
+> running server.
+
+### 1. Validate References (`xlsx-validate-refs.py`) — replaced by Data Studio
 
 Validates that DC DataCombination sheets only reference codes that exist in their reference data sheets.
 
@@ -96,7 +109,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 **Output includes:** new/removed sheets, added/removed columns, cell-level changes grouped by code, added/removed rows.
 
-### 3. Report Unused Codes (`xlsx-cleanup-unused.py`)
+### 3. Report Unused Codes (`xlsx-cleanup-unused.py`) — replaced by Data Studio
 
 Reports codes in Data files that are not referenced by any DC DataCombination sheet. This is a **report-only** tool — it never modifies files.
 
@@ -105,7 +118,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-cleanup-unused.py"
 ```
 
-### 4. Check Code Usages (`ddt-check-code-usages.py`)
+### 4. Check Code Usages (`ddt-check-code-usages.py`) — replaced by Data Studio
 
 Validates that hardcoded string codes in `DDTHelper.getXxx("code")` Java calls reference codes that actually exist in the corresponding xlsx files. This is a **report-only** tool.
 
