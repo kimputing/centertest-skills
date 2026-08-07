@@ -1,13 +1,13 @@
 ---
 name: ddt-analyzer
-description: Analyze CenterTest Data-Driven Testing structure and generate a 15-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
+description: Analyze CenterTest Data-Driven Testing structure and generate an 18-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
 ---
 
 # Skill: DDT Analyzer
 
 ## Purpose
 
-Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 15-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
+Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 18-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
 
 There are two implementations. **Prefer Data Studio's `--analyze` CLI when the
 `DataStudio` binary is installed** — it is the actively-developed, more accurate
@@ -280,7 +280,20 @@ two different orderings of the same 15 analyses, chosen for two different reader
 | 14 | `DC_Metrics` | Complexity metrics per DC file (codes, refs, tests) |
 | 15 | `Impact_Analysis` | Blast radius of each Data file (referencing DCs, inbound ref count, tests) — Data Studio's `impactAnalysis` has no hardcoded-usage column |
 
-`--only <key>` emits a single analysis key's JSON instead of all 15. When combined with
+| 16 | `Disabled_Rows` | DC scenarios switched off in the data. A disabled row's scenario is filtered out before it runs (`centertest.runtime.ignore.disabled` defaults to false), so its references are NOT counted as usage anywhere. `whollyDisabled` marks a DC where nothing runs at all |
+| 17 | `Redundant_Rows` | Rows the engine can never reach — a later row reuses their Code and the row map is last-wins. The only deletion this report calls **provably safe**: behaviour never saw them |
+| 18 | `Dead_Sheets` | Whole sheets no DC, sheet-to-sheet chain or Java call touches, inside files nothing else flags. Files named by a string literal in the source tree are skipped wholesale — we can see the workbook is opened by name but not which sheet it asks for |
+
+Sheets 1-15 keep their names AND positions, so an archived report from the retired
+analyzer still lines up column-for-column; the bloat checks are appended.
+
+**Deleting things.** `reclaimable` totals the reclaim-shaped findings, split into `safe`
+(provably unreachable) and `review` (needs a human — a code nothing references today may
+be read by something we cannot see, which is what `javaConfidence` warns about). Findings
+carry `rows`/`cells`/`bytes`, so "is this worth an afternoon?" has an answer. Never
+present a `review` figure as a safe deletion.
+
+`--only <key>` emits a single analysis key's JSON instead of all 18. When combined with
 `--xlsx`, the workbook is narrowed to that one sheet too, so the file matches what was
 asked for. The 15 list-valued keys are:
 `dcReferences`, `refFilesDc`, `codesUsage`, `codesUsageDetail`, `dcTests`,
