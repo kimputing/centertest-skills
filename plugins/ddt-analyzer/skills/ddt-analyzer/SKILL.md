@@ -65,9 +65,9 @@ into the project (next to `testdata/`) every time it runs, mirroring the `DDT_ch
 Gradle tasks and the ddt-tools scripts' pr-review behavior. It is a courtesy artifact:
 if it fails to write, Data Studio only prints a warning to stderr — the exit code is
 unaffected. The HTTP endpoint (`GET /api/analysis`, used by Data Studio's UI) never
-writes this file — the pr-review write is CLI-only, and only on this preferred path;
-the fallback script below has its own, separate pr-review behavior (see ddt-tools'
-"PR-Review Reports" section).
+writes this file — the pr-review write is CLI-only, and only on this preferred path.
+**The fallback script (`ddt-analyzer.py`) writes no pr-review file at all** — it has no
+pr-review logic anywhere in it. Only `DataStudio --analyze` writes one.
 
 Data Studio finds the Java root by walking up from the testdata path. If no
 `src/**/*.java` exists above it, `javaAvailable` is `false`, the four Java-dependent
@@ -103,7 +103,9 @@ The two paths don't just differ in numbers, they differ in output shape:
 - **`ddt-analyzer.py`** prints a step-by-step console log (`[1/6] ... [6/6] ...` plus a
   `Summary:` block) — never JSON — and *always* writes an xlsx report, unconditionally,
   to `results/DDT_Analysis_<timestamp>.xlsx` (timestamp format `%Y%m%d_%H%M%S`, e.g.
-  `results/DDT_Analysis_20260807_113000.xlsx`).
+  `results/DDT_Analysis_20260807_113000.xlsx`). It `chdir`s into the project root before
+  writing, so that path is always relative to the **project root**, not to wherever you
+  invoked the script from.
 
 If you need to parse the result programmatically, use the preferred path — the fallback
 gives you a human-readable console summary and a file on disk, not structured stdout.
@@ -152,11 +154,54 @@ The scope-blindness bug was present but latent in this project: `ootb-v10` does 
 code names are disjoint (`Building`/`Fungi` vs. `Collision`), so nothing was masked.
 Always note which path produced a given report before comparing numbers across runs.
 
+### Interpreting the divergent hierarchy and orphaned-file counts
+
+Two more counts can differ dramatically between the paths and look alarming — they
+aren't a sign either implementation is broken:
+
+- **Hierarchy issues.** The fallback's `Hierarchy_Validation` sheet includes a bulk
+  `UNCOVERED` row for every DC file not matched by any class-inheritance (`extends`)
+  pattern — a one-row-per-DC inventory of non-use of that *optional* feature, not a
+  defect list. On a project that declares only one or two `extends` entries, that can be
+  the overwhelming majority of its rows. The real CenterTest engine
+  (`DataDrivenHierarchyValidator`) has no equivalent check at any severity, and
+  `DataDrivenHierarchyParser` documents outright that class-inheritance entries are
+  ignored for data resolution — so this bulk row has no counterpart in what actually
+  runs. Data Studio's hierarchy check mirrors the real validator's checks (`$references`,
+  `$identifiers`, `$relationships`) plus the generator's own `MISSING_FILE` check on a
+  class-inheritance parent, so its number reflects genuine validation issues rather than
+  an inventory dump. Expect Data Studio's hierarchy count to be much smaller for any
+  project that leans on `extends`.
+- **Orphaned files.** The fallback treats a Data file as "referenced" once it matches a
+  DC's `$references` scope pattern — it never checks whether any DC row actually
+  populates the corresponding `#`-column with a value. Data Studio derives "referenced"
+  from the reference GRAPH, which only gets an edge when a row's cell is actually
+  populated. A Data file whose `#column` is declared but always empty is therefore
+  "referenced" (not orphaned) to the fallback, but correctly orphaned to Data Studio —
+  so Data Studio can report *more* orphans than the fallback, the opposite direction from
+  the unused-codes correction.
+
+**Measured example, `ootb-v10-centertest`:** Data Studio additionally flags
+`InlandMarineData.xlsx` as orphaned (3 vs. the fallback's 2). It IS declared under
+`$references`, and its consuming DC (`IM_SubmissionDC.xlsx`) does have a `#PolicyChange`
+column matching its one sheet — but every row's cell in that column is empty, so no
+generated test ever pulls the file in. Same project, hierarchy issues: Data Studio
+reports 9 (genuine `$references`/`$identifiers`/`$relationships`/parent-file issues), the
+fallback reports 158, all but a handful of which are `UNCOVERED` rows for DCs the
+project's single `extends` entry doesn't happen to cover.
+
 ### Report output (Data Studio's `--xlsx`)
 
-`DataStudio --analyze ... --xlsx <path>` writes the same 15-sheet workbook the fallback
-script produces (sheet names are unchanged, so a report from either path lines up
-column-for-column):
+`DataStudio --analyze ... --xlsx <path>` writes a 15-sheet workbook with the **same sheet
+names** as the fallback script's report (deliberately kept identical, so the two reports
+line up **sheet-for-sheet** — e.g. row 12 of one `Unused_Codes` sheet lines up with the
+same category of finding in the other's `Unused_Codes` sheet). Their **column layouts
+differ per sheet**, though — e.g. `Unused_Codes` is 3 columns (`file`, `sheet`, `code`) in
+Data Studio vs. 5 in the fallback (`Data File`, `Sheet`, `Unused Code`, `Total Codes`,
+`Used Codes`); `DC_References` is a compact `dc`/`dataFiles` list in Data Studio vs. a
+wide DC-by-file "X"-marked matrix in the fallback; `DC_Metrics` and `Impact_Analysis` are
+4 columns in Data Studio vs. 7 in the fallback. **A cell-by-cell diff tool will not work
+across the two reports** — compare sheet by sheet, not column by column.
 
 | # | Sheet | Content |
 |---|-------|---------|
