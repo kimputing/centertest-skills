@@ -108,17 +108,49 @@ The two paths don't just differ in numbers, they differ in output shape:
 If you need to parse the result programmatically, use the preferred path — the fallback
 gives you a human-readable console summary and a file on disk, not structured stdout.
 
-### Counts differ by which implementation ran
+### Counts differ by which implementation ran — direction is not predictable in general
 
-`ddt-analyzer.py` buckets codes by sheet NAME across the whole project, so several files
-each defining a `Coverage` sheet merge into one bucket — **on the fallback path,
-unused-code counts come out LOWER than reality, and are wrong for multi-LOB projects**.
-Data Studio keys `(file, sheet, code)`, so those stay separate and its unused-code counts
-are the correct ones. It also counts hardcoded `DDTHelper` usage in both unused-codes and
-coverage, where the fallback counts it in coverage only. A third difference: on Data
-Studio's path, a reference from one Data sheet to another counts as usage; the fallback
-does not credit that. Always note which path produced a given report before comparing
-numbers across runs.
+The two implementations correct three things differently, and the corrections pull in
+**opposite directions**, so whether a given project's unused-code count goes up or down
+under Data Studio depends on which effect dominates for that project. Do not assume a
+direction — measure it.
+
+- **Scope-awareness can RAISE the count.** `ddt-analyzer.py` buckets codes by sheet NAME
+  across the whole project, so if two different files each define a same-named sheet
+  (e.g. two files that both have a `Coverage` sheet) with an overlapping code name, the
+  fallback merges them into one bucket and can under-count unused codes. Data Studio
+  keys `(file, sheet, code)`, so same-named sheets in different files never mask each
+  other. **This bug only bites when a shared code name actually appears in same-named
+  sheets across files — plenty of projects will see no change from this correction at
+  all**, because their same-named sheets across files don't share code names.
+- **Counting hardcoded Java usage and Data-sheet-to-Data-sheet references can LOWER the
+  count.** The fallback counts hardcoded `DDTHelper` usage in coverage but not in
+  unused-codes, and does not credit a reference from one Data sheet to another as usage
+  at all. Data Studio counts both, so codes the fallback reports as unused because their
+  only reference is a hardcoded Java call or a sheet-to-sheet reference are correctly
+  reported as used under Data Studio — lowering its unused-code count relative to the
+  fallback's.
+
+**Measured on `ootb-v10-centertest`** (Data Studio vs. `ddt-analyzer.py`):
+
+| Metric | Data Studio | `ddt-analyzer.py` |
+|---|---|---|
+| Unused codes | 34 | 35 |
+| Orphaned files | 3 | 2 |
+| Untested DC files | 4 | 4 |
+| Duplicate codes | 5 | 5 |
+| Broken datasources | 0 | 0 |
+| Hardcoded invalid | 0 | 0 |
+
+Here Data Studio's unused-code count was **lower**, not higher: the two unused-code sets
+were identical except for one entry, `SharedData.xlsx / Address / Inland`, which the
+fallback reports unused and Data Studio reports used — its only reference in this
+project is a Data-sheet-to-Data-sheet one, with zero DC-sourced references and zero
+hardcoded Java calls, so only Data Studio's sheet-to-sheet correction sees it as used.
+The scope-blindness bug was present but latent in this project: `ootb-v10` does have a
+`Coverage` sheet in both `BusinessOwnersData.xlsx` and `PersonalAutoData.xlsx`, but their
+code names are disjoint (`Building`/`Fungi` vs. `Collision`), so nothing was masked.
+Always note which path produced a given report before comparing numbers across runs.
 
 ### Report output (Data Studio's `--xlsx`)
 
