@@ -29,8 +29,20 @@ DataStudio --analyze /path/to/project/testdata --xlsx results/DDT_Analysis.xlsx
 DataStudio --analyze /path/to/project/testdata --only unusedCodes
 ```
 
-Exit codes: 0 completed, 2 unusable directory. Findings do not gate; use
-`--fail-on <analysis>` to opt into gating in CI.
+Exit codes: 0 the analysis completed (regardless of findings); 1 only when a
+`--fail-on <analysis>` gate actually fires; 2 for an unusable directory, an invalid
+`--only`/`--fail-on` key, a `--fail-on` analysis that is unavailable (e.g. Java sources
+not found), or a failed `--xlsx` write. Findings do not gate by default; `--fail-on`
+opts into gating in CI.
+
+### PR-review file written by default
+
+`--analyze` writes `pr-review/<sanitized git user.name>/<yyyy-MM-dd_HH-mm-ss>_analyze.txt`
+into the project (next to `testdata/`) every time it runs, mirroring the
+`DDT_check_*` Gradle tasks and the ddt-tools scripts' pr-review behavior. It is a
+courtesy artifact: if it fails to write, Data Studio only prints a warning to stderr —
+the exit code is unaffected. The HTTP endpoint (`GET /api/analysis`, used by Data
+Studio's UI) never writes this file — the pr-review write is CLI-only.
 
 ### Counts may differ from archived reports
 

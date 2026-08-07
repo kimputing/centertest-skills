@@ -39,18 +39,40 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 ## PR-Review Reports
 
-Every report tool (validate-refs, diff, cleanup-unused, check-code-usages) also saves its console output to a file inside the CenterTest project:
+The pr-review write is now split by which Data Studio command you're running, not
+uniform across all four retired tools:
 
-```
-pr-review/<git user.name>/<yyyy-MM-dd_HH-mm-ss>_<tool-name>.txt
-```
+- **`DataStudio --validate`** (the replacement for `xlsx-validate-refs`) writes **no**
+  pr-review file. It only prints the severity-sorted report to stdout.
+- **`DataStudio --analyze`** (the replacement for `cleanup-unused` and
+  `check-code-usages`) **does** write one, by default, to:
 
-- The subfolder is the sanitized `git config user.name` (falls back to the OS username).
-- The report is written even when the tool fails (e.g. broken references) — the non-zero exit code is preserved.
-- Saving is skipped silently if the working directory has no `testdata/` folder (not a CenterTest project).
-- `xlsx-textconv.py` does NOT save reports — it is a git textconv driver and runs on every `git diff`.
+  ```
+  pr-review/<git user.name>/<yyyy-MM-dd_HH-mm-ss>_analyze.txt
+  ```
 
-This mirrors the `DDT_check_differences` / `DDT_check_references` Gradle tasks, which save their reports to the same `pr-review/` structure.
+  - The subfolder is the sanitized `git config user.name` (falls back to the OS
+    username).
+  - The file is a courtesy artifact: a write failure only prints a warning to stderr
+    and never changes the exit code.
+- **`xlsx-diff.py`** is unchanged and still saves its console output the old way:
+
+  ```
+  pr-review/<git user.name>/<yyyy-MM-dd_HH-mm-ss>_diff.txt
+  ```
+
+  - The report is written even when the tool fails (e.g. broken references) — the
+    non-zero exit code is preserved.
+  - Saving is skipped silently if the working directory has no `testdata/` folder
+    (not a CenterTest project).
+- `xlsx-textconv.py` still does NOT save reports — it is a git textconv driver and
+  runs on every `git diff`.
+
+`DataStudio --analyze`'s write mirrors the `DDT_check_differences` / `DDT_check_references`
+Gradle tasks, which save their reports to the same `pr-review/` structure — but note this
+is CLI-only: `GET /api/analysis` (the HTTP endpoint the Data Studio UI's on-demand
+analysis view will call) never writes a pr-review file, since it calls the analysis
+directly rather than going through the CLI's `run_analysis`.
 
 ## Tools
 
