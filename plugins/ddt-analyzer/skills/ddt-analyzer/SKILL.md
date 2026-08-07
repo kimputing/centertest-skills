@@ -69,6 +69,23 @@ last graded on non-`ok` rows only, since it emits one row per hardcoded call inc
 valid ones). The other 8 keys are project inventories, non-empty by construction, and a
 `--fail-on` naming one of them exits 2 rather than being a permanently red gate.
 
+**Adopting a gate on a project that already has findings.** `--fail-on` is absolute: any
+finding fails the build. On both reference projects 4 to 5 of the 7 gateable analyses had
+findings, so an absolute gate on most of them is permanently red. Only
+`brokenDatasources` and `hardcodedHelper` read zero on a healthy project. For the rest,
+use the ratchet — accept today's findings, fail only on new ones:
+
+```bash
+DataStudio --analyze <testdata> --write-baseline ddt-baseline.json    # once, commit it
+DataStudio --analyze <testdata> --baseline ddt-baseline.json --fail-on-new unusedCodes
+```
+
+Every finding carries a stable `id` (a content hash of its identifying fields only —
+`hardcodedHelper` excludes the line number, which moves on unrelated edits). The baseline
+file holds ids and counts, never row detail, so it is reviewable in a pull request. An
+unreadable baseline exits 2 rather than silently accepting everything; `--fail-on-new`
+without `--baseline` is a usage error (exit 2).
+
 `--analyze` also writes `pr-review/<sanitized git user.name>/<yyyy-MM-dd_HH-mm-ss>_analyze.txt`
 into the project (next to `testdata/`) every time it runs, mirroring the `DDT_check_*`
 Gradle tasks and the ddt-tools scripts' pr-review behavior. It is a courtesy artifact:
