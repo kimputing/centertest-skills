@@ -78,13 +78,24 @@ writes this file — the pr-review write is CLI-only, and only on this preferred
 **The fallback script (`ddt-analyzer.py`) writes no pr-review file at all** — it has no
 pr-review logic anywhere in it. Only `DataStudio --analyze` writes one.
 
-Data Studio finds the Java root by walking up from the testdata path. If no
-`src/**/*.java` exists above it, `javaAvailable` is `false`, the four Java-dependent
-analyses (`dcTests`, `brokenDatasources`, `untestedDcFiles`, `hardcodedHelper`) are `null`
-(never `[]`), and `degraded` names the four whose numbers are affected instead
-(`unusedCodes`, `codeCoverage`, `dcMetrics`, `impactAnalysis`). Treat `null` as "could not
-look", not "nothing found". **This javaAvailable/degraded/null contract only exists on
-this path — see below, the fallback script has none of it.**
+Data Studio finds the Java root by walking up from the testdata path (only upward — a
+sibling `*-centertest-generated` checkout is never searched). If no `src/**/*.java` exists
+above it, `javaAvailable` is `false`, the four Java-dependent analyses (`dcTests`,
+`brokenDatasources`, `untestedDcFiles`, `hardcodedHelper`) are `null` (never `[]`), and
+`degraded` names the **five** whose numbers are affected instead (`unusedCodes`,
+`codeCoverage`, `dcMetrics`, `impactAnalysis`, `orphanedDataFiles`). Treat `null` as
+"could not look", not "nothing found". **This javaAvailable/degraded/null contract only
+exists on this path — see below, the fallback script has none of it.**
+
+`javaConfidence` is a third state the other two cannot express: **Java was found but not
+fully understood.** `javaAvailable` is only "a source root exists", so a project whose
+Java we could not parse would otherwise report every code unused and every DC untested
+with total confidence. The block carries `annotations`, `helperMethods`,
+`resolvedCallSites`, `unresolvedCallSites` and a `warnings` list that is **empty on a
+cleanly-read project** — so if `warnings` is non-empty, treat the Java-derived numbers as
+partially unmeasured rather than as findings. `unresolvedSample` shows call sites naming a
+code assembled at runtime, which we cannot resolve; codes reached only that way appear
+unused.
 
 ### Fallback path: `ddt-analyzer.py`
 
@@ -194,7 +205,20 @@ aren't a sign either implementation is broken:
 `InlandMarineData.xlsx` as orphaned (3 vs. the fallback's 2). It IS declared under
 `$references`, and its consuming DC (`IM_SubmissionDC.xlsx`) does have a `#PolicyChange`
 column matching its one sheet — but every row's cell in that column is empty, so no
-generated test ever pulls the file in. Same project, hierarchy issues: Data Studio
+generated test ever pulls the file in. Data Studio labels this row
+`reason: "unreferenced"` (declared and never used), as distinct from `reason: "unknown"`
+(on disk, named by nothing) — the two want different actions.
+
+Data Studio also subtracts any workbook named by a string literal anywhere under `src/`,
+including `.properties` and `.json` resources, because code opens workbooks by name: a
+`private static final String DATA_FILE = "testdata/X.xlsx"` in a live test is use.
+Generated accessor code is deliberately excluded from that index — `DDTHelper.java` is
+generated from the hierarchy and names every declared workbook (174 of them on ootb-v10),
+so counting it would suppress exactly the declared-but-unused files worth finding. On one
+real client project this took the orphan list from 4 to 0, all four confirmed opened by
+real non-generated code.
+
+Same project, hierarchy issues: Data Studio
 reports 9 (genuine `$references`/`$identifiers`/`$relationships`/parent-file issues), the
 fallback reports 158, all but a handful of which are `UNCOVERED` rows for DCs the
 project's single `extends` entry doesn't happen to cover.
@@ -233,14 +257,15 @@ two different orderings of the same 15 analyses, chosen for two different reader
 | 8 | `Untested_DC_Files` | DC files with no test method using them |
 | 9 | `Unused_Codes` | Codes in Data files never referenced from any DC |
 | 10 | `Hardcoded_DDTHelper` | Validation of DDTHelper.getXxx("literal") calls |
-| 11 | `Hierarchy_Validation` | DataDrivenHierarchy.json integrity checks |
+| 11 | `Hierarchy_Validation` | **The full project validation issue list**, not only DataDrivenHierarchy.json checks. The sheet name is kept for archive parity with the retired analyzer; the contents are whatever `/api/validation` reports — dangling references, override cardinality, formula-keyed Code files, engine-parity divergences, and hierarchy issues alike. Measured on two real projects, 0 of 38 rows were hierarchy-file issues. Each row carries `severity`, `type`, `dc`, `code`, `column`, `detail`; read `type` to tell the categories apart |
 | 12 | `Code_Coverage` | % of codes used per Data file sheet |
 | 13 | `Duplicate_Codes` | Same code appearing in multiple Data files/sheets |
 | 14 | `DC_Metrics` | Complexity metrics per DC file (codes, refs, tests) |
 | 15 | `Impact_Analysis` | Blast radius of each Data file (referencing DCs, inbound ref count, tests) — Data Studio's `impactAnalysis` has no hardcoded-usage column |
 
-`--only <key>` emits a single analysis key's JSON instead of all 15 (the xlsx report
-still writes all 15 sheets regardless of `--only`). The 15 list-valued keys are:
+`--only <key>` emits a single analysis key's JSON instead of all 15. When combined with
+`--xlsx`, the workbook is narrowed to that one sheet too, so the file matches what was
+asked for. The 15 list-valued keys are:
 `dcReferences`, `refFilesDc`, `codesUsage`, `codesUsageDetail`, `dcTests`,
 `orphanedDataFiles`, `brokenDatasources`, `untestedDcFiles`, `unusedCodes`,
 `hardcodedHelper`, `hierarchyValidation`, `codeCoverage`, `duplicateCodes`, `dcMetrics`,
