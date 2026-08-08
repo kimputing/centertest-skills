@@ -1,13 +1,13 @@
 ---
 name: ddt-analyzer
-description: Analyze CenterTest Data-Driven Testing structure and generate an 18-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
+description: Analyze CenterTest Data-Driven Testing structure and generate a 27-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
 ---
 
 # Skill: DDT Analyzer
 
 ## Purpose
 
-Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 18-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
+Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 27-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
 
 There are two implementations. **Prefer Data Studio's `--analyze` CLI when the
 `DataStudio` binary is installed** — it is the actively-developed, more accurate
@@ -293,7 +293,32 @@ be read by something we cannot see, which is what `javaConfidence` warns about).
 carry `rows`/`cells`/`bytes`, so "is this worth an afternoon?" has an answer. Never
 present a `review` figure as a safe deletion.
 
-`--only <key>` emits a single analysis key's JSON instead of all 18. When combined with
+| 19-27 | `Dead_Columns`, `DC_Code_Coverage`, `Suite_Coverage`, `Worklist`, `Override_Depth`, `DC_Relationships`, `Reference_To_Reference`, `Code_Impact`, `Redundant_DC_Entries` | Coverage and structure the report previously computed and discarded, plus the ranked worklist |
+
+**Read the summary first.** The full payload is over a megabyte on a real project.
+
+```bash
+DataStudio --analyze <testdata> --summary    # counts, ranked worklist, reclaimable totals
+DataStudio --analyze <testdata> --compact    # findings without the project inventories
+DataStudio --analyze <testdata> --exclude archive/,legacy/   # narrow the DC scope
+DataStudio --analyze <testdata> --no-pr-review               # do not write into the project
+```
+
+Measured: **1,089KB full → 196KB compact → 14KB summary.**
+
+**Never hardcode our key lists.** The payload carries a `meta` block naming
+`findingKeys`, `inventoryKeys`, `gateableKeys`, `absoluteGateKeys` and `projectionKeys`,
+plus a `schema` version. Read it instead of embedding a copy that goes stale silently.
+
+`worklist` is the report as a ranked to-do list — every finding across every analysis,
+error before warning before info, each carrying the `id` of the finding it summarises. A
+wholly-unused sheet or a wholly-disabled DC is ONE entry, not one per code.
+
+`suiteCoverage` answers whether CI actually runs a test, which `dcTests` cannot: a test
+in no suite is an OBSERVATION, not a finding, because a suite is one way to select tests
+and not the only one.
+
+`--only <key>` emits a single analysis key's JSON instead of all of them. When combined with
 `--xlsx`, the workbook is narrowed to that one sheet too, so the file matches what was
 asked for. The 15 list-valued keys are:
 `dcReferences`, `refFilesDc`, `codesUsage`, `codesUsageDetail`, `dcTests`,
