@@ -1,13 +1,13 @@
 ---
 name: ddt-analyzer
-description: Analyze CenterTest Data-Driven Testing structure and generate a 27-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
+description: Analyze CenterTest Data-Driven Testing structure and generate a 28-sheet Excel report showing DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, unused codes, hierarchy validation, and more. Use when the user says "analyze DDT", "DDT report", "show DDT structure", "which tests use this DC", or wants to understand the test data dependency graph. Triggers on phrases like "analyze data-driven", "DDT analysis", "generate DDT report", or "test data dependencies".
 ---
 
 # Skill: DDT Analyzer
 
 ## Purpose
 
-Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive 27-sheet Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
+Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
 
 There are two implementations. **Prefer Data Studio's `--analyze` CLI when the
 `DataStudio` binary is installed** — it is the actively-developed, more accurate
@@ -293,7 +293,7 @@ be read by something we cannot see, which is what `javaConfidence` warns about).
 carry `rows`/`cells`/`bytes`, so "is this worth an afternoon?" has an answer. Never
 present a `review` figure as a safe deletion.
 
-| 19-27 | `Dead_Columns`, `DC_Code_Coverage`, `Suite_Coverage`, `Worklist`, `Override_Depth`, `DC_Relationships`, `Reference_To_Reference`, `Code_Impact`, `Redundant_DC_Entries` | Coverage and structure the report previously computed and discarded, plus the ranked worklist |
+| 19-28 | `Dead_Columns`, `DC_Code_Coverage`, `Tests_Without_Suite`, `Suite_Tests`, `Worklist`, `Override_Depth`, `DC_Relationships`, `Reference_To_Reference`, `Code_Impact`, `Redundant_DC_Entries` | Coverage and structure the report previously computed and discarded, plus the ranked worklist |
 
 **Read the summary first.** The full payload is over a megabyte on a real project.
 
@@ -314,17 +314,36 @@ plus a `schema` version. Read it instead of embedding a copy that goes stale sil
 error before warning before info, each carrying the `id` of the finding it summarises. A
 wholly-unused sheet or a wholly-disabled DC is ONE entry, not one per code.
 
-`suiteCoverage` answers whether CI actually runs a test, which `dcTests` cannot: a test
-in no suite is an OBSERVATION, not a finding, because a suite is one way to select tests
-and not the only one.
+Two keys answer whether CI actually runs a test, which `dcTests` cannot.
+`testsWithoutSuite` lists tests no suite selects — an OBSERVATION, not a finding, because
+a suite is one way to select tests and not the only one. `suiteTests` maps suite to test,
+keeping each entry's run configuration, and its `status` distinguishes a stale suite entry
+(`missing`) from a class that simply uses no DDT data (`no-ddt`) — conflating those two
+was 69% wrong on a real project.
 
 `--only <key>` emits a single analysis key's JSON instead of all of them. When combined with
 `--xlsx`, the workbook is narrowed to that one sheet too, so the file matches what was
-asked for. The 15 list-valued keys are:
-`dcReferences`, `refFilesDc`, `codesUsage`, `codesUsageDetail`, `dcTests`,
-`orphanedDataFiles`, `brokenDatasources`, `untestedDcFiles`, `unusedCodes`,
-`hardcodedHelper`, `hierarchyValidation`, `codeCoverage`, `duplicateCodes`, `dcMetrics`,
-`impactAnalysis`.
+asked for. Read `meta.findingKeys` and `meta.inventoryKeys` for the current key list
+rather than copying one from here — that is what the `meta` block is for.
+
+### The fallback script's own sheets
+
+`ddt-analyzer.py` writes **17** sheets, and they are NOT the same list or the same order
+as Data Studio's above. Two were added independently of Data Studio's work and land in
+the middle of the workbook, not at the end:
+
+| # | Sheet | Content |
+|---|-------|---------|
+| 12 | `DC_Relationships` | DC→DC `@`-relationship resolution: target DC file + referenced `Code` existence (`Hierarchy_Validation` also validates `$identifiers`/`$relationships`) |
+| 13 | `Reference_To_Reference` | `#`-columns on reference sheets: source file, source sheet, target sheet, and codes used |
+
+Sheets 1-11 are as listed above; `Code_Coverage`, `Duplicate_Codes`, `DC_Metrics` and
+`Impact_Analysis` shift to 14-17. **Do not compare an archived fallback report to a Data
+Studio report by sheet position** — only by sheet NAME.
+
+(Counted from `create_sheet` calls in the script plus `wb.active`, because the prose and
+the table disagreed: three places said "16 sheets" while the table listed 17 rows and
+numbered the two new sheets 16-17 rather than 12-13.)
 
 ## Configuration
 

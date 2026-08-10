@@ -134,5 +134,117 @@
       "sheetNamesByFile": { "testdata/OrphanData.xlsx": ["x"] },
       "expectedIssues": [ { "severity": "WARNING", "messageContains": "consumed by no DC" } ]
     }
+  ],
+
+  "_referenceToReferenceValidatorComment": "Cases for DataDrivenHierarchyValidator.validate when reference sheets contain #-columns. referenceSheetCellsByHeader encodes the reference files' sheet contents: Map<filePath, Map<sheetName, Map<header, Set<cellValues>>>>. Non-# headers supply the sheet's Code-column values (used as the code-lookup set for targets); #-prefixed headers are the reference-to-reference columns whose cell values are validated. Each expectedIssues entry is matched by {severity + messageContains substring}; empty expectedIssues means valid (zero issues).",
+  "referenceToReferenceCases": [
+    {
+      "name": "valid — #address code exists in target sheet",
+      "rawHierarchy": { "$references": {
+        "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"]
+      } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["location", "address"] },
+      "referenceSheetCellsByHeader": {
+        "testdata/SharedData.xlsx": {
+          "location": { "#address": ["addr1", "addr2"] },
+          "address": { "Code": ["addr1", "addr2"] }
+        }
+      },
+      "expectedIssues": []
+    },
+    {
+      "name": "ERROR — #address column has a code missing from address sheet",
+      "rawHierarchy": { "$references": {
+        "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"]
+      } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["location", "address"] },
+      "referenceSheetCellsByHeader": {
+        "testdata/SharedData.xlsx": {
+          "location": { "#address": ["addr1", "addr_MISSING"] },
+          "address": { "Code": ["addr1", "addr2"] }
+        }
+      },
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "addr_MISSING" } ]
+    },
+    {
+      "name": "ERROR — #address column points at a sheet that does not exist",
+      "rawHierarchy": { "$references": {
+        "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"]
+      } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/SharedData.xlsx"],
+      "sheetNamesByFile": { "testdata/SharedData.xlsx": ["location"] },
+      "referenceSheetCellsByHeader": {
+        "testdata/SharedData.xlsx": {
+          "location": { "#address": ["addr1"] }
+        }
+      },
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "unknown sheet 'address'" } ]
+    }
+  ],
+
+  "_relationshipValidatorComment": "Cases for DataDrivenHierarchyValidator.validateRelationships ($identifiers + $relationships). existingFiles is the fileExists set for relationship target DC files.",
+  "relationshipValidatorCases": [
+    {
+      "name": "valid relationships — no issues",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx", "testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "expectedIssues": []
+    },
+    {
+      "name": "no relationship config — no issues",
+      "rawHierarchy": { "$references": { "testdata/SharedData.xlsx": ["testdata/.*DC\\.xlsx"] } },
+      "dcPaths": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "existingFiles": [],
+      "expectedIssues": []
+    },
+    {
+      "name": "ERROR — relationship target DC file does not exist",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx"],
+      "existingFiles": [],
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "target DC file does not exist" } ]
+    },
+    {
+      "name": "ERROR — DC path matches multiple identifiers",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"], "DUP": ["testdata/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "matches multiple identifiers" } ]
+    },
+    {
+      "name": "WARNING — relationship identifier has no $identifiers entry",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/.*"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx", "PA": "testdata/personalauto/PA_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx", "testdata/personalauto/PA_ClaimDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx", "testdata/personalauto/PA_SubmissionDC.xlsx"],
+      "expectedIssues": [ { "severity": "WARNING", "messageContains": "no $identifiers entry" } ]
+    },
+    {
+      "name": "ERROR — invalid identifier regex",
+      "rawHierarchy": {
+        "$identifiers": { "WC": ["testdata/workerscomp/[unclosed"] },
+        "$relationships": { "Submission": { "WC": "testdata/workerscomp/WC_SubmissionDC.xlsx" } }
+      },
+      "dcPaths": ["testdata/workerscomp/WC_ClaimDC.xlsx"],
+      "existingFiles": ["testdata/workerscomp/WC_SubmissionDC.xlsx"],
+      "expectedIssues": [ { "severity": "ERROR", "messageContains": "invalid regex" } ]
+    }
   ]
 }

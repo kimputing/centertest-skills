@@ -107,6 +107,9 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 | 9001 | CenterTest | Direct Selenium usage instead of widgets |
 | 9003 | CenterTest | Test classes using DDTHelper without @DataDriven |
 | 9007 | CenterTest | Thread.sleep anti-pattern detection |
+| 14002 | CenterTest | @DataDriven datasource file existence |
+| 14003 | CenterTest | DDT reference (`#`) column integrity — sheets/codes exist |
+| 14004 | CenterTest | DDT relationship (`@`) target integrity — target DC file + `Code` exist |
 | 15001 | Quality | Potential null pointer risks |
 | 15004 | Quality | String comparison with == |
 | 15005 | Quality | Empty catch blocks |
