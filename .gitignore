@@ -3,3 +3,6 @@ __pycache__/
 
 # JetBrains IDE
 .idea/
+
+# Claude Code — per-developer permissions (shared config lives in settings.json)
+.claude/settings.local.json
