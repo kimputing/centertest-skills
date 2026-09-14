@@ -42,9 +42,10 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 The pr-review write is now split by which command you're running, not uniform across
 all four scripts these map to:
 
-- **`DataStudio --validate`** (the replacement for `xlsx-validate-refs`) writes **no**
+- **The Data Studio binary's `--validate`** (`CenterTest-DataStudio`, or `DataStudio` on
+  installs predating the rename; the replacement for `xlsx-validate-refs`) writes **no**
   pr-review file. It only prints the severity-sorted report to stdout.
-- **`DataStudio --analyze`** (the replacement for `cleanup-unused` and
+- **The binary's `--analyze`** (the replacement for `cleanup-unused` and
   `check-code-usages`) **does** write one, by default, to:
 
   ```
@@ -68,7 +69,7 @@ all four scripts these map to:
 - `xlsx-textconv.py` still does NOT save reports — it is a git textconv driver and
   runs on every `git diff`.
 
-`DataStudio --analyze`'s write mirrors the `DDT_check_differences` / `DDT_check_references`
+The binary's `--analyze` write mirrors the `DDT_check_differences` / `DDT_check_references`
 Gradle tasks, which save their reports to the same `pr-review/` structure — but note this
 is CLI-only: `GET /api/analysis` (the HTTP endpoint the Data Studio UI's on-demand
 analysis view will call) never writes a pr-review file, since it calls the analysis
@@ -81,14 +82,22 @@ directly rather than going through the CLI's `run_analysis`.
 > performs — check first, same as the ddt-analyzer skill:
 >
 > ```bash
-> if command -v DataStudio >/dev/null 2>&1; then
->     DataStudio --validate <testdata>                        # was xlsx-validate-refs
->     DataStudio --analyze <testdata> --only unusedCodes      # was xlsx-cleanup-unused
->     DataStudio --analyze <testdata> --only hardcodedHelper  # was ddt-check-code-usages
+> # The binary was renamed to CenterTest-DataStudio. Installs predating that rename keep
+> # the old filename permanently — the self-update writes over argv[0] rather than
+> # renaming it — so both names have to be probed, newest first.
+> DATA_STUDIO=""
+> for candidate in CenterTest-DataStudio DataStudio; do
+>     if command -v "$candidate" >/dev/null 2>&1; then DATA_STUDIO="$candidate"; break; fi
+> done
+>
+> if [ -n "$DATA_STUDIO" ]; then
+>     "$DATA_STUDIO" --validate <testdata>                        # was xlsx-validate-refs
+>     "$DATA_STUDIO" --analyze <testdata> --only unusedCodes      # was xlsx-cleanup-unused
+>     "$DATA_STUDIO" --analyze <testdata> --only hardcodedHelper  # was ddt-check-code-usages
 > fi
 > ```
 >
-> **When `DataStudio` is not on `PATH`, run the three scripts below instead — they are
+> **When neither binary is on `PATH`, run the three scripts below instead — they are
 > a permanent fallback, not scripts pending removal.** Data Studio is the preferred,
 > actively-developed implementation; it is not the only path.
 >
