@@ -9,8 +9,9 @@ description: Analyze CenterTest Data-Driven Testing structure and generate a 28-
 
 Analyzes the full Data-Driven Testing structure of a CenterTest project and generates a comprehensive Excel report. This is the Python equivalent of the Java `DDTAnalyzer` (run mode `ANALYZEDDTFILES`) — runs standalone without needing the full CenterTest application.
 
-There are two implementations. **Prefer Data Studio's `--analyze` CLI when the
-`DataStudio` binary is installed** — it is the actively-developed, more accurate
+There are two implementations. **Prefer Data Studio's `--analyze` CLI when the Data
+Studio binary (`CenterTest-DataStudio`, or `DataStudio` on installs predating the
+rename) is installed** — it is the actively-developed, more accurate
 implementation. **`${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py` is a permanent
 fallback**, maintained for machines where Data Studio is not installed — it is not
 being retired. The two do not produce identical numbers (see "Which implementation ran"
@@ -33,25 +34,33 @@ Trigger this skill when the user:
 ```bash
 PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
-if command -v DataStudio >/dev/null 2>&1; then
+# The binary was renamed to CenterTest-DataStudio. Installs predating that rename keep the
+# old filename permanently — the self-update writes over argv[0] rather than renaming it —
+# so both names have to be probed, newest first.
+DATA_STUDIO=""
+for candidate in CenterTest-DataStudio DataStudio; do
+    if command -v "$candidate" >/dev/null 2>&1; then DATA_STUDIO="$candidate"; break; fi
+done
+
+if [ -n "$DATA_STUDIO" ]; then
     # Preferred path — Data Studio is installed.
-    DataStudio --analyze /path/to/project/testdata
+    "$DATA_STUDIO" --analyze /path/to/project/testdata
 else
     # Fallback path — Data Studio is not on PATH.
     "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py"
 fi
 ```
 
-`command -v DataStudio` only checks whether the binary exists on `PATH` — it does not
-start a server, open the app, or probe any port. There is nothing to "run and leave
-open"; the CLI exits when the analysis is done.
+The probe only checks whether either binary exists on `PATH` — it does not start a
+server, open the app, or probe any port. There is nothing to "run and leave open"; the
+CLI exits when the analysis is done.
 
 ### Preferred path: Data Studio's `--analyze`
 
 ```bash
-DataStudio --analyze /path/to/project/testdata            # JSON to stdout
-DataStudio --analyze /path/to/project/testdata --xlsx results/DDT_Analysis.xlsx
-DataStudio --analyze /path/to/project/testdata --only unusedCodes
+"$DATA_STUDIO" --analyze /path/to/project/testdata            # JSON to stdout
+"$DATA_STUDIO" --analyze /path/to/project/testdata --xlsx results/DDT_Analysis.xlsx
+"$DATA_STUDIO" --analyze /path/to/project/testdata --only unusedCodes
 ```
 
 Exit codes: 0 the analysis completed (regardless of findings); 1 only when a
@@ -76,8 +85,8 @@ findings, so an absolute gate on most of them is permanently red. Only
 use the ratchet — accept today's findings, fail only on new ones:
 
 ```bash
-DataStudio --analyze <testdata> --write-baseline ddt-baseline.json    # once, commit it
-DataStudio --analyze <testdata> --baseline ddt-baseline.json --fail-on-new unusedCodes
+"$DATA_STUDIO" --analyze <testdata> --write-baseline ddt-baseline.json    # once, commit it
+"$DATA_STUDIO" --analyze <testdata> --baseline ddt-baseline.json --fail-on-new unusedCodes
 ```
 
 Every finding carries a stable `id` (a content hash of its identifying fields only —
@@ -93,7 +102,7 @@ if it fails to write, Data Studio only prints a warning to stderr — the exit c
 unaffected. The HTTP endpoint (`GET /api/analysis`, used by Data Studio's UI) never
 writes this file — the pr-review write is CLI-only, and only on this preferred path.
 **The fallback script (`ddt-analyzer.py`) writes no pr-review file at all** — it has no
-pr-review logic anywhere in it. Only `DataStudio --analyze` writes one.
+pr-review logic anywhere in it. Only the binary's `--analyze` writes one.
 
 Data Studio finds the Java root by walking up from the testdata path (only upward — a
 sibling `*-centertest-generated` checkout is never searched). If no `src/**/*.java` exists
@@ -242,7 +251,7 @@ project's single `extends` entry doesn't happen to cover.
 
 ### Report output (Data Studio's `--xlsx`)
 
-`DataStudio --analyze ... --xlsx <path>` writes a 15-sheet workbook with the **same sheet
+The binary's `--analyze ... --xlsx <path>` writes a 15-sheet workbook with the **same sheet
 names** as the fallback script's report (deliberately kept identical, so the two reports
 line up **sheet-for-sheet** — e.g. row 12 of one `Unused_Codes` sheet lines up with the
 same category of finding in the other's `Unused_Codes` sheet). Their **column layouts
@@ -298,10 +307,10 @@ present a `review` figure as a safe deletion.
 **Read the summary first.** The full payload is over a megabyte on a real project.
 
 ```bash
-DataStudio --analyze <testdata> --summary    # counts, ranked worklist, reclaimable totals
-DataStudio --analyze <testdata> --compact    # findings without the project inventories
-DataStudio --analyze <testdata> --exclude archive/,legacy/   # narrow the DC scope
-DataStudio --analyze <testdata> --no-pr-review               # do not write into the project
+"$DATA_STUDIO" --analyze <testdata> --summary    # counts, ranked worklist, reclaimable totals
+"$DATA_STUDIO" --analyze <testdata> --compact    # findings without the project inventories
+"$DATA_STUDIO" --analyze <testdata> --exclude archive/,legacy/   # narrow the DC scope
+"$DATA_STUDIO" --analyze <testdata> --no-pr-review               # do not write into the project
 ```
 
 Measured: **1,089KB full → 196KB compact → 14KB summary.**
@@ -356,8 +365,8 @@ numbered the two new sheets 16-17 rather than 12-13.)
 
 ## Prerequisites
 
-- **Preferred:** the `DataStudio` binary (self-contained, no Python required at
-  runtime) on `PATH`.
+- **Preferred:** the binary (self-contained, no Python required at runtime) on
+  `PATH` — `CenterTest-DataStudio`, or `DataStudio` on installs predating the rename.
 - **Fallback:** Python 3 (`python3` or `python`) + the `openpyxl` package, always
   available as `${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py` — this is a maintained,
   permanent fallback for machines without Data Studio installed, not a script pending
