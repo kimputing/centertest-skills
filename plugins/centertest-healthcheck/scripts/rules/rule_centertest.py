@@ -28,7 +28,7 @@ _SELENIUM_PATTERNS = [
     "driver.get(",
     "driver.navigate(",
     ".sendKeys(",
-    "Actions(",
+    "new Actions(",  # not "Actions(", which also matches e.g. clearActions()
     "new Select(",
 ]
 
