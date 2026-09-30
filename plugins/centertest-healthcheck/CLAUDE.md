@@ -82,6 +82,7 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 
 - `eir_analyzer.py` name is historical — the skill is centertest-healthcheck
 - Rule 9005 checks method-level `@DataDriven` (not just class-level)
+- Rules 9001, 9003, 9005, 9007 and 9008 scan the main class **and its inner classes** (tests often keep flow steps there). Inner-class findings are labelled `Outer.Inner`. The parser only collects direct inner classes, so a class nested inside an inner class is still not scanned.
 - Rule 1001 has `suffix_exceptions` set for `CheckEnvironmentAvailability`
 - Rule 15001 is very targeted — only Gson JSON patterns, not page object chains
 - Rule 15017 only inspects `while` loops and direct self-recursion. `for`, foreach, and `do/while` are out of scope by design to avoid false positives. The loop is exempt if the body contains `break`, `return`, `throw`, a `System.currentTimeMillis`/`Instant.now`/`nanoTime` deadline, or a counter mutation (`++`/`--`/`+=`/`-=`). Recursion is exempt if the body contains any of `max|attempt|depth|limit|count|tries|retries`.

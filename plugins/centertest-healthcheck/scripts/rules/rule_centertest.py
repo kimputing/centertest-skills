@@ -28,9 +28,22 @@ _SELENIUM_PATTERNS = [
     "driver.get(",
     "driver.navigate(",
     ".sendKeys(",
-    "Actions(",
+    "new Actions(",  # not "Actions(", which also matches e.g. clearActions()
     "new Select(",
 ]
+
+
+def _scanned_classes(f):
+    """
+    Yield (display name, ClassEntry) for the main class and its inner classes.
+
+    Tests often keep their flow steps in inner classes, so the rules must read
+    those too. Inner classes are shown as Outer.Inner.
+    """
+    mc = f.main_class
+    yield mc.class_name, mc
+    for inner in f.inner_classes:
+        yield f"{mc.class_name}.{inner.class_name}", inner
 
 
 @rule(id="9001", description="Direct Selenium usage instead of CenterTest widgets", category="CenterTest")
@@ -50,16 +63,14 @@ def direct_selenium_usage(commits: CommitsDict, config) -> RuleResult:
 
     for commit_info, files in sorted(commits.items()):
         for f in get_implemented_classes(files):
-            mc = f.main_class
-            if mc is None:
-                continue
-            for method in mc.methods:
-                if not method.body:
-                    continue
-                for pattern in _SELENIUM_PATTERNS:
-                    if pattern in method.body:
-                        result.rows.append([mc.class_name, method.name, pattern])
-                        break  # one finding per method
+            for class_name, ce in _scanned_classes(f):
+                for method in ce.methods:
+                    if not method.body:
+                        continue
+                    for pattern in _SELENIUM_PATTERNS:
+                        if pattern in method.body:
+                            result.rows.append([class_name, method.name, pattern])
+                            break  # one finding per method
 
     return result
 
@@ -89,17 +100,19 @@ def data_driven_patterns(commits: CommitsDict, config) -> RuleResult:
             if not f.is_test_class():
                 continue
 
+            methods = [m for _, ce in _scanned_classes(f) for m in ce.methods]
+
             # Check @DataDriven on class OR any method (it's typically on methods)
             has_data_driven = "DataDriven" in mc.annotations
             if not has_data_driven:
-                for method in mc.methods:
+                for method in methods:
                     if "DataDriven" in method.annotations:
                         has_data_driven = True
                         break
 
             # Check for DDTHelper usage in method bodies
             has_ddt_helper = False
-            for method in mc.methods:
+            for method in methods:
                 if method.body and "DDTHelper" in method.body:
                     has_ddt_helper = True
                     break
@@ -131,14 +144,12 @@ def thread_sleep_detection(commits: CommitsDict, config) -> RuleResult:
 
     for commit_info, files in sorted(commits.items()):
         for f in get_implemented_classes(files):
-            mc = f.main_class
-            if mc is None:
-                continue
-            for method in mc.methods:
-                if not method.body:
-                    continue
-                if "Thread.sleep(" in method.body:
-                    result.rows.append([mc.class_name, method.name])
+            for class_name, ce in _scanned_classes(f):
+                for method in ce.methods:
+                    if not method.body:
+                        continue
+                    if "Thread.sleep(" in method.body:
+                        result.rows.append([class_name, method.name])
 
     return result
 
@@ -183,36 +194,34 @@ def assertion_framework_usage(commits: CommitsDict, config) -> RuleResult:
 
     for commit_info, files in sorted(commits.items()):
         for f in get_implemented_classes(files):
-            mc = f.main_class
-            if mc is None:
-                continue
-            for method in mc.methods:
-                if not method.body:
-                    continue
-                for line in method.body.splitlines():
-                    stripped = line.strip()
-                    if not stripped:
+            for class_name, ce in _scanned_classes(f):
+                for method in ce.methods:
+                    if not method.body:
                         continue
+                    for line in method.body.splitlines():
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
 
-                    # Check for raw JUnit Assert usage
-                    for pattern in _JUNIT_ASSERT_PATTERNS:
-                        if pattern in stripped:
+                        # Check for raw JUnit Assert usage
+                        for pattern in _JUNIT_ASSERT_PATTERNS:
+                            if pattern in stripped:
+                                result.rows.append([
+                                    class_name,
+                                    method.name,
+                                    "Raw JUnit Assert — use widget.assertXxx() or CenterTestAssertion",
+                                    stripped[:150],
+                                ])
+                                break
+
+                        # Check for Assertions.assertThat without CenterTestAssertion wrapper
+                        if "Assertions.assertThat(" in stripped and "CenterTestAssertion" not in method.body:
                             result.rows.append([
-                                mc.class_name,
+                                class_name,
                                 method.name,
-                                "Raw JUnit Assert — use widget.assertXxx() or CenterTestAssertion",
+                                "Unwrapped AssertJ — wrap with CenterTestAssertion.withContext()",
                                 stripped[:150],
                             ])
-                            break
-
-                    # Check for Assertions.assertThat without CenterTestAssertion wrapper
-                    if "Assertions.assertThat(" in stripped and "CenterTestAssertion" not in method.body:
-                        result.rows.append([
-                            mc.class_name,
-                            method.name,
-                            "Unwrapped AssertJ — wrap with CenterTestAssertion.withContext()",
-                            stripped[:150],
-                        ])
 
     return result
 
@@ -234,19 +243,17 @@ def implicit_sleep_detection(commits: CommitsDict, config) -> RuleResult:
 
     for commit_info, files in sorted(commits.items()):
         for f in get_implemented_classes(files):
-            mc = f.main_class
-            if mc is None:
-                continue
-            for method in mc.methods:
-                if not method.body:
-                    continue
-                for line in method.body.splitlines():
-                    stripped = line.strip()
-                    if "ImplicitSleep.sleep(" in stripped:
-                        result.rows.append([
-                            mc.class_name,
-                            method.name,
-                            stripped[:150],
-                        ])
+            for class_name, ce in _scanned_classes(f):
+                for method in ce.methods:
+                    if not method.body:
+                        continue
+                    for line in method.body.splitlines():
+                        stripped = line.strip()
+                        if "ImplicitSleep.sleep(" in stripped:
+                            result.rows.append([
+                                class_name,
+                                method.name,
+                                stripped[:150],
+                            ])
 
     return result
