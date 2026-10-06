@@ -129,6 +129,11 @@ ITERATOR_PLACEHOLDER = "#"
 ROW_PLACEHOLDER = "[ROW]"
 # Segment separators: '-' on Guidewire 10, ':' on Guidewire 9.
 SEPARATOR = re.compile(r"([-:])")
+# An unescaped .properties line: key up to the first '=', ':' or whitespace, then the separator.
+PLAIN_LINE = re.compile(r"([^=:\s]*)[ \t\f]*[=:]?[ \t\f]*(.*)", re.DOTALL)
+# A conditional toolbar segment '[X_tb]' (never the '[ROW]' placeholder).
+TOOLBAR_SEGMENT = re.compile(r"\[([^\[\]]*_tb)\]")
+TOOLBAR_SEGMENT_WITH_SEPARATOR = re.compile(r"\[[^\[\]]*_tb\][-:]?")
 # Cap the #/[ROW] combinations we try, to avoid explosion on pathological ids.
 MAX_COMBINATORIAL_SEGMENTS = 6
 
@@ -141,9 +146,9 @@ def _bracket_variants(css_id: str) -> list[str]:
     (1) the id as-is, (2) brackets removed (table name kept), (3) the whole segment removed.
     """
     forms = [css_id]
-    if "[" in css_id and "_tb]" in css_id:
-        forms.append(css_id.replace("[", "").replace("]", ""))
-        forms.append(re.sub(r"\[.*?_tb\][-:]?", "", css_id))
+    if "_tb]" in css_id:
+        forms.append(TOOLBAR_SEGMENT.sub(r"\1", css_id))
+        forms.append(TOOLBAR_SEGMENT_WITH_SEPARATOR.sub("", css_id))
     return forms
 
 
@@ -208,19 +213,6 @@ def get_page_name(css_id: str) -> str:
     return css_id[:separator.start()] if separator and separator.start() > 0 else css_id
 
 
-def escape_key(css_id: str) -> str:
-    """A CSS ID as CssMapper.toPropertiesLine writes it as a key (so grep can find the line)."""
-    escaped = []
-    for i, ch in enumerate(css_id):
-        if ch in "\\=: ":
-            escaped.append("\\" + ch)
-        elif ch in "#!" and i == 0:
-            escaped.append("\\" + ch)
-        else:
-            escaped.append(ch)
-    return "".join(escaped)
-
-
 _ESCAPES = {"t": "\t", "n": "\n", "r": "\r", "f": "\f"}
 
 
@@ -252,6 +244,9 @@ def parse_properties_line(line: str):
     line = line.lstrip(" \t\f")
     if not line or (line[0] in "#!" and "=" not in line):
         return None
+    if "\\" not in line:  # nothing escaped: the common case, split without the char loop
+        plain = PLAIN_LINE.match(line)
+        return plain.group(1), plain.group(2)
     i = 0
     while i < len(line) and line[i] not in "=: \t\f":
         i += 2 if line[i] == "\\" else 1
@@ -262,7 +257,7 @@ def parse_properties_line(line: str):
         i += 1
     while i < len(line) and line[i] in " \t\f":
         i += 1
-    return _unescape(line[:key_end]), _unescape(line[i:].rstrip("\r\n"))
+    return _unescape(line[:key_end]), _unescape(line[i:])
 
 
 def detect_layout(cssids_dir: str, app_key: str):
@@ -283,42 +278,56 @@ def search_properties(props_dir: str, normalized: str, exact_only: bool = False)
     # The page file the generator wrote this id into ('_misc' for '#'-rooted ids)
     page_file = os.path.join(props_dir, f"{get_page_name(normalized)}.properties")
     if os.path.isfile(page_file):
-        return _grep_properties(["-F", page_file], normalized, exact_only)
+        found = _match_entries(_load_entries((page_file,)), normalized, exact_only)
+        if found:
+            return found
 
-    # Last resort: every .properties file in the directory
-    return _grep_properties(["-h", "-r", "-F", "--include=*.properties", props_dir], normalized, exact_only)
-
-
-def _grep_properties(grep_args: list[str], normalized: str, exact_only: bool = False) -> list[str]:
-    """Grep for the CSS ID, written plain or escaped, then parse the matching lines."""
-    needles = []
-    for needle in (normalized, escape_key(normalized)):
-        needles += ["-e", needle]
-    result = subprocess.run(
-        ["grep", *needles, *grep_args],
-        capture_output=True, text=True,
-    )
-    return _parse_properties_output(result.stdout, normalized, exact_only)
+    # A partial id, or a file layout from an older generator: search every page file
+    page_files = []
+    for root, _, files in os.walk(props_dir):
+        page_files += [os.path.join(root, name) for name in sorted(files) if name.endswith(".properties")]
+    return _match_entries(_load_entries(tuple(page_files)), normalized, exact_only)
 
 
-def _parse_properties_output(output: str, normalized: str, exact_only: bool = False) -> list[str]:
-    """Parse properties format lines: cssId=getterChain.
+_entries_cache: dict[tuple[str, ...], tuple[list, dict, dict]] = {}
 
-    Returns exact key matches when present. When ``exact_only`` is False, falls back to
-    partial (contains) matches for partial CSS IDs.
-    """
-    exact = []
-    contains = []
-    for line in output.splitlines():
-        entry = parse_properties_line(line)
-        if entry is None:
-            continue
-        key, value = entry
-        if key == normalized:
-            exact.append(value)
-        elif not exact_only and normalized in key:
-            contains.append(value)
-    return exact if exact else contains
+
+def _load_entries(page_files: tuple[str, ...]) -> tuple[list, dict, dict]:
+    """The lines of the page files as (key, value, raw key, raw value), read once per run,
+    plus an index of each key kind for exact lookups.
+
+    key/value are what java.util.Properties.load reads, as CenterTest does at runtime.
+    The raw split at the first '=' covers files written before CenterTest 6.15 without
+    escaping, where a Guidewire 9 key such as 'Page:Panel:Field' kept its ':' unescaped."""
+    if page_files not in _entries_cache:
+        entries, by_key, by_raw_key = [], {}, {}
+        for page_file in page_files:
+            with open(page_file, encoding="utf-8", errors="replace") as lines:
+                for line in lines:
+                    line = line.rstrip("\r\n")
+                    entry = parse_properties_line(line)
+                    if entry is None:
+                        continue
+                    raw_key, _, raw_value = line.partition("=")
+                    key, value, raw_key, raw_value = entry[0], entry[1].strip(), raw_key.strip(), raw_value.strip()
+                    entries.append((key, value, raw_key, raw_value))
+                    by_key.setdefault(key, []).append(value)
+                    by_raw_key.setdefault(raw_key, []).append(raw_value)
+        _entries_cache[page_files] = (entries, by_key, by_raw_key)
+    return _entries_cache[page_files]
+
+
+def _match_entries(loaded: tuple[list, dict, dict], normalized: str, exact_only: bool = False) -> list[str]:
+    """Getter chains whose key is the CSS ID, or contains it when ``exact_only`` is False."""
+    entries, by_key, by_raw_key = loaded
+    exact = by_key.get(normalized) or by_raw_key.get(normalized)
+    if exact or exact_only:
+        return list(exact or [])
+    for key_index, value_index in ((0, 1), (2, 3)):
+        contains = [e[value_index] for e in entries if normalized in e[key_index]]
+        if contains:
+            return contains
+    return []
 
 
 def search_legacy(filepath: str, normalized: str) -> list[str]:
