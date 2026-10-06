@@ -133,20 +133,27 @@ def test_style(tests):
 
 
 def step_conventions(root, steps, reusable_dir):
-    combos = collections.Counter()
+    """Step base classes per center, with the @FlowTags annotation their steps carry most often
+    (as written: OOTB uses both @FlowTags("…") and @FlowTags({"…"})) and how many carry one."""
+    bases = {}
     for text in steps.values():
         base = re.search(r"\bextends\s+(BaseScenario\w*)", text)
-        if base:
-            tags = re.search(r'@FlowTags\("([^"]+)"\)', text)
-            combos[(base.group(1), tags.group(1) if tags else None)] += 1
-    if not combos:
+        if not base:
+            continue
+        entry = bases.setdefault(base.group(1), {"base": base.group(1), "center": CENTERS.get(base.group(1)),
+                                                 "tags": collections.Counter(), "count": 0})
+        entry["count"] += 1
+        tags = re.search(r"@FlowTags\([^)]*\)", text)
+        if tags:
+            entry["tags"][tags.group(0)] += 1
+    if not bases:
         return missing(f"no step classes extending BaseScenario* under {rel(root, reusable_dir)}")
-    bases = {}
-    for (base, tags), count in combos.most_common():
-        entry = bases.setdefault(base, {"base": base, "center": CENTERS.get(base), "flowTags": tags, "count": 0})
-        entry["count"] += count
-    return fact({"root": rel(root, reusable_dir), "bases": list(bases.values())},
-                f"{sum(combos.values())} step classes")
+    found = []
+    for entry in sorted(bases.values(), key=lambda e: -e["count"]):
+        tags = entry.pop("tags")
+        found.append({**entry, "flowTags": tags.most_common(1)[0][0] if tags else None,
+                      "withFlowTags": sum(tags.values())})
+    return fact({"root": rel(root, reusable_dir), "bases": found}, f"{sum(e['count'] for e in found)} step classes")
 
 
 FACADE_METHOD = re.compile(r"static\s+(\w+)\s+(\w+)\(([^)]*)\)")
@@ -200,8 +207,119 @@ def exemplars(root, tests, steps, tests_dir, reusable_dir):
     return fact(picked, "median-sized test and step class per center")
 
 
+GENERATED_DEPENDENCY = re.compile(r"""["']([\w.\-]+):([\w.\-]*generated[\w.\-]*):(.*)$""", re.M)
+
+
+def generated_dependency(root):
+    """(group, artifact, version) of the *-generated dependency declared in build.gradle(.kts)."""
+    gradle_properties = os.path.join(root, "gradle.properties")
+    props = properties(gradle_properties) if os.path.isfile(gradle_properties) else {}
+    for name in ("build.gradle", "build.gradle.kts"):
+        path = os.path.join(root, name)
+        if not os.path.isfile(path):
+            continue
+        for group, artifact, rest in GENERATED_DEPENDENCY.findall(read(path)):
+            reference = (re.search(r"""property\(\s*['"]([\w.]+)['"]\s*\)""", rest)
+                         or re.search(r"\$\{?([A-Za-z_][\w.]*)\}?", rest))
+            literal = re.match(r"[\w.\-]+", rest)
+            version = props.get(reference.group(1)) if reference else (literal.group(0) if literal else None)
+            if version:
+                return group, artifact, version
+    return None
+
+
+def find_jar(group, artifact, version, gradle_home, m2_home):
+    """The dependency's jar in the Gradle or Maven cache: the declared version first, then a
+    version that only adds a suffix to it (e.g. -SNAPSHOT), newest first."""
+    candidates = []
+    base = os.path.join(gradle_home, "caches", "modules-2", "files-2.1", group, artifact)
+    if os.path.isdir(base):
+        for found in sorted(os.listdir(base)):
+            if found.startswith(version):
+                for jar in glob.glob(os.path.join(base, found, "*", f"{artifact}-{found}.jar")):
+                    candidates.append((found != version, -os.path.getmtime(jar), jar))
+    maven = os.path.join(m2_home, "repository", *group.split("."), artifact, version, f"{artifact}-{version}.jar")
+    if os.path.isfile(maven):
+        candidates.append((False, -os.path.getmtime(maven), maven))
+    return sorted(candidates)[0][2] if candidates else None
+
+
+def extract_cssids(jar):
+    """cssids/ from the jar into a new temp directory, or None when the jar has none."""
+    with zipfile.ZipFile(jar) as z:
+        names = [n for n in z.namelist() if n.startswith("cssids/") and not n.endswith("/") and ".." not in n]
+        if not names:
+            return None
+        target = tempfile.mkdtemp(prefix="recording-to-test-cssids-")
+        for name in names:
+            z.extract(name, target)
+    return target
+
+
+def generated_checkout(root):
+    """src/main/resources of the *-generated checkout: the one build.gradle names, else the only
+    sibling folder with cssids. Two candidates and no name -> None (never guessed)."""
+    def resources(folder):
+        found = os.path.join(folder, "src", "main", "resources")
+        has_cssids = os.path.isdir(os.path.join(found, "cssids")) or glob.glob(os.path.join(found, "*.cssids"))
+        return found if has_cssids else None
+
+    build = os.path.join(root, "build.gradle")
+    if os.path.isfile(build):
+        for folder in re.findall(r"""dir\s*=\s*['"]([^'"]*generated[^'"]*)['"]""", read(build)):
+            found = resources(os.path.normpath(os.path.join(root, folder)))
+            if found:
+                return found
+    parent = os.path.dirname(root)
+    siblings = [resources(os.path.join(parent, d)) for d in sorted(os.listdir(parent))
+                if "generated" in d and os.path.join(parent, d) != root]
+    siblings = [s for s in siblings if s]
+    return siblings[0] if len(siblings) == 1 else None
+
+
+def cssids_source(root, override, gradle_home, m2_home):
+    if override:
+        if os.path.isdir(override):
+            return fact(os.path.abspath(override), "--cssids")
+        return missing(f"--cssids {override} is not a directory")
+    dependency = generated_dependency(root)
+    if dependency:
+        jar = find_jar(*dependency, gradle_home, m2_home)
+        target = extract_cssids(jar) if jar else None
+        if target:
+            return fact(target, f"cssids/ extracted from {jar} ({':'.join(dependency)})")
+    checkout = generated_checkout(root)
+    if checkout:
+        return fact(checkout, "*-generated checkout next to the project")
+    found = (f"no jar for {':'.join(dependency)} with cssids/ in the Gradle or Maven cache"
+             if dependency else "no *-generated dependency in build.gradle")
+    return missing(f"{found}, and no single *-generated checkout with cssids next to the project; "
+                   "pass --cssids <generated project>/src/main/resources")
+
+
+def build_info(root, props):
+    build = os.path.join(root, "build.gradle")
+    if not os.path.isfile(build):
+        return missing("no build.gradle")
+    text = read(build)
+    gradle = "./gradlew" if os.path.isfile(os.path.join(root, "gradlew")) else "gradle"
+    profiles = sorted({m.group(1) for m in (re.fullmatch(r"profile\.([\w-]+)\.properties", os.path.basename(p))
+                                            for p in props) if m})
+    run = None
+    if "bootRun" in text and "MainRunner" in text:
+        run = f'{gradle} bootRun --args="--spring.profiles.active={{profile}} --centerTest={{testClass}}"'
+    return fact({"compile": f"{gradle} compileJava", "run": run, "profiles": profiles}, "build.gradle")
+
+
+def guidewire_version(root, props):
+    value, path = first_property(props, {"customer.centertest.properties", "centertest.properties"}, "gw.version")
+    return fact(value, rel(root, path)) if value else missing("no gw.version property")
+
+
 def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
     root = os.path.abspath(root)
+    gradle_home = gradle_home or os.environ.get("GRADLE_USER_HOME") or os.path.expanduser("~/.gradle")
+    m2_home = m2_home or os.path.expanduser("~/.m2")
     java, props = index(root)
     result = {"root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
     package, source = result["clientPackage"]["value"], result["testsRoot"]["value"]
@@ -216,4 +334,28 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
     else:
         for key in ("testLayout", "testStyle", "steps", "facades", "exemplars"):
             result[key] = missing("needs clientPackage and testsRoot")
+    result.update(cssids=cssids_source(root, cssids, gradle_home, m2_home),
+                  build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
     return result
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Detect a CenterTest project's conventions")
+    parser.add_argument("root", nargs="?", default=".", help="project root (default: current directory)")
+    parser.add_argument("--cssids", help="resources dir holding cssids/<app>/, when it cannot be detected")
+    parser.add_argument("--out", help="write the result here instead of stdout")
+    args = parser.parse_args(argv)
+    if not os.path.isdir(args.root):
+        print(f"Error: project root not found: {args.root}", file=sys.stderr)
+        return 2
+    text = json.dumps(scan(args.root, args.cssids), indent=2, ensure_ascii=False)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+    else:
+        print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

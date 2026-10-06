@@ -165,7 +165,18 @@ class TestsAndStepsTest(ProjectTestCase):
         steps = self.scan()["steps"]["value"]
         self.assertEqual(steps["root"], "src/main/java/com/acme/reusable")
         self.assertEqual(steps["bases"], [{"base": "BaseScenarioPC", "center": "pc",
-                                           "flowTags": "Application.PC", "count": 3}])
+                                           "flowTags": '@FlowTags("Application.PC")', "withFlowTags": 3, "count": 3}])
+
+    def test_flow_tags_array_form_and_untagged_steps(self):
+        fake_project(self.root)
+        steps_dir = "src/main/java/com/acme/reusable/pc/shared"
+        for name, text in (("LoginToPC", LOGIN_STEP), ("SearchForPolicyPC", SEARCH_STEP)):
+            write(self.root, f"{steps_dir}/{name}.java",
+                  text.replace('@FlowTags("Application.PC")', '@FlowTags({"Application.PC"})'))
+        write(self.root, f"{steps_dir}/Untagged.java", "public class Untagged extends BaseScenarioPC { }\n")
+        base = self.scan()["steps"]["value"]["bases"][0]
+        self.assertEqual((base["flowTags"], base["withFlowTags"], base["count"]),
+                         ('@FlowTags({"Application.PC"})', 3, 4))
 
     def test_missing_package_is_reported(self):
         fake_project(self.root)
@@ -208,6 +219,94 @@ class FacadesAndExemplarsTest(ProjectTestCase):
         fake_project(self.root)
         os.remove(os.path.join(self.root, "src", "main", "java", "com", "acme", "reusable", "PC.java"))
         self.assertIsNone(self.scan()["facades"]["value"])
+
+
+def make_jar(path, entries):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        for name, text in entries.items():
+            z.writestr(name, text)
+
+
+LOGIN_CSSIDS = {"cssids/pc/Login.properties": "Login-LoginScreen-LoginDV-submit=new LoginPage(getContext()).getSubmit()\n"}
+
+
+class CssidsSourceTest(ProjectTestCase):
+    def cache_jar(self, version, entries=LOGIN_CSSIDS):
+        path = os.path.join(self.gradle, "caches", "modules-2", "files-2.1", "com.acme", "acme-generated",
+                            version, "0a1b2c", f"acme-generated-{version}.jar")
+        make_jar(path, entries)
+        return path
+
+    def test_jar_at_declared_version(self):
+        fake_project(self.root)
+        jar = self.cache_jar("1.2")
+        cssids = self.scan()["cssids"]
+        self.assertTrue(os.path.isfile(os.path.join(cssids["value"], "cssids", "pc", "Login.properties")))
+        self.assertIn(jar, cssids["evidence"])
+
+    def test_jar_with_version_suffix(self):
+        fake_project(self.root)
+        self.cache_jar("1.2-SNAPSHOT")
+        self.assertIsNotNone(self.scan()["cssids"]["value"])
+
+    def test_jar_without_cssids_falls_through_to_checkout(self):
+        fake_project(self.root)
+        self.cache_jar("1.2", {"com/acme/Foo.class": "x"})
+        write(self.parent, "acme-generated/src/main/resources/cssids/pc/Login.properties", "k=v\n")
+        self.assertEqual(self.scan()["cssids"]["value"],
+                         os.path.join(self.parent, "acme-generated", "src", "main", "resources"))
+
+    def test_ambiguous_siblings_are_not_guessed(self):
+        fake_project(self.root)
+        write(self.parent, "acme-generated/src/main/resources/cssids/pc/A.properties", "k=v\n")
+        write(self.parent, "other-generated/src/main/resources/cssids/pc/B.properties", "k=v\n")
+        cssids = self.scan()["cssids"]
+        self.assertIsNone(cssids["value"])
+        self.assertIn("--cssids", cssids["reason"])
+
+    def test_checkout_named_in_build_gradle_wins(self):
+        fake_project(self.root)
+        with open(os.path.join(self.root, "build.gradle"), "a", encoding="utf-8") as f:
+            f.write("includeBuild { dir = '../acme-generated' }\n")
+        write(self.parent, "acme-generated/src/main/resources/cssids/pc/A.properties", "k=v\n")
+        write(self.parent, "other-generated/src/main/resources/cssids/pc/B.properties", "k=v\n")
+        self.assertEqual(self.scan()["cssids"]["value"],
+                         os.path.join(self.parent, "acme-generated", "src", "main", "resources"))
+
+    def test_override(self):
+        fake_project(self.root)
+        self.assertEqual(self.scan(cssids=self.parent)["cssids"],
+                         {"value": os.path.abspath(self.parent), "evidence": "--cssids"})
+
+
+class BuildAndCommandLineTest(ProjectTestCase):
+    def test_build_info(self):
+        fake_project(self.root)
+        build = self.scan()["build"]["value"]
+        self.assertEqual(build["compile"], "./gradlew compileJava")
+        self.assertEqual(build["run"],
+                         './gradlew bootRun --args="--spring.profiles.active={profile} --centerTest={testClass}"')
+        self.assertEqual(build["profiles"], ["local", "qa"])
+
+    def test_guidewire_version(self):
+        fake_project(self.root)
+        self.assertEqual(self.scan()["guidewireVersion"]["value"], "v10")
+
+    def test_command_line(self):
+        fake_project(self.root)
+        out = os.path.join(self.parent, "project.json")
+        result = subprocess.run([sys.executable, os.path.join(SCRIPTS, "scan_project.py"), self.root,
+                                 "--cssids", self.parent, "--out", out], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with open(out, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["clientPackage"]["value"], "com.acme")
+
+    def test_command_line_missing_root(self):
+        result = subprocess.run([sys.executable, os.path.join(SCRIPTS, "scan_project.py"), "/no/such/project"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("project root not found", result.stderr)
 
 
 if __name__ == "__main__":
