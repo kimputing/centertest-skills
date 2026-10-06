@@ -1,0 +1,774 @@
+{
+ "id": "2026-10-01_174907",
+ "name": "test1",
+ "startedAt": "2026-10-01T17:49:07.925623+02:00",
+ "endedAt": "2026-10-01T17:51:24.606168+02:00",
+ "startUrl": "http://localhost:8180/pc/PolicyCenter.do",
+ "toolVersion": "1.0.9-dev+78637ff",
+ "steps": [
+  {
+   "seq": 1,
+   "kind": "start",
+   "title": "Login",
+   "screen": "Login-LoginScreen",
+   "app": "PolicyCenter"
+  },
+  {
+   "seq": 2,
+   "kind": "server",
+   "title": "My Summary",
+   "screen": "Underwriter_MySummary",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "Login-LoginScreen-LoginDV-username",
+     "kind": "text",
+     "label": "Username",
+     "inputType": "text",
+     "value": "su",
+     "region": "center"
+    },
+    {
+     "type": "change",
+     "widgetId": "Login-LoginScreen-LoginDV-password",
+     "kind": "text",
+     "label": "Password",
+     "inputType": "password",
+     "value": "[redacted]",
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "Login-LoginScreen-LoginDV-submit",
+     "kind": "ButtonValueWidget",
+     "role": "button",
+     "text": "Log In",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 3,
+   "kind": "server",
+   "title": "Enter Account Information",
+   "screen": "NewAccount-NewAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please enter basic account holder information, and then click Search to search for a matching account.",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "TabBar-AccountTab",
+     "kind": "TabWidget",
+     "text": "Account",
+     "part": "expand",
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "TabBar-AccountTab-AccountTab_NewAccount",
+     "kind": "MenuItemWidget",
+     "role": "menuitem",
+     "text": "New Account",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 4,
+   "kind": "server",
+   "title": "Enter Account Information",
+   "screen": "NewAccount-NewAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "The search returned zero results.",
+     "level": "info"
+    },
+    {
+     "text": "Please enter basic account holder information, and then click Search to search for a matching account.",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "NewAccount-NewAccountScreen-NewAccountSearchDV-GlobalPersonNameInputSet-FirstName",
+     "kind": "text",
+     "label": "First name",
+     "inputType": "text",
+     "value": "tes",
+     "context": [
+      "Applicant Information"
+     ],
+     "region": "center"
+    },
+    {
+     "type": "change",
+     "widgetId": "NewAccount-NewAccountScreen-NewAccountSearchDV-GlobalPersonNameInputSet-LastName",
+     "kind": "text",
+     "label": "Last name",
+     "inputType": "text",
+     "value": "tes",
+     "context": [
+      "Applicant Information"
+     ],
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "NewAccount-NewAccountScreen-NewAccountSearchDV-SearchAndResetInputSet-SearchLinksInputSet-Search",
+     "kind": "LinkWidget",
+     "role": "link",
+     "text": "Search",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 5,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "NewAccount-NewAccountScreen-NewAccountButton",
+     "kind": "ToolbarButtonWidget",
+     "text": "Create New Account",
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "NewAccount-NewAccountScreen-NewAccountButton-NewAccount_Person",
+     "kind": "MenuItemWidget",
+     "text": "Person",
+     "region": "center"
+    },
+    {
+     "type": "check",
+     "kind": "message",
+     "assert": "noErrorMessages",
+     "seen": "0"
+    }
+   ]
+  },
+  {
+   "seq": 6,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "CreateAccount-CreateAccountScreen-CreateAccountDV-AddressInputSet-globalAddressContainer-GlobalAddressInputSet-AddressLine1",
+     "kind": "text",
+     "label": "Address 1",
+     "inputType": "text",
+     "value": "ssssss",
+     "context": [
+      "Address"
+     ],
+     "region": "center"
+    },
+    {
+     "type": "change",
+     "widgetId": "CreateAccount-CreateAccountScreen-CreateAccountDV-AddressInputSet-globalAddressContainer-GlobalAddressInputSet-State",
+     "kind": "select",
+     "label": "State",
+     "inputType": "select-one",
+     "value": "AL",
+     "display": "Alabama",
+     "context": [
+      "Address"
+     ],
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 7,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ]
+  },
+  {
+   "seq": 8,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "CreateAccount-CreateAccountScreen-CreateAccountDV-AddressInputSet-globalAddressContainer-GlobalAddressInputSet-City",
+     "kind": "text",
+     "label": "City",
+     "inputType": "text",
+     "value": "ass",
+     "context": [
+      "Address"
+     ],
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 9,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ]
+  },
+  {
+   "seq": 10,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "CreateAccount-CreateAccountScreen-CreateAccountDV-AddressInputSet-globalAddressContainer-GlobalAddressInputSet-PostalCode",
+     "kind": "text",
+     "label": "ZIP Code",
+     "inputType": "text",
+     "value": "33333-3333",
+     "context": [
+      "Address"
+     ],
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 11,
+   "kind": "server",
+   "title": "Organizations",
+   "screen": "OrganizationSearchPopup-OrganizationSearchPopupScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "CreateAccount-CreateAccountScreen-CreateAccountDV-AddressType",
+     "kind": "select",
+     "label": "Address Type",
+     "inputType": "select-one",
+     "value": "billing",
+     "display": "Billing",
+     "context": [
+      "Address"
+     ],
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "CreateAccount-CreateAccountScreen-CreateAccountDV-ProducerSelectionInputSet-Producer-SelectOrganization",
+     "kind": "ImageButtonWidget",
+     "role": "img",
+     "label": "Organization",
+     "context": [
+      "Select Producer"
+     ],
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 12,
+   "kind": "server",
+   "title": "Organizations",
+   "screen": "OrganizationSearchPopup-OrganizationSearchPopupScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchDV-GlobalContactNameInputSet-Name",
+     "kind": "text",
+     "label": "Organization Name",
+     "inputType": "text",
+     "value": "a",
+     "context": [
+      "Organizations"
+     ],
+     "region": "popup"
+    },
+    {
+     "type": "click",
+     "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchDV-SearchAndResetInputSet-SearchLinksInputSet-Search",
+     "kind": "LinkWidget",
+     "role": "link",
+     "text": "Search",
+     "context": [
+      "Organizations"
+     ],
+     "region": "popup"
+    }
+   ]
+  },
+  {
+   "seq": 13,
+   "kind": "server",
+   "title": "Create account",
+   "screen": "CreateAccount-CreateAccountScreen",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Please confirm account information",
+     "level": "info"
+    }
+   ],
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchResultsLV-0-_Select",
+     "kind": "SelectorCellValueWidget",
+     "label": "Search Results",
+     "text": "Select",
+     "row": 1,
+     "column": "_Select",
+     "rowKey": [
+      {
+       "header": "Organization Name",
+       "text": "ACV Property Insurance"
+      },
+      {
+       "header": "Organization Type",
+       "text": "Agency"
+      },
+      {
+       "header": "Producer Status",
+       "text": "Active"
+      }
+     ],
+     "context": [
+      "Organizations"
+     ],
+     "region": "popup"
+    }
+   ]
+  },
+  {
+   "seq": 14,
+   "kind": "server",
+   "title": "Account Summary: tes tes",
+   "screen": "AccountFile_Summary",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Billing Information is not available at this time.",
+     "level": "warning"
+    }
+   ],
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "CreateAccount-CreateAccountScreen-ForceDupCheckUpdate",
+     "kind": "ToolbarButtonWidget",
+     "text": "Update",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 15,
+   "kind": "server",
+   "title": "New Submissions",
+   "screen": "NewSubmission-NewSubmissionScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "AccountFile-AccountFileMenuActions",
+     "kind": "MenuActionsWidget",
+     "role": "button",
+     "text": "Actions",
+     "region": "sidebar"
+    },
+    {
+     "type": "click",
+     "widgetId": "AccountFile-AccountFileMenuActions-AccountFileMenuActions_Create-AccountFileMenuActions_NewSubmission",
+     "kind": "MenuItemWidget",
+     "text": "New Submission",
+     "region": "sidebar"
+    }
+   ]
+  },
+  {
+   "seq": 16,
+   "kind": "server",
+   "title": "Offerings",
+   "screen": "SubmissionWizard-OfferingScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "NewSubmission-NewSubmissionScreen-ProductOffersDV-ProductSelectionLV-4-addSubmission",
+     "kind": "LinkWidget",
+     "role": "link",
+     "text": "Select",
+     "row": 5,
+     "column": "addSubmission",
+     "rowKey": [
+      {
+       "header": "Product Name",
+       "text": "General Liability"
+      },
+      {
+       "header": "Product Description",
+       "text": "General Liability"
+      },
+      {
+       "header": "Status",
+       "text": "Available"
+      }
+     ],
+     "context": [
+      "Installed Products"
+     ],
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 17,
+   "kind": "server",
+   "title": "Offerings",
+   "screen": "SubmissionWizard-OfferingScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-OfferingScreen-OfferingSelection",
+     "kind": "select",
+     "label": "Offering Selection",
+     "inputType": "select-one",
+     "value": "GL Standard",
+     "display": "GL Standard",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 18,
+   "kind": "server",
+   "title": "Qualification",
+   "screen": "SubmissionWizard-SubmissionWizard_PreQualificationScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-Next",
+     "kind": "WizardButtonWidget",
+     "text": "Next",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 19,
+   "kind": "server",
+   "title": "Policy Info",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-SubmissionWizard_PolicyInfoScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-Next",
+     "kind": "WizardButtonWidget",
+     "role": "button",
+     "text": "Next",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 20,
+   "kind": "server",
+   "title": "Locations",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-LocationsScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-SubmissionWizard_PolicyInfoScreen-SubmissionWizard_PolicyInfoDV-AccountInfoInputSet-OrganizationType",
+     "kind": "select",
+     "label": "Organization Type",
+     "inputType": "select-one",
+     "value": "commonownership",
+     "display": "Common ownership",
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-Next",
+     "kind": "WizardButtonWidget",
+     "text": "Next",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 21,
+   "kind": "server",
+   "title": "Coverages",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-Next",
+     "kind": "WizardButtonWidget",
+     "text": "Next",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 22,
+   "kind": "server",
+   "title": "Coverages",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-PolicyLineDV-GLGroupIterator-0-CoverageInputSet-CovPatternInputGroup-1-CovTermInputSet-OptionTermInput",
+     "kind": "select",
+     "label": "Medical Payments per person",
+     "inputType": "select-one",
+     "value": "10,000",
+     "display": "10,000",
+     "context": [
+      "Standard Coverages",
+      "General Liability"
+     ],
+     "region": "center",
+     "positional": true
+    },
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-PolicyLineDV-GLGroupIterator-0-CoverageInputSet-CovPatternInputGroup-0-CovTermInputSet-OptionTermInput",
+     "kind": "select",
+     "label": "Occurrence Limit",
+     "inputType": "select-one",
+     "value": "500,000",
+     "display": "500,000",
+     "context": [
+      "Standard Coverages",
+      "General Liability"
+     ],
+     "region": "center",
+     "positional": true
+    },
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-PolicyLineDV-GLGroupIterator-1-CoverageInputSet-CovPatternInputGroup-_checkbox",
+     "kind": "checkbox",
+     "label": "GL Deductible",
+     "inputType": "checkbox",
+     "value": true,
+     "context": [
+      "Standard Coverages"
+     ],
+     "region": "center",
+     "positional": true
+    }
+   ]
+  },
+  {
+   "seq": 23,
+   "kind": "server",
+   "title": "Coverages",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-PolicyLineDV-GLGroupIterator-1-CoverageInputSet-CovPatternInputGroup-0-CovTermInputSet-OptionTermInput",
+     "kind": "select",
+     "label": "Deductible - CSD",
+     "inputType": "select-one",
+     "value": "10,000",
+     "display": "10,000",
+     "context": [
+      "Standard Coverages",
+      "GL Deductible"
+     ],
+     "region": "center",
+     "positional": true
+    },
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-GeneralLiability_AdditionalCoveragesCardTab",
+     "kind": "CardTabWidget",
+     "text": "Additional Coverages",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 24,
+   "kind": "server",
+   "title": "Search Coverages for General Liability Line",
+   "screen": "CoveragePatternSearchPopup-CoveragePatternSearchScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-AdditionalCoveragesPanelSet-AdditionalCoveragesDV_tb-Add",
+     "kind": "PickerToolbarButtonWidget",
+     "label": "Additional Coverages",
+     "text": "Add Coverages",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 25,
+   "kind": "server",
+   "title": "Search Coverages for General Liability Line",
+   "screen": "CoveragePatternSearchPopup-CoveragePatternSearchScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "CoveragePatternSearchPopup-CoveragePatternSearchScreen-CoveragePatternSearchDV-SearchAndResetInputSet-SearchLinksInputSet-Search",
+     "kind": "LinkWidget",
+     "role": "link",
+     "text": "Search",
+     "context": [
+      "Search Coverages for General Liability Line"
+     ],
+     "region": "popup"
+    }
+   ]
+  },
+  {
+   "seq": 26,
+   "kind": "server",
+   "title": "Coverages",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "CoveragePatternSearchPopup-CoveragePatternSearchScreen-CoveragePatternSearchResultsLV-0-_Checkbox",
+     "kind": "checkbox",
+     "inputType": "checkbox",
+     "value": true,
+     "row": 1,
+     "column": "_Checkbox",
+     "rowKey": [
+      {
+       "header": "Coverage",
+       "text": "Designated Pollutants"
+      },
+      {
+       "header": "Category",
+       "text": "POLLUTION"
+      },
+      {
+       "header": "Type",
+       "text": "Coverage"
+      }
+     ],
+     "context": [
+      "Search Coverages for General Liability Line"
+     ],
+     "region": "popup"
+    },
+    {
+     "type": "click",
+     "widgetId": "CoveragePatternSearchPopup-CoveragePatternSearchScreen-CoveragePatternSearchResultsLV_tb-AddCoverageButton",
+     "kind": "CheckedValuesToolbarButtonWidget",
+     "text": "Add Selected Coverages",
+     "context": [
+      "Search Coverages for General Liability Line"
+     ],
+     "region": "popup"
+    }
+   ]
+  },
+  {
+   "seq": 27,
+   "kind": "server",
+   "title": "Exposures",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityEUScreen",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-AdditionalCoveragesPanelSet-AdditionalCoveragesDV-0-CoverageInputSet-CovPatternInputGroup-0-CovTermInputSet-StringTermInput",
+     "kind": "text",
+     "label": "Designated Pollutants",
+     "inputType": "text",
+     "value": "333",
+     "context": [
+      "Additional Coverages"
+     ],
+     "region": "center",
+     "positional": true
+    },
+    {
+     "type": "click",
+     "widgetId": "SubmissionWizard-Next",
+     "kind": "WizardButtonWidget",
+     "text": "Next",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 28,
+   "kind": "stop",
+   "title": "Exposures",
+   "screen": "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityEUScreen",
+   "app": "PolicyCenter"
+  }
+ ]
+}
