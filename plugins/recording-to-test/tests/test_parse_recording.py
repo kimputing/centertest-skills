@@ -98,5 +98,68 @@ class LookupTest(unittest.TestCase):
         self.assertEqual(pr.jstr("Zürich"), '"Zürich"')
 
 
+class FallbackRulesTest(unittest.TestCase):
+    def resolve(self, app, **action):
+        return pr.resolve(CSSIDS, app, action)
+
+    def test_toolbar_segment_is_bracketed(self):
+        result = self.resolve("pc", widgetId="SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen"
+                                             "-AdditionalCoveragesPanelSet-AdditionalCoveragesDV_tb-Add",
+                              kind="ToolbarButtonWidget")
+        self.assertEqual(result["rule"], "toolbar")
+        self.assertEqual(result["getter"], "new SubmissionWizardPage(getContext()).getLineWizardStepSet()"
+                                           ".getLineWizardStepSetGLLineStep().getAdditionalCoveragesCard().getAdd()")
+
+    def test_wizard_button(self):
+        result = self.resolve("pc", widgetId="SubmissionWizard-Next", kind="WizardButtonWidget")
+        self.assertEqual(result, {"resolution": "rule", "rule": "wizardButton",
+                                  "getter": "new SubmissionWizardPage(getContext()).getWizardButtons().getNext()"})
+
+    def test_tab_and_tab_menu_item(self):
+        self.assertEqual(self.resolve("pc", widgetId="TabBar-AccountTab", kind="TabWidget")["getter"],
+                         "new TabBar(getContext()).getAccountTab()")
+        self.assertEqual(self.resolve("pc", widgetId="TabBar-AccountTab-AccountTab_NewAccount",
+                                      kind="MenuItemWidget")["getter"],
+                         "new TabBar(getContext()).getNewAccount()")
+
+    def test_row_select_column_with_row_key(self):
+        result = self.resolve("pc", widgetId="OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchResultsLV-0-_Select",
+                              kind="SelectorCellValueWidget", rowKey=[{"header": "Organization Name", "text": "ACV"}])
+        self.assertEqual(result["rule"], "rowColumn")
+        self.assertEqual(result["getter"], 'new OrganizationSearchPopup(getContext()).getOrganizationSearchResultsTable()'
+                                           '.getFirstRow().with("Organization Name", "ACV", "TextCell").select().getSelect()')
+
+    def test_row_named_and_checkbox_columns(self):
+        link = self.resolve("pc", widgetId="NewSubmission-NewSubmissionScreen-ProductOffersDV-ProductSelectionLV-4-addSubmission",
+                            kind="LinkWidget")
+        self.assertTrue(link["getter"].endswith(".getProductSelectionTable().getFirstRow().select().getAddSubmission()"))
+        box = self.resolve("pc", widgetId="CoveragePatternSearchPopup-CoveragePatternSearchScreen-CoveragePatternSearchResultsLV-0-_Checkbox",
+                           kind="checkbox", inputType="checkbox")
+        self.assertEqual((box["rule"], box["column"]), ("rowColumn", "_Checkbox"))
+        self.assertTrue(box["getter"].endswith(".select().get_CHECKBOX()"))
+
+    def test_row_column_gw9_separators(self):
+        result = self.resolve("cc", widgetId="ClaimSearch:ClaimSearchScreen:ClaimSearchResultsLV:2:_Select",
+                              kind="SelectorCellValueWidget")
+        self.assertEqual(result["getter"], "new ClaimSearchPage(getContext()).getClaimSearchResultsTable()"
+                                           ".getFirstRow().select().getSelect()")
+
+    def test_iterator_widget_falls_back_to_raw_form(self):
+        widget_id = ("SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-PolicyLineDV"
+                     "-GLGroupIterator-0-CoverageInputSet-CovPatternInputGroup-1-CovTermInputSet-OptionTermInput")
+        result = self.resolve("pc", widgetId=widget_id, kind="select")
+        self.assertEqual(result, {"resolution": "raw", "rule": "raw", "widget": "WidgetRangeInput",
+                                  "getter": f'WidgetRangeInput.get("{widget_id}", getContext())'})
+
+    def test_raw_widget_class_from_kind(self):
+        self.assertEqual(self.resolve("pc", widgetId="X-Y-_checkbox", kind="checkbox", inputType="checkbox")["widget"],
+                         "WidgetCheckBoxInput")
+        self.assertEqual(self.resolve("pc", widgetId="X-Y-Header_inner", kind="div")["widget"], "WidgetLabel")
+
+    def test_app_without_cssids_falls_back_to_raw(self):
+        result = self.resolve("ab", widgetId="ABContactDetailPopup-Name", kind="text")
+        self.assertEqual((result["resolution"], result["widget"]), ("raw", "WidgetTextInput"))
+
+
 if __name__ == "__main__":
     unittest.main()
