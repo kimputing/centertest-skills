@@ -149,6 +149,57 @@ def step_conventions(root, steps, reusable_dir):
                 f"{sum(combos.values())} step classes")
 
 
+FACADE_METHOD = re.compile(r"static\s+(\w+)\s+(\w+)\(([^)]*)\)")
+GENERATED_PAGE = re.compile(r"import\s+[\w.]+\.generated\.pages\.[\w.]+?\.(\w+);")
+
+
+def facades(root, java, steps):
+    """Static methods of the facade interfaces under reusable/ that return a step class. A
+    context-only one also lists the generated pages its step uses and the titles it waits for."""
+    classes = {os.path.splitext(os.path.basename(path))[0]: path for path in java}
+    methods = []
+    for path, text in sorted(steps.items()):
+        interface = re.search(r"\binterface\s+(\w+)", text)
+        if not interface:
+            continue
+        for returns, method, params in FACADE_METHOD.findall(text):
+            if returns not in classes:
+                continue
+            entry = {"facade": interface.group(1), "method": method, "params": " ".join(params.split()),
+                     "returns": returns,
+                     "contextOnly": bool(re.fullmatch(r"\s*InvocationContext\s+\w+\s*", params))}
+            if entry["contextOnly"]:
+                step_text = java[classes[returns]]
+                entry.update(step=rel(root, classes[returns]),
+                             pages=sorted(set(GENERATED_PAGE.findall(step_text))),
+                             titles=re.findall(r'waitForPageTitle\("([^"]+)"\)', step_text))
+            methods.append(entry)
+    if not methods:
+        return missing("no facade interfaces with static step methods under reusable/")
+    context_only = sum(m["contextOnly"] for m in methods)
+    return fact(methods, f"{len(methods)} facade methods, {context_only} context-only")
+
+
+def exemplars(root, tests, steps, tests_dir, reusable_dir):
+    """Per center, a median-sized test that uses an invocation role and a median-sized step class."""
+    def center_of(path, directory):
+        return os.path.relpath(path, directory).split(os.sep)[0]
+
+    picked = {}
+    for center in sorted({center_of(path, tests_dir) for path in tests}):
+        test_files = sorted((len(t), p) for p, t in tests.items()
+                            if center_of(p, tests_dir) == center and "getInvocationContext" in t)
+        step_files = sorted((len(t), p) for p, t in steps.items()
+                            if center_of(p, reusable_dir) == center
+                            and re.search(r"\bextends\s+BaseScenario", t) and "waitForPageTitle" in t)
+        if test_files and step_files:
+            picked[center] = {"test": rel(root, test_files[len(test_files) // 2][1]),
+                              "step": rel(root, step_files[len(step_files) // 2][1])}
+    if not picked:
+        return missing("no test and step class pair found for any center")
+    return fact(picked, "median-sized test and step class per center")
+
+
 def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
     root = os.path.abspath(root)
     java, props = index(root)
@@ -160,8 +211,9 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
         tests = {p: t for p, t in files_under(java, tests_dir).items() if CENTERTEST_CLASS.search(t)}
         steps = files_under(java, reusable_dir)
         result.update(testLayout=test_layout(tests_dir, tests), testStyle=test_style(tests),
-                      steps=step_conventions(root, steps, reusable_dir))
+                      steps=step_conventions(root, steps, reusable_dir), facades=facades(root, java, steps),
+                      exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir))
     else:
-        for key in ("testLayout", "testStyle", "steps"):
+        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars"):
             result[key] = missing("needs clientPackage and testsRoot")
     return result

@@ -180,5 +180,35 @@ class TestsAndStepsTest(ProjectTestCase):
         self.assertNotIn("s3cr3t", json.dumps(self.scan()))
 
 
+class FacadesAndExemplarsTest(ProjectTestCase):
+    def test_context_only_facades_carry_their_step_fingerprint(self):
+        fake_project(self.root)
+        methods = {m["method"]: m for m in self.scan()["facades"]["value"]}
+        login = methods["loginToPC"]
+        self.assertTrue(login["contextOnly"])
+        self.assertEqual(login["step"], "src/main/java/com/acme/reusable/pc/shared/LoginToPC.java")
+        self.assertEqual((login["pages"], login["titles"]), (["LoginPage"], ["My Summary"]))
+        self.assertEqual(methods["searchForPolicyPC"]["pages"], ["PolicySearchPage", "QXZK"])
+
+    def test_data_facades_are_not_context_only(self):
+        fake_project(self.root)
+        account = {m["method"]: m for m in self.scan()["facades"]["value"]}["createPersonAccount"]
+        self.assertFalse(account["contextOnly"])
+        self.assertEqual(account["params"],
+                         "InvocationContext context, SharedData.Person person, SharedData.Address address")
+        self.assertNotIn("pages", account)
+
+    def test_exemplars_per_center(self):
+        fake_project(self.root)
+        picked = self.scan()["exemplars"]["value"]["pc"]
+        self.assertTrue(picked["test"].startswith("src/main/java/com/acme/tests/pc/"))
+        self.assertTrue(picked["step"].startswith("src/main/java/com/acme/reusable/pc/"))
+
+    def test_no_facades(self):
+        fake_project(self.root)
+        os.remove(os.path.join(self.root, "src", "main", "java", "com", "acme", "reusable", "PC.java"))
+        self.assertIsNone(self.scan()["facades"]["value"])
+
+
 if __name__ == "__main__":
     unittest.main()
