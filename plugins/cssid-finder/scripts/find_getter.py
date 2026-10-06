@@ -12,8 +12,10 @@ Usage:
 Apps: pc, cc, bc, ab (or cm)
 
 Supports two layouts (auto-detected):
-  1. New: cssids/<app>/<Page>.properties  (key=value per line)
+  1. New: cssids/<app>/<Page>.properties  (key=value per line, java.util.Properties escaping)
   2. Legacy: <app>.cssids single file     (JSON-like "cssId"/"hierarchyPath" pairs)
+
+CSS IDs separate their segments with '-' (Guidewire 10) or ':' (Guidewire 9).
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/cssid-finder/scripts/find_getter.py
 """
@@ -125,6 +127,13 @@ def show_path() -> None:
 #   '[ROW]' -> table / list-view row index
 ITERATOR_PLACEHOLDER = "#"
 ROW_PLACEHOLDER = "[ROW]"
+# Segment separators: '-' on Guidewire 10, ':' on Guidewire 9.
+SEPARATOR = re.compile(r"([-:])")
+# An unescaped .properties line: key up to the first '=', ':' or whitespace, then the separator.
+PLAIN_LINE = re.compile(r"([^=:\s]*)[ \t\f]*[=:]?[ \t\f]*(.*)", re.DOTALL)
+# A conditional toolbar segment '[X_tb]' (never the '[ROW]' placeholder).
+TOOLBAR_SEGMENT = re.compile(r"\[([^\[\]]*_tb)\]")
+TOOLBAR_SEGMENT_WITH_SEPARATOR = re.compile(r"\[[^\[\]]*_tb\][-:]?")
 # Cap the #/[ROW] combinations we try, to avoid explosion on pathological ids.
 MAX_COMBINATORIAL_SEGMENTS = 6
 
@@ -137,9 +146,9 @@ def _bracket_variants(css_id: str) -> list[str]:
     (1) the id as-is, (2) brackets removed (table name kept), (3) the whole segment removed.
     """
     forms = [css_id]
-    if "[" in css_id and "_tb]" in css_id:
-        forms.append(css_id.replace("[", "").replace("]", ""))
-        forms.append(re.sub(r"\[.*?_tb\]-?", "", css_id))
+    if "_tb]" in css_id:
+        forms.append(TOOLBAR_SEGMENT.sub(r"\1", css_id))
+        forms.append(TOOLBAR_SEGMENT_WITH_SEPARATOR.sub("", css_id))
     return forms
 
 
@@ -183,11 +192,11 @@ def normalize_css_id(css_id: str) -> list[str]:
     if css_id.endswith("_Input"):
         css_id = css_id[:-6]
 
-    parts = css_id.split("-")
+    parts = SEPARATOR.split(css_id)  # keeps the separators, so each id rejoins as it was
     forms: list[str] = []
     seen: set[str] = set()
     for candidate_parts in _expand_numeric(parts):
-        candidate = "-".join(candidate_parts)
+        candidate = "".join(candidate_parts)
         for variant in _bracket_variants(candidate):
             if variant not in seen:
                 seen.add(variant)
@@ -196,8 +205,59 @@ def normalize_css_id(css_id: str) -> list[str]:
 
 
 def get_page_name(css_id: str) -> str:
-    """Extract page name (first segment before '-') from a CSS ID."""
-    return css_id.split("-")[0]
+    """Page file name for a CSS ID, as CssMapper.pageName in centertest-core writes it:
+    the segment before the first '-' or ':', or '_misc' for an id that starts with '#'."""
+    if css_id.startswith("#"):
+        return "_misc"
+    separator = SEPARATOR.search(css_id)
+    return css_id[:separator.start()] if separator and separator.start() > 0 else css_id
+
+
+_ESCAPES = {"t": "\t", "n": "\n", "r": "\r", "f": "\f"}
+
+
+def _unescape(text: str) -> str:
+    """Undo java.util.Properties escapes: \\t \\n \\r \\f, \\uXXXX, and \\X for any other X."""
+    out, i = [], 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt == "u" and re.fullmatch(r"[0-9a-fA-F]{4}", text[i + 2:i + 6]):
+                out.append(chr(int(text[i + 2:i + 6], 16)))
+                i += 6
+                continue
+            out.append(_ESCAPES.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def parse_properties_line(line: str):
+    """Split one .properties line into (key, value) as java.util.Properties.load does.
+
+    Returns None for blank and comment lines. A line that starts with an unescaped '#'
+    but has '=' is still read as data: files generated before CenterTest 6.15 wrote
+    '#'-rooted ids unescaped."""
+    line = line.lstrip(" \t\f")
+    if not line or (line[0] in "#!" and "=" not in line):
+        return None
+    if "\\" not in line:  # nothing escaped: the common case, split without the char loop
+        plain = PLAIN_LINE.match(line)
+        return plain.group(1), plain.group(2)
+    i = 0
+    while i < len(line) and line[i] not in "=: \t\f":
+        i += 2 if line[i] == "\\" else 1
+    key_end = min(i, len(line))
+    while i < len(line) and line[i] in " \t\f":
+        i += 1
+    if i < len(line) and line[i] in "=:":
+        i += 1
+    while i < len(line) and line[i] in " \t\f":
+        i += 1
+    return _unescape(line[:key_end]), _unescape(line[i:])
 
 
 def detect_layout(cssids_dir: str, app_key: str):
@@ -215,57 +275,59 @@ def detect_layout(cssids_dir: str, app_key: str):
 
 def search_properties(props_dir: str, normalized: str, exact_only: bool = False) -> list[str]:
     """Search in properties layout: cssids/<app>/<Page>.properties files."""
-    page = get_page_name(normalized)
-
-    # Try exact page file first
-    page_file = os.path.join(props_dir, f"{page}.properties")
+    # The page file the generator wrote this id into ('_misc' for '#'-rooted ids)
+    page_file = os.path.join(props_dir, f"{get_page_name(normalized)}.properties")
     if os.path.isfile(page_file):
-        return _grep_properties_file(page_file, normalized, exact_only)
+        found = _match_entries(_load_entries((page_file,)), normalized, exact_only)
+        if found:
+            return found
 
-    # Fall back to _misc.properties (for entries starting with #)
-    misc_file = os.path.join(props_dir, "_misc.properties")
-    if os.path.isfile(misc_file):
-        return _grep_properties_file(misc_file, normalized, exact_only)
-
-    # Last resort: grep all .properties files in the directory
-    result = subprocess.run(
-        ["grep", "-h", "-F", normalized, props_dir],
-        capture_output=True, text=True,
-    )
-    return _parse_properties_output(result.stdout, normalized, exact_only)
+    # A partial id, or a file layout from an older generator: search every page file
+    page_files = []
+    for root, _, files in os.walk(props_dir):
+        page_files += [os.path.join(root, name) for name in sorted(files) if name.endswith(".properties")]
+    return _match_entries(_load_entries(tuple(page_files)), normalized, exact_only)
 
 
-def _grep_properties_file(filepath: str, normalized: str, exact_only: bool = False) -> list[str]:
-    """Grep a single properties file for the normalized CSS ID."""
-    result = subprocess.run(
-        ["grep", "-F", normalized, filepath],
-        capture_output=True, text=True,
-    )
-    return _parse_properties_output(result.stdout, normalized, exact_only)
+_entries_cache: dict[tuple[str, ...], tuple[list, dict, dict]] = {}
 
 
-def _parse_properties_output(output: str, normalized: str, exact_only: bool = False) -> list[str]:
-    """Parse properties format lines: cssId=getterChain.
+def _load_entries(page_files: tuple[str, ...]) -> tuple[list, dict, dict]:
+    """The lines of the page files as (key, value, raw key, raw value), read once per run,
+    plus an index of each key kind for exact lookups.
 
-    Returns exact key matches when present. When ``exact_only`` is False, falls back to
-    partial (contains) matches for partial CSS IDs.
-    """
-    exact = []
-    contains = []
-    for line in output.strip().splitlines():
-        line = line.strip()
-        # Skip blank lines and true comments. A data key may legitimately start with
-        # '#' (iterator-rooted entries), so only treat '#' lines without '=' as comments.
-        if not line or (line.startswith("#") and "=" not in line):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            key = key.strip()
-            if key == normalized:
-                exact.append(value.strip())
-            elif not exact_only and normalized in key:
-                contains.append(value.strip())
-    return exact if exact else contains
+    key/value are what java.util.Properties.load reads, as CenterTest does at runtime.
+    The raw split at the first '=' covers files written before CenterTest 6.15 without
+    escaping, where a Guidewire 9 key such as 'Page:Panel:Field' kept its ':' unescaped."""
+    if page_files not in _entries_cache:
+        entries, by_key, by_raw_key = [], {}, {}
+        for page_file in page_files:
+            with open(page_file, encoding="utf-8", errors="replace") as lines:
+                for line in lines:
+                    line = line.rstrip("\r\n")
+                    entry = parse_properties_line(line)
+                    if entry is None:
+                        continue
+                    raw_key, _, raw_value = line.partition("=")
+                    key, value, raw_key, raw_value = entry[0], entry[1].strip(), raw_key.strip(), raw_value.strip()
+                    entries.append((key, value, raw_key, raw_value))
+                    by_key.setdefault(key, []).append(value)
+                    by_raw_key.setdefault(raw_key, []).append(raw_value)
+        _entries_cache[page_files] = (entries, by_key, by_raw_key)
+    return _entries_cache[page_files]
+
+
+def _match_entries(loaded: tuple[list, dict, dict], normalized: str, exact_only: bool = False) -> list[str]:
+    """Getter chains whose key is the CSS ID, or contains it when ``exact_only`` is False."""
+    entries, by_key, by_raw_key = loaded
+    exact = by_key.get(normalized) or by_raw_key.get(normalized)
+    if exact or exact_only:
+        return list(exact or [])
+    for key_index, value_index in ((0, 1), (2, 3)):
+        contains = [e[value_index] for e in entries if normalized in e[key_index]]
+        if contains:
+            return contains
+    return []
 
 
 def search_legacy(filepath: str, normalized: str) -> list[str]:
