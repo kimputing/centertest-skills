@@ -63,5 +63,40 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(pr.wait_title(None), "")
 
 
+class LookupTest(unittest.TestCase):
+    def test_exact_key(self):
+        self.assertEqual(pr.lookup(CSSIDS, "pc", "Login-LoginScreen-LoginDV-username"),
+                         ("resolved", ["new LoginPage(getContext()).getUsername()"]))
+
+    def test_iterator_index_is_put_back(self):
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": "SubmissionWizard-LOBWizardStepGroup-ClauseIterator-2-Limit"})
+        self.assertEqual(result, {"resolution": "resolved",
+                                  "getter": "new SubmissionWizardPage(getContext()).getClauseIterator(2).getLimit()"})
+
+    def test_unknown_application(self):
+        self.assertEqual(pr.resolve(CSSIDS, None, {"widgetId": "X-Y"}),
+                         {"resolution": "unresolved", "reason": "unknown application"})
+
+    def test_no_widget_id(self):
+        self.assertEqual(pr.resolve(CSSIDS, "pc", {"type": "dialog"}),
+                         {"resolution": "unresolved", "reason": "no widget id"})
+
+    def test_row_filters_and_later_page(self):
+        getter = "new P(getContext()).getTable().getFirstRow().select().getSelect()"
+        action = {"page": 2, "rowKey": [{"header": "Name", "text": "Acme"}, {"header": "City", "text": "Ulm"}]}
+        self.assertEqual(pr.with_row(getter, action),
+                         'new P(getContext()).getTable().getFirstRow().forMaximumPages(2)'
+                         '.with("Name", "Acme", "TextCell").with("City", "Ulm", "TextCell").select().getSelect()')
+
+    def test_row_without_key_is_unchanged(self):
+        getter = "new P(getContext()).getTable().getFirstRow().select().getSelect()"
+        self.assertEqual(pr.with_row(getter, {"row": 2}), getter)
+
+    def test_jstr_escapes(self):
+        self.assertEqual(pr.jstr('say "hi" \\ now\nnext'), '"say \\"hi\\" \\\\ now\\nnext"')
+        self.assertEqual(pr.jstr(None), '""')
+        self.assertEqual(pr.jstr("Zürich"), '"Zürich"')
+
+
 if __name__ == "__main__":
     unittest.main()
