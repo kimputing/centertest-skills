@@ -1,0 +1,8 @@
+{
+  "name": "recording-to-test",
+  "description": "Generate a CenterTest test from a CenterTest Recorder recording, following the project's own structure",
+  "author": { "name": "Kimputing" },
+  "homepage": "https://github.com/Kimputing/centertest-skills",
+  "repository": "https://github.com/Kimputing/centertest-skills",
+  "license": "MIT"
+}
