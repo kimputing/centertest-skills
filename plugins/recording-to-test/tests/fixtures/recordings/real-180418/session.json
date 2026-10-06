@@ -1,0 +1,134 @@
+{
+ "id": "2026-10-01_180418",
+ "name": "test1",
+ "startedAt": "2026-10-01T18:04:18.315259+02:00",
+ "endedAt": "2026-10-01T18:04:58.674588+02:00",
+ "startUrl": "http://localhost:8180/pc/PolicyCenter.do",
+ "toolVersion": "1.0.9-dev+e36b4d9",
+ "steps": [
+  {
+   "seq": 1,
+   "kind": "start",
+   "title": "Login",
+   "screen": "Login-LoginScreen",
+   "app": "PolicyCenter"
+  },
+  {
+   "seq": 2,
+   "kind": "server",
+   "title": "My Summary",
+   "screen": "Underwriter_MySummary",
+   "app": "PolicyCenter",
+   "actions": [
+    {
+     "type": "change",
+     "widgetId": "Login-LoginScreen-LoginDV-username",
+     "kind": "text",
+     "label": "Username",
+     "inputType": "text",
+     "value": "su",
+     "region": "center"
+    },
+    {
+     "type": "change",
+     "widgetId": "Login-LoginScreen-LoginDV-password",
+     "kind": "text",
+     "label": "Password",
+     "inputType": "password",
+     "value": "[redacted]",
+     "region": "center"
+    },
+    {
+     "type": "click",
+     "widgetId": "Login-LoginScreen-LoginDV-submit",
+     "kind": "ButtonValueWidget",
+     "role": "button",
+     "text": "Log In",
+     "region": "center"
+    }
+   ]
+  },
+  {
+   "seq": 3,
+   "kind": "server",
+   "title": "Account Summary: Duncan Test",
+   "screen": "AccountFile_Summary",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Billing Information is not available at this time.",
+     "level": "warning"
+    }
+   ],
+   "actions": [
+    {
+     "type": "click",
+     "widgetId": "TabBar-AccountTab",
+     "kind": "TabWidget",
+     "text": "Account",
+     "region": "center"
+    },
+    {
+     "type": "check",
+     "widgetId": "AccountFile_Summary-AccountSummaryDashboard-AccountDetailsDetailViewTile-AccountDetailsDetailViewTile_DV-AccountNumber",
+     "kind": "text",
+     "label": "Account No",
+     "region": "center",
+     "assert": "isVisible",
+     "flag": true,
+     "seen": "7879422213"
+    },
+    {
+     "type": "check",
+     "widgetId": "AccountFile_Summary-AccountSummaryDashboard-CurrentActivitiesAccountListViewTile-CurrentActivitiesAccountListViewTile_LV-PriorityHeader_inner",
+     "kind": "div",
+     "label": "Priority",
+     "region": "center",
+     "assert": "isEnabled"
+    },
+    {
+     "type": "check",
+     "widgetId": "AccountFile_Summary-AccountSummaryDashboard-AccountDetailsDetailViewTile-AccountDetailsDetailViewTile_DV-AccountStatus",
+     "kind": "text",
+     "label": "Status",
+     "region": "center",
+     "assert": "isEqualTo",
+     "expected": "Active",
+     "seen": "Active"
+    }
+   ]
+  },
+  {
+   "seq": 4,
+   "kind": "stop",
+   "title": "Account Summary: Duncan Test",
+   "screen": "AccountFile_Summary",
+   "app": "PolicyCenter",
+   "messages": [
+    {
+     "text": "Billing Information is not available at this time.",
+     "level": "warning"
+    }
+   ]
+  }
+ ],
+ "meta": {
+  "version": 1,
+  "testId": "tc123",
+  "description": "this is my test",
+  "prerequisites": "logged user",
+  "expectedOutcome": "i want account to be seen",
+  "featureIds": [
+   "AD-123"
+  ],
+  "defectIds": [
+   "JIRA-321"
+  ],
+  "links": [
+   "https://jira.com"
+  ],
+  "tags": [
+   "smoke"
+  ]
+ }
+}

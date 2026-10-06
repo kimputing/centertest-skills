@@ -1,0 +1,37 @@
+{
+ "id": "2026-10-06_100000",
+ "name": "synthetic",
+ "toolVersion": "1.0.9-test",
+ "startUrl": "http://localhost:8180/pc/PolicyCenter.do",
+ "meta": {"version": 1, "testId": "SYN-1", "recorderName": "QA"},
+ "notes": [{"text": "before the first step"}],
+ "steps": [
+  {"seq": 1, "kind": "start", "app": "PolicyCenter", "screen": "Login-LoginScreen", "title": "Login"},
+  {"seq": 2, "kind": "server", "app": "PolicyCenter", "screen": "OrganizationSearchPopup", "title": "Organizations: Search",
+   "messages": ["Legacy plain message"],
+   "notes": [{"text": "pick the organization on page 2"}],
+   "actions": [
+    {"type": "change", "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchDV-GlobalContactNameInputSet-Name", "kind": "text", "label": "Name", "inputType": "text", "value": "Acme", "unique": {"rule": "company"}},
+    {"type": "click", "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchResultsLV-0-_Select", "kind": "SelectorCellValueWidget", "label": "Search Results", "text": "Select", "row": 3, "page": 2, "column": "_Select", "rowKey": [{"header": "Name", "text": "Acme"}]},
+    {"type": "click", "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchResultsLV-1-_Select", "kind": "SelectorCellValueWidget", "label": "Search Results", "text": "Select", "row": 2, "column": "_Select"},
+    {"type": "key", "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchDV-GlobalContactNameInputSet-Name", "kind": "text", "label": "Name", "key": "Enter"}
+   ]},
+  {"seq": 3, "kind": "server", "app": "PolicyCenter", "screen": "SubmissionWizard", "title": "Policy Info",
+   "actions": [
+    {"type": "change", "widgetId": "SubmissionWizard-LOBWizardStepGroup-ClauseIterator-2-Limit", "kind": "select", "label": "Limit", "inputType": "select-one", "value": "1000", "display": "1,000"},
+    {"type": "check", "widgetId": "SubmissionWizard-OfferingScreen-OfferingSelection", "kind": "select", "label": "Offering", "assert": "isEqualToNumeric", "expected": "1,250.00", "soft": true},
+    {"type": "check", "widgetId": "SubmissionWizard-OfferingScreen-OfferingSelection", "kind": "select", "label": "Offering", "assert": "optionsContains", "values": ["A", "B"]},
+    {"type": "check", "widgetId": "SubmissionWizard-OfferingScreen-OfferingSelection", "kind": "select", "label": "Offering", "assert": "isSomethingNew"},
+    {"type": "check", "kind": "message", "assert": "messageContaining", "expected": "Quote", "level": "info", "soft": true},
+    {"type": "check", "kind": "message", "assert": "messageWith", "expected": "Exact text", "level": "error"},
+    {"type": "dialog", "kind": "dialog", "label": "Are you sure?"}
+   ]},
+  {"seq": 4, "kind": "switch", "app": "BillingCenter", "screen": "AccountSummary", "title": "Account Summary",
+   "actions": [
+    {"type": "check", "widgetId": "AccountSummary-AccountSummaryScreen-AccountNumber", "kind": "text", "label": "Account #", "assert": "isEqualTo", "expected": "Acme"}
+   ]},
+  {"seq": 5, "kind": "server", "app": "Gosu Tester", "screen": "Unknown", "title": "Unknown",
+   "actions": [{"type": "click", "widgetId": "Unknown-Widget", "kind": "button"}]},
+  {"seq": 6, "kind": "stop", "app": "BillingCenter", "screen": "AccountSummary", "title": "Account Summary"}
+ ]
+}
