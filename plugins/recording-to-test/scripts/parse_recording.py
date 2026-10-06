@@ -218,3 +218,85 @@ def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
     widget = RAW_WIDGET.get(kind) or ("WidgetCheckBoxInput" if action.get("inputType") == "checkbox" else "WidgetLabel")
     return {"resolution": "raw", "rule": "raw", "widget": widget,
             "getter": f"{widget}.get({jstr(widget_id)}, getContext())"}
+
+
+GEN = "Utilities.DataGenerator.getGenerator()"
+# recorder assert -> AbstractWidget method (each has a ...Soft variant)
+VALUE_CHECKS = {"isEqualTo": "assertEquals", "isNotEqualTo": "assertNotEquals",
+                "isEqualToNumeric": "assertEqualsNumeric", "isNotEqualToNumeric": "assertNotEqualsNumeric",
+                "contains": "assertContains", "notContains": "assertNotContains", "isLabelEqualTo": "assertLabel"}
+STATE_CHECKS = {"isEmpty": "assertEmpty", "isNotEmpty": "assertNotEmpty", "isEnabled": "assertEnabled",
+                "isDisabled": "assertDisabled", "isEditable": "assertEditable", "isReadonly": "assertReadOnly"}
+FLAG_CHECKS = {"isVisible": "assertVisible", "isChecked": "assertChecked", "isRequired": "assertRequired"}
+LIST_CHECKS = {"isIn": "assertIsIn", "optionsContains": "assertOptionsContain", "optionsEquals": "assertOptionsEqual"}
+UNIQUE_GENERATOR = {"company": ".company().name()", "firstName": ".name().firstName()",
+                    "lastName": ".name().lastName()", "email": ".internet().emailAddress()",
+                    "phone": ".phoneNumber().cellPhone()", "vin": ".vehicle().vin()"}
+NO_ERRORS = ('CenterTestAssertion.withContext(getContext()).withDescription("No error messages")'
+             '.assertThat(() -> Assertions.assertThat(MessagesUtil.getErrorMessages(getContext())).isEmpty());')
+
+
+def unique_java(unique: dict):
+    """The data generator call for a value marked unique: the recorder's uniqueJava() in report.html."""
+    rule = unique.get("rule")
+    front = jstr(unique["prefix"]) + " + " if unique.get("prefix") else ""
+    if rule in UNIQUE_GENERATOR:
+        return GEN + UNIQUE_GENERATOR[rule]
+    if rule == "ssn":
+        return "Utilities.DataGenerator.getValidSsn()"
+    if rule == "letters":
+        return f"{front}Utilities.getRandomStringWithoutNumbers({unique.get('length')})"
+    if rule == "alnum":
+        return f"{front}Utilities.getRandomString({unique.get('length')})"
+    if rule == "pattern":
+        pattern = unique.get("pattern") or ""
+        if "?" in pattern:
+            return f"{GEN}.bothify({jstr(pattern)}{', true' if unique.get('upper') else ''})"
+        return f"{GEN}.numerify({jstr(pattern)})"
+    return None
+
+
+def action_java(action: dict):
+    """The call on the widget for a click or an entered value; None for anything else."""
+    if action.get("type") == "click":
+        return ".click()"
+    if action.get("type") != "change" or action.get("value") == REDACTED:
+        return None
+    value = action.get("value")
+    if isinstance(value, bool):
+        return f".set({str(value).lower()})"
+    expr = unique_java(action["unique"]) if action.get("unique") else None
+    if expr:
+        return f".set({expr})"
+    display = action.get("display")
+    return f".set({jstr(display if display not in (None, '') else value)})"
+
+
+def check_java(check: dict):
+    """The widget assertion for a recorded check; a soft check uses the ...Soft variant."""
+    name, soft = check.get("assert"), "Soft" if check.get("soft") else ""
+    values = check.get("values") or []
+    if name in VALUE_CHECKS:
+        return f".{VALUE_CHECKS[name]}{soft}({jstr(check.get('expected'))})"
+    if name in STATE_CHECKS:
+        return f".{STATE_CHECKS[name]}{soft}()"
+    if name in FLAG_CHECKS:
+        return f".{FLAG_CHECKS[name]}{soft}({'false' if check.get('flag') is False else 'true'})"
+    if name in LIST_CHECKS:
+        listed = ", ".join(jstr(v) for v in values)
+        return f".{LIST_CHECKS[name]}{soft}(new String[]{{{listed}}})"
+    if name == "optionsNotContains":
+        return f".assertOptionsNotContain{soft}({jstr(values[0] if values else check.get('expected'))})"
+    return None
+
+
+def message_check_java(check: dict):
+    """A page-message check as a statement; MessagesUtil has no soft variant."""
+    name = check.get("assert")
+    if name == "messageWith":
+        return f"MessagesUtil.assertMessageWith(getContext(), {jstr(check.get('expected'))});"
+    if name == "messageContaining":
+        return f"MessagesUtil.assertMessageContaining(getContext(), {jstr(check.get('expected'))});"
+    if name == "noErrorMessages":
+        return NO_ERRORS
+    return None

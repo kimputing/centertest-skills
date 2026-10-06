@@ -161,5 +161,70 @@ class FallbackRulesTest(unittest.TestCase):
         self.assertEqual((result["resolution"], result["widget"]), ("raw", "WidgetTextInput"))
 
 
+class JavaFragmentsTest(unittest.TestCase):
+    def test_checks(self):
+        cases = [
+            ({"assert": "isEqualTo", "expected": "Active"}, '.assertEquals("Active")'),
+            ({"assert": "isEqualTo", "expected": "<blank>"}, '.assertEquals("<blank>")'),
+            ({"assert": "isNotEqualTo", "expected": "X", "soft": True}, '.assertNotEqualsSoft("X")'),
+            ({"assert": "isEqualToNumeric", "expected": "1,250.00", "soft": True}, '.assertEqualsNumericSoft("1,250.00")'),
+            ({"assert": "isNotEqualToNumeric", "expected": "0"}, '.assertNotEqualsNumeric("0")'),
+            ({"assert": "contains", "expected": "Ac"}, '.assertContains("Ac")'),
+            ({"assert": "notContains", "expected": "Z"}, '.assertNotContains("Z")'),
+            ({"assert": "isLabelEqualTo", "expected": "Name"}, '.assertLabel("Name")'),
+            ({"assert": "isEmpty"}, ".assertEmpty()"),
+            ({"assert": "isNotEmpty", "soft": True}, ".assertNotEmptySoft()"),
+            ({"assert": "isEnabled"}, ".assertEnabled()"),
+            ({"assert": "isDisabled"}, ".assertDisabled()"),
+            ({"assert": "isEditable"}, ".assertEditable()"),
+            ({"assert": "isReadonly"}, ".assertReadOnly()"),
+            ({"assert": "isVisible", "flag": True}, ".assertVisible(true)"),
+            ({"assert": "isVisible", "flag": False, "seen": "gone"}, ".assertVisible(false)"),
+            ({"assert": "isChecked", "flag": False}, ".assertChecked(false)"),
+            ({"assert": "isRequired"}, ".assertRequired(true)"),
+            ({"assert": "isIn", "values": ["A", 'B "q"']}, '.assertIsIn(new String[]{"A", "B \\"q\\""})'),
+            ({"assert": "optionsContains", "values": ["A", "B"]}, '.assertOptionsContain(new String[]{"A", "B"})'),
+            ({"assert": "optionsEquals", "values": ["A"], "soft": True}, '.assertOptionsEqualSoft(new String[]{"A"})'),
+            ({"assert": "optionsNotContains", "values": ["Z"]}, '.assertOptionsNotContain("Z")'),
+            ({"assert": "isSomethingNew"}, None),
+        ]
+        for check, expected in cases:
+            with self.subTest(check=check):
+                self.assertEqual(pr.check_java(check), expected)
+
+    def test_message_checks(self):
+        self.assertEqual(pr.message_check_java({"assert": "messageWith", "expected": "Exact"}),
+                         'MessagesUtil.assertMessageWith(getContext(), "Exact");')
+        self.assertEqual(pr.message_check_java({"assert": "messageContaining", "expected": "Quote"}),
+                         'MessagesUtil.assertMessageContaining(getContext(), "Quote");')
+        self.assertIn("MessagesUtil.getErrorMessages(getContext())).isEmpty()",
+                      pr.message_check_java({"assert": "noErrorMessages"}))
+
+    def test_actions(self):
+        self.assertEqual(pr.action_java({"type": "click"}), ".click()")
+        self.assertEqual(pr.action_java({"type": "change", "value": "su"}), '.set("su")')
+        self.assertEqual(pr.action_java({"type": "change", "value": "1000", "display": "1,000"}), '.set("1,000")')
+        self.assertEqual(pr.action_java({"type": "change", "value": True}), ".set(true)")
+        self.assertIsNone(pr.action_java({"type": "change", "value": "[redacted]"}))
+        self.assertIsNone(pr.action_java({"type": "key", "key": "Enter"}))
+        self.assertEqual(pr.action_java({"type": "change", "value": "Acme", "unique": {"rule": "company"}}),
+                         ".set(Utilities.DataGenerator.getGenerator().company().name())")
+
+    def test_unique_values(self):
+        gen = "Utilities.DataGenerator.getGenerator()"
+        cases = [
+            ({"rule": "email"}, gen + ".internet().emailAddress()"),
+            ({"rule": "ssn"}, "Utilities.DataGenerator.getValidSsn()"),
+            ({"rule": "letters", "prefix": "Acme ", "length": 6}, '"Acme " + Utilities.getRandomStringWithoutNumbers(6)'),
+            ({"rule": "alnum", "length": 8}, "Utilities.getRandomString(8)"),
+            ({"rule": "pattern", "pattern": "??-####", "upper": True}, gen + '.bothify("??-####", true)'),
+            ({"rule": "pattern", "pattern": "###-##"}, gen + '.numerify("###-##")'),
+            ({"rule": "unknown"}, None),
+        ]
+        for unique, expected in cases:
+            with self.subTest(unique=unique):
+                self.assertEqual(pr.unique_java(unique), expected)
+
+
 if __name__ == "__main__":
     unittest.main()
