@@ -226,5 +226,123 @@ class JavaFragmentsTest(unittest.TestCase):
                 self.assertEqual(pr.unique_java(unique), expected)
 
 
+def plan_for(name):
+    return pr.build_plan(load(name), CSSIDS)
+
+
+def step(plan, seq):
+    return next(s for s in plan["steps"] if s["seq"] == seq)
+
+
+def item(items, widget_id):
+    return next(i for i in items if i.get("widgetId") == widget_id)
+
+
+class PlanFromRealRecordingsTest(unittest.TestCase):
+    def test_metadata_and_kept_steps(self):
+        plan = plan_for("real-180418")
+        self.assertEqual(plan["test"]["testId"], "tc123")
+        self.assertEqual(plan["test"]["features"], ["AD-123"])
+        self.assertEqual(plan["test"]["defects"], ["JIRA-321"])
+        self.assertEqual([s["seq"] for s in plan["steps"]], [2, 3])
+        self.assertEqual(plan["apps"], ["pc"])
+
+    def test_login_step(self):
+        login = step(plan_for("real-180418"), 2)
+        self.assertTrue(login["login"])
+        self.assertEqual(item(login["actions"], "Login-LoginScreen-LoginDV-username")["java"], '.set("su")')
+        self.assertIsNone(item(login["actions"], "Login-LoginScreen-LoginDV-password")["java"])
+
+    def test_account_summary_checks(self):
+        summary = step(plan_for("real-180418"), 3)
+        self.assertEqual(summary["waitTitle"], "Account Summary")
+        prefix = "AccountFile_Summary-AccountSummaryDashboard-AccountDetailsDetailViewTile-AccountDetailsDetailViewTile_DV-"
+        self.assertEqual(item(summary["checks"], prefix + "AccountStatus")["java"], '.assertEquals("Active")')
+        self.assertEqual(item(summary["checks"], prefix + "AccountNumber")["java"], ".assertVisible(true)")
+        header = item(summary["checks"], "AccountFile_Summary-AccountSummaryDashboard-CurrentActivitiesAccountListViewTile"
+                                         "-CurrentActivitiesAccountListViewTile_LV-PriorityHeader_inner")
+        self.assertEqual((header["resolution"], header["widget"], header["java"]), ("raw", "WidgetLabel", ".assertEnabled()"))
+        self.assertEqual(item(summary["actions"], "TabBar-AccountTab")["getter"], "new TabBar(getContext()).getAccountTab()")
+
+    def test_submission_recording(self):
+        plan = plan_for("real-174907")
+        self.assertIn("MessagesUtil.getErrorMessages(getContext())", step(plan, 5)["checks"][0]["java"])
+        select = item(step(plan, 13)["actions"],
+                      "OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchResultsLV-0-_Select")
+        self.assertIn('.with("Organization Name", "ACV Property Insurance", "TextCell")', select["getter"])
+        self.assertEqual(item(step(plan, 18)["actions"], "SubmissionWizard-Next")["rule"], "wizardButton")
+        tick = item(step(plan, 26)["actions"],
+                    "CoveragePatternSearchPopup-CoveragePatternSearchScreen-CoveragePatternSearchResultsLV-0-_Checkbox")
+        self.assertEqual(tick["java"], ".click()")
+        self.assertIn("com.ankrpt.centertest.guidewire.runtime.MessagesUtil", plan["imports"])
+        self.assertIn("com.ankrpt.centertest.guidewire.widget.WidgetRangeInput", plan["imports"])
+        self.assertTrue(any(r["seq"] == 18 and r["rule"] == "wizardButton" for r in plan["review"]))
+        self.assertFalse(any(r["widgetId"] and r["widgetId"].startswith("Login-") for r in plan["review"]))
+
+
+class PlanFromSyntheticRecordingTest(unittest.TestCase):
+    def setUp(self):
+        self.plan = plan_for("synthetic")
+
+    def test_notes_messages_and_unique_value(self):
+        search = step(self.plan, 2)
+        self.assertEqual(self.plan["notes"], ["before the first step"])
+        self.assertEqual(search["notes"], ["pick the organization on page 2"])
+        self.assertEqual(search["messages"], [{"text": "Legacy plain message", "level": ""}])
+        name = search["actions"][0]
+        self.assertEqual(name["unique"], {"expr": "Utilities.DataGenerator.getGenerator().company().name()",
+                                          "recorded": "Acme"})
+        self.assertIn("com.ankrpt.centertest.util.Utilities", self.plan["imports"])
+
+    def test_rows(self):
+        first, second = step(self.plan, 2)["actions"][1:3]
+        self.assertIn('.getFirstRow().forMaximumPages(2).with("Name", "Acme", "TextCell").select().getSelect()',
+                      first["getter"])
+        self.assertTrue(second["warning"].startswith("row 2 picked by position"))
+
+    def test_untranslated_and_unknown_items_are_reviewed(self):
+        reasons = {(r["seq"], r["label"]): r for r in self.plan["review"]}
+        self.assertEqual(reasons[(2, "Name")]["reason"], "not translated")  # the Enter key
+        self.assertEqual(reasons[(3, "Offering")]["reason"], "not translated")  # isSomethingNew
+        self.assertEqual(reasons[(3, "Are you sure?")]["resolution"], "unresolved")
+        self.assertEqual(reasons[(5, "")]["reason"], "unknown application")
+
+    def test_soft_message_check_is_flagged(self):
+        message = step(self.plan, 3)["checks"][3]
+        self.assertEqual(message["java"], 'MessagesUtil.assertMessageContaining(getContext(), "Quote");')
+        self.assertIn("no soft variant", message["warning"])
+
+    def test_app_switch_links_check_to_unique_value(self):
+        billing = step(self.plan, 4)
+        self.assertEqual((billing["app"], billing["appSwitch"]), ("bc", True))
+        self.assertEqual(billing["checks"][0]["uniqueFrom"], {"seq": 2, "label": "Name"})
+        self.assertEqual(self.plan["apps"], ["pc", "bc"])
+
+
+class CommandLineTest(unittest.TestCase):
+    SCRIPT = os.path.join(SCRIPTS, "parse_recording.py")
+
+    def run_script(self, *args):
+        return subprocess.run([sys.executable, self.SCRIPT, *args], capture_output=True, text=True)
+
+    def test_missing_cssids_dir(self):
+        result = self.run_script(os.path.join(RECORDINGS, "real-180418"), "--cssids", "/no/such/dir")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cssids directory not found", result.stderr)
+
+    def test_bad_recording(self):
+        result = self.run_script("/no/such/recording", "--cssids", CSSIDS)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not a recording", result.stderr)
+
+    def test_writes_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "plan.json")
+            result = self.run_script(os.path.join(RECORDINGS, "real-180418"), "--cssids", CSSIDS, "--out", out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(out, encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["test"]["testId"], "tc123")
+
+
 if __name__ == "__main__":
     unittest.main()

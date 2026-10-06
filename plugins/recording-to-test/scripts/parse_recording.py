@@ -300,3 +300,135 @@ def message_check_java(check: dict):
     if name == "noErrorMessages":
         return NO_ERRORS
     return None
+
+
+FRAMEWORK_CLASSES = {
+    "MessagesUtil": "com.ankrpt.centertest.guidewire.runtime.MessagesUtil",
+    "CenterTestAssertion": "com.ankrpt.centertest.assertion.CenterTestAssertion",
+    "Assertions": "org.assertj.core.api.Assertions",
+    "Utilities": "com.ankrpt.centertest.util.Utilities",
+}
+WIDGET_PACKAGE = "com.ankrpt.centertest.guidewire.widget."
+
+
+def imports_for(text: str, widget) -> set:
+    """Framework classes a Java fragment uses; page-object imports are left to the skill."""
+    found = {fqn for name, fqn in FRAMEWORK_CLASSES.items() if re.search(rf"\b{name}\.", text)}
+    if widget:
+        found.add(WIDGET_PACKAGE + widget)
+    return found
+
+
+def translate(cssids_dir: str, app, action: dict) -> dict:
+    """One recorded action or check as plan data with its Java fragment."""
+    widget_id = action.get("widgetId")
+    item = {"type": action.get("type"), "widgetId": widget_id,
+            "page": find_getter.get_page_name(widget_id) if widget_id else None,
+            "label": action.get("label") or action.get("text") or action.get("name") or ""}
+    if action.get("kind") == "message":  # page-message checks have no widget
+        item.update(resolution="resolved", java=message_check_java(action),
+                    soft=bool(action.get("soft")), expected=action.get("expected"))
+        if action.get("soft"):
+            item["warning"] = "MessagesUtil has no soft variant; generated as a hard assertion"
+        return item
+    item.update(resolve(cssids_dir, app, action))
+    if action.get("type") == "check":
+        item.update(java=check_java(action), soft=bool(action.get("soft")), expected=action.get("expected"))
+        return item
+    item["java"] = action_java(action)
+    if item.get("column") == "_Checkbox" and item["java"]:
+        item["java"] = ".click()"  # the project ticks a list row with get_CHECKBOX().click()
+    if action.get("type") == "change" and action.get("value") != REDACTED:
+        item["value"] = action.get("display") or action.get("value")
+    if action.get("unique"):
+        item["unique"] = {"expr": unique_java(action["unique"]), "recorded": action.get("value")}
+    if action.get("key"):
+        item["key"] = action["key"]
+    if (action.get("row") or 0) > 1 and not action.get("rowKey") and ".getFirstRow()" in (item.get("getter") or ""):
+        item["warning"] = f"row {action['row']} picked by position; getFirstRow() selects the first row"
+    return item
+
+
+def needs_review(item: dict) -> bool:
+    if item.get("page") == "Login":
+        return False  # the login facade replaces whatever was typed on the login page
+    return item["resolution"] != "resolved" or item["java"] is None or "warning" in item
+
+
+def build_plan(session: dict, cssids_dir: str) -> dict:
+    meta = session.get("meta") or {}
+    plan = {
+        "recording": {key: session.get(key) for key in ("id", "name", "toolVersion", "startUrl")},
+        "test": {"name": session.get("name"), "testId": meta.get("testId"),
+                 "description": meta.get("description"), "prerequisites": meta.get("prerequisites"),
+                 "expectedOutcome": meta.get("expectedOutcome"), "features": meta.get("featureIds") or [],
+                 "defects": meta.get("defectIds") or [], "tags": meta.get("tags") or [],
+                 "recordedBy": meta.get("recorderName")},
+        "notes": [n.get("text", "") for n in session.get("notes") or []],
+        "apps": [], "steps": [], "review": [], "imports": [],
+    }
+    imports, uniques, previous_app = set(), {}, None
+    for recorded_step in session.get("steps") or []:
+        recorded = recorded_step.get("actions") or []
+        if not recorded:
+            continue
+        app = APPS.get(recorded_step.get("app"))
+        entry = {"seq": recorded_step.get("seq"), "app": app, "appName": recorded_step.get("app"),
+                 "appSwitch": previous_app is not None and app is not None and app != previous_app,
+                 "screen": recorded_step.get("screen"), "title": recorded_step.get("title"),
+                 "waitTitle": wait_title(recorded_step.get("title")),
+                 "login": any(a.get("value") == REDACTED for a in recorded),
+                 "actions": [], "checks": [],
+                 "notes": [n.get("text", "") for n in recorded_step.get("notes") or []],
+                 "messages": messages(recorded_step)}
+        for action in recorded:
+            translated = translate(cssids_dir, app, action)
+            imports |= imports_for((translated.get("getter") or "") + (translated.get("java") or ""),
+                                   translated.get("widget"))
+            if action.get("type") == "check":
+                if translated.get("expected") in uniques:
+                    translated["uniqueFrom"] = uniques[translated["expected"]]
+                entry["checks"].append(translated)
+            else:
+                if "unique" in translated:
+                    uniques[str(action.get("value"))] = {"seq": entry["seq"], "label": translated["label"]}
+                entry["actions"].append(translated)
+            if needs_review(translated):
+                plan["review"].append({
+                    "seq": entry["seq"], "label": translated["label"], "widgetId": translated.get("widgetId"),
+                    "resolution": translated["resolution"], "rule": translated.get("rule"),
+                    "reason": translated.get("warning") or translated.get("reason")
+                    or ("not translated" if translated["java"] is None else None)})
+        if app and app not in plan["apps"]:
+            plan["apps"].append(app)
+        previous_app = app or previous_app
+        plan["steps"].append(entry)
+    plan["imports"] = sorted(imports)
+    return plan
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="CenterTest Recorder recording -> plan JSON")
+    parser.add_argument("recording", help="the recording .zip or its folder")
+    parser.add_argument("--cssids", required=True, help="resources dir holding cssids/<app>/ (or <app>.cssids)")
+    parser.add_argument("--out", help="write the plan here instead of stdout")
+    args = parser.parse_args(argv)
+    if not os.path.isdir(args.cssids):
+        print(f"Error: cssids directory not found: {args.cssids}", file=sys.stderr)
+        return 2
+    try:
+        session = load_session(args.recording)
+    except (RecordingError, ValueError, OSError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
+    text = json.dumps(build_plan(session, args.cssids), indent=2, ensure_ascii=False)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+    else:
+        print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
