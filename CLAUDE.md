@@ -38,6 +38,7 @@ plugins/<plugin-name>/
 | **cssid-finder** | Find getter chains for Guidewire CSS IDs | 1 script |
 | **ddt-analyzer** | DDT structure analysis, 15-sheet Excel report | 1 script |
 | **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + shared config |
+| **recording-to-test** | Recorder recording → CenterTest test in the project's structure | 2 scripts + vendored find_getter.py |
 
 ## Running scripts during development
 
@@ -55,6 +56,13 @@ python3 plugins/ddt-analyzer/scripts/ddt-analyzer.py
 
 # Validate DDT references
 python3 plugins/ddt-tools/scripts/xlsx-validate-refs.py
+
+# Recording → plan JSON / project facts (recording-to-test)
+python3 plugins/recording-to-test/scripts/parse_recording.py <recording.zip> --cssids <generated src/main/resources>
+python3 plugins/recording-to-test/scripts/scan_project.py /path/to/project
+
+# recording-to-test unit tests
+python3 -m unittest discover -s plugins/recording-to-test/tests -v
 ```
 
 ## Validating the marketplace
