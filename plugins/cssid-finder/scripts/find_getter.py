@@ -12,8 +12,10 @@ Usage:
 Apps: pc, cc, bc, ab (or cm)
 
 Supports two layouts (auto-detected):
-  1. New: cssids/<app>/<Page>.properties  (key=value per line)
+  1. New: cssids/<app>/<Page>.properties  (key=value per line, java.util.Properties escaping)
   2. Legacy: <app>.cssids single file     (JSON-like "cssId"/"hierarchyPath" pairs)
+
+CSS IDs separate their segments with '-' (Guidewire 10) or ':' (Guidewire 9).
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/cssid-finder/scripts/find_getter.py
 """
@@ -125,6 +127,8 @@ def show_path() -> None:
 #   '[ROW]' -> table / list-view row index
 ITERATOR_PLACEHOLDER = "#"
 ROW_PLACEHOLDER = "[ROW]"
+# Segment separators: '-' on Guidewire 10, ':' on Guidewire 9.
+SEPARATOR = re.compile(r"([-:])")
 # Cap the #/[ROW] combinations we try, to avoid explosion on pathological ids.
 MAX_COMBINATORIAL_SEGMENTS = 6
 
@@ -139,7 +143,7 @@ def _bracket_variants(css_id: str) -> list[str]:
     forms = [css_id]
     if "[" in css_id and "_tb]" in css_id:
         forms.append(css_id.replace("[", "").replace("]", ""))
-        forms.append(re.sub(r"\[.*?_tb\]-?", "", css_id))
+        forms.append(re.sub(r"\[.*?_tb\][-:]?", "", css_id))
     return forms
 
 
@@ -183,11 +187,11 @@ def normalize_css_id(css_id: str) -> list[str]:
     if css_id.endswith("_Input"):
         css_id = css_id[:-6]
 
-    parts = css_id.split("-")
+    parts = SEPARATOR.split(css_id)  # keeps the separators, so each id rejoins as it was
     forms: list[str] = []
     seen: set[str] = set()
     for candidate_parts in _expand_numeric(parts):
-        candidate = "-".join(candidate_parts)
+        candidate = "".join(candidate_parts)
         for variant in _bracket_variants(candidate):
             if variant not in seen:
                 seen.add(variant)
@@ -196,8 +200,69 @@ def normalize_css_id(css_id: str) -> list[str]:
 
 
 def get_page_name(css_id: str) -> str:
-    """Extract page name (first segment before '-') from a CSS ID."""
-    return css_id.split("-")[0]
+    """Page file name for a CSS ID, as CssMapper.pageName in centertest-core writes it:
+    the segment before the first '-' or ':', or '_misc' for an id that starts with '#'."""
+    if css_id.startswith("#"):
+        return "_misc"
+    separator = SEPARATOR.search(css_id)
+    return css_id[:separator.start()] if separator and separator.start() > 0 else css_id
+
+
+def escape_key(css_id: str) -> str:
+    """A CSS ID as CssMapper.toPropertiesLine writes it as a key (so grep can find the line)."""
+    escaped = []
+    for i, ch in enumerate(css_id):
+        if ch in "\\=: ":
+            escaped.append("\\" + ch)
+        elif ch in "#!" and i == 0:
+            escaped.append("\\" + ch)
+        else:
+            escaped.append(ch)
+    return "".join(escaped)
+
+
+_ESCAPES = {"t": "\t", "n": "\n", "r": "\r", "f": "\f"}
+
+
+def _unescape(text: str) -> str:
+    """Undo java.util.Properties escapes: \\t \\n \\r \\f, \\uXXXX, and \\X for any other X."""
+    out, i = [], 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt == "u" and re.fullmatch(r"[0-9a-fA-F]{4}", text[i + 2:i + 6]):
+                out.append(chr(int(text[i + 2:i + 6], 16)))
+                i += 6
+                continue
+            out.append(_ESCAPES.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def parse_properties_line(line: str):
+    """Split one .properties line into (key, value) as java.util.Properties.load does.
+
+    Returns None for blank and comment lines. A line that starts with an unescaped '#'
+    but has '=' is still read as data: files generated before CenterTest 6.15 wrote
+    '#'-rooted ids unescaped."""
+    line = line.lstrip(" \t\f")
+    if not line or (line[0] in "#!" and "=" not in line):
+        return None
+    i = 0
+    while i < len(line) and line[i] not in "=: \t\f":
+        i += 2 if line[i] == "\\" else 1
+    key_end = min(i, len(line))
+    while i < len(line) and line[i] in " \t\f":
+        i += 1
+    if i < len(line) and line[i] in "=:":
+        i += 1
+    while i < len(line) and line[i] in " \t\f":
+        i += 1
+    return _unescape(line[:key_end]), _unescape(line[i:].rstrip("\r\n"))
 
 
 def detect_layout(cssids_dir: str, app_key: str):
@@ -215,30 +280,22 @@ def detect_layout(cssids_dir: str, app_key: str):
 
 def search_properties(props_dir: str, normalized: str, exact_only: bool = False) -> list[str]:
     """Search in properties layout: cssids/<app>/<Page>.properties files."""
-    page = get_page_name(normalized)
-
-    # Try exact page file first
-    page_file = os.path.join(props_dir, f"{page}.properties")
+    # The page file the generator wrote this id into ('_misc' for '#'-rooted ids)
+    page_file = os.path.join(props_dir, f"{get_page_name(normalized)}.properties")
     if os.path.isfile(page_file):
-        return _grep_properties_file(page_file, normalized, exact_only)
+        return _grep_properties(["-F", page_file], normalized, exact_only)
 
-    # Fall back to _misc.properties (for entries starting with #)
-    misc_file = os.path.join(props_dir, "_misc.properties")
-    if os.path.isfile(misc_file):
-        return _grep_properties_file(misc_file, normalized, exact_only)
+    # Last resort: every .properties file in the directory
+    return _grep_properties(["-h", "-r", "-F", "--include=*.properties", props_dir], normalized, exact_only)
 
-    # Last resort: grep all .properties files in the directory
+
+def _grep_properties(grep_args: list[str], normalized: str, exact_only: bool = False) -> list[str]:
+    """Grep for the CSS ID, written plain or escaped, then parse the matching lines."""
+    needles = []
+    for needle in (normalized, escape_key(normalized)):
+        needles += ["-e", needle]
     result = subprocess.run(
-        ["grep", "-h", "-F", normalized, props_dir],
-        capture_output=True, text=True,
-    )
-    return _parse_properties_output(result.stdout, normalized, exact_only)
-
-
-def _grep_properties_file(filepath: str, normalized: str, exact_only: bool = False) -> list[str]:
-    """Grep a single properties file for the normalized CSS ID."""
-    result = subprocess.run(
-        ["grep", "-F", normalized, filepath],
+        ["grep", *needles, *grep_args],
         capture_output=True, text=True,
     )
     return _parse_properties_output(result.stdout, normalized, exact_only)
@@ -252,19 +309,15 @@ def _parse_properties_output(output: str, normalized: str, exact_only: bool = Fa
     """
     exact = []
     contains = []
-    for line in output.strip().splitlines():
-        line = line.strip()
-        # Skip blank lines and true comments. A data key may legitimately start with
-        # '#' (iterator-rooted entries), so only treat '#' lines without '=' as comments.
-        if not line or (line.startswith("#") and "=" not in line):
+    for line in output.splitlines():
+        entry = parse_properties_line(line)
+        if entry is None:
             continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            key = key.strip()
-            if key == normalized:
-                exact.append(value.strip())
-            elif not exact_only and normalized in key:
-                contains.append(value.strip())
+        key, value = entry
+        if key == normalized:
+            exact.append(value)
+        elif not exact_only and normalized in key:
+            contains.append(value)
     return exact if exact else contains
 
 

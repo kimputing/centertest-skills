@@ -25,8 +25,11 @@ The script auto-detects which layout is present:
 
 | Layout | Structure | Format |
 |--------|-----------|--------|
-| **Properties** (new) | `cssids/<app>/<Page>.properties` | `cssId=getterChain` |
+| **Properties** (new) | `cssids/<app>/<Page>.properties` | `cssId=getterChain`, read with `java.util.Properties` escaping |
 | **Legacy** | `<app>.cssids` | JSON-like `"cssId"` / `"hierarchyPath"` pairs |
+
+The page is the segment of the id before the first `-` (Guidewire 10) or `:` (Guidewire 9); ids that
+start with `#` are in `_misc.properties`. In a Guidewire 9 page file a key's `:` is written `\:`.
 
 ## How matching works
 
@@ -37,7 +40,8 @@ A copied runtime CSS ID rarely matches a stored key verbatim, because the genera
   one id can contain both, the script tries every `#`/`[ROW]` combination and matches the key
   that exists;
 - conditional toolbar segments `[X_tb]` are tried kept, with brackets removed, and dropped;
-- a trailing `_Input` suffix is stripped.
+- a trailing `_Input` suffix is stripped;
+- segments may be separated by `-` (Guidewire 10) or `:` (Guidewire 9).
 
 When a result keeps a literal `#` (e.g. `getClauseIterator(#)`), replace it with the row index.
 

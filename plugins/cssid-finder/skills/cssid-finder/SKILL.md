@@ -69,8 +69,12 @@ If not found, the script reports how many forms it searched so the user can veri
 - **Script**: `scripts/find_getter.py`
 - **Config**: `~/.centertest/cssid-finder.json` (created on first run)
 - **Auto-detects** two layouts:
-  1. **Properties** (new): `<resources>/cssids/<app>/<Page>.properties` — key=value format, one file per page
+  1. **Properties** (new): `<resources>/cssids/<app>/<Page>.properties` — key=value format, one file per page.
+     The page is the segment before the first `-` (Guidewire 10) or `:` (Guidewire 9); ids that start
+     with `#` are in `_misc.properties`. Keys are read with `java.util.Properties` escaping, so a
+     Guidewire 9 key written as `Page\:Panel\:Field` matches `Page:Panel:Field`.
   2. **Legacy**: `<resources>/<app>.cssids` — single JSON-like file per app
+- **Separators**: Guidewire 10 ids use `-` between segments, Guidewire 9 ids use `:`; both work.
 - **Normalization** mirrors how the generator builds the stored keys:
   - Each numeric segment maps to either an iterator index (`#`) or a table-row index (`[ROW]`).
     A single id can mix both (e.g. `ClauseIterator-3-...-RiskTermsLV-0-...`), so the script tries
