@@ -31,6 +31,7 @@ There is no CI in this repo; run them before every commit.
   `raw` rule writes `Widget<Type>.get(id, getContext())`, which OOTB itself uses for coverage terms.
 - `find_getter()` prints and exits — call the module's lookup functions, not it.
 - OOTB writes `@FlowTags` in two forms (`("…")` and `({"…"})`); the scan reports the annotation as written.
-- cssids from the generated jar are extracted to a fresh temp dir per scan.
+- cssids from the generated jar (`cssids/` in GW10, `<app>.cssids` at the root in GW9) are extracted
+  once per jar into `<system temp>/recording-to-test-cssids/<hash>` and reused.
 - Fixture recordings under `tests/fixtures/recordings/real-*` are trimmed copies of real
   recordings; check new ones for sensitive data before committing.

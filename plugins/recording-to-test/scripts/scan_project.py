@@ -6,7 +6,7 @@ Usage:
   python3 scan_project.py [<project root>] [--cssids <resources dir>] [--out project.json]
 
 Read-only: nothing in the project or in ~/.centertest/ is written; cssids taken from the
-generated jar are extracted to a new temp directory. Every fact is
+generated jar are extracted once per jar into <system temp>/recording-to-test-cssids/. Every fact is
 {"value": ..., "evidence": "..."} or {"value": null, "reason": "..."}.
 Credentials are never read: only the property keys and file names below.
 """
@@ -14,9 +14,11 @@ Credentials are never read: only the property keys and file names below.
 import argparse
 import collections
 import glob
+import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import zipfile
@@ -244,15 +246,28 @@ def find_jar(group, artifact, version, gradle_home, m2_home):
     return sorted(candidates)[0][2] if candidates else None
 
 
-def extract_cssids(jar):
-    """cssids/ from the jar into a new temp directory, or None when the jar has none."""
+CSSIDS_ENTRY = re.compile(r"^(cssids/.*[^/]|(pc|bc|cc|ab|cm)\.cssids)$")
+
+
+def extract_cssids(jar, cache_root):
+    """The jar's cssids (cssids/<app>/ in GW10, <app>.cssids at the root in GW9), extracted once per
+    jar version into cache_root and reused by later scans; None when the jar has none."""
     with zipfile.ZipFile(jar) as z:
-        names = [n for n in z.namelist() if n.startswith("cssids/") and not n.endswith("/") and ".." not in n]
+        names = [n for n in z.namelist() if CSSIDS_ENTRY.match(n) and ".." not in n]
         if not names:
             return None
-        target = tempfile.mkdtemp(prefix="recording-to-test-cssids-")
+        key = hashlib.sha1(f"{os.path.abspath(jar)}|{os.path.getmtime(jar)}".encode()).hexdigest()[:16]
+        target = os.path.join(cache_root, key)
+        if os.path.isdir(target):
+            return target
+        os.makedirs(cache_root, exist_ok=True)
+        staging = tempfile.mkdtemp(prefix=".extract-", dir=cache_root)
         for name in names:
-            z.extract(name, target)
+            z.extract(name, staging)
+    try:
+        os.rename(staging, target)
+    except OSError:  # another scan extracted the same jar first
+        shutil.rmtree(staging, ignore_errors=True)
     return target
 
 
@@ -277,7 +292,7 @@ def generated_checkout(root):
     return siblings[0] if len(siblings) == 1 else None
 
 
-def cssids_source(root, override, gradle_home, m2_home):
+def cssids_source(root, override, gradle_home, m2_home, cache_root):
     if override:
         if os.path.isdir(override):
             return fact(os.path.abspath(override), "--cssids")
@@ -285,7 +300,7 @@ def cssids_source(root, override, gradle_home, m2_home):
     dependency = generated_dependency(root)
     if dependency:
         jar = find_jar(*dependency, gradle_home, m2_home)
-        target = extract_cssids(jar) if jar else None
+        target = extract_cssids(jar, cache_root) if jar else None
         if target:
             return fact(target, f"cssids/ extracted from {jar} ({':'.join(dependency)})")
     checkout = generated_checkout(root)
@@ -316,10 +331,11 @@ def guidewire_version(root, props):
     return fact(value, rel(root, path)) if value else missing("no gw.version property")
 
 
-def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
+def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> dict:
     root = os.path.abspath(root)
     gradle_home = gradle_home or os.environ.get("GRADLE_USER_HOME") or os.path.expanduser("~/.gradle")
     m2_home = m2_home or os.path.expanduser("~/.m2")
+    cache_root = cache_root or os.path.join(tempfile.gettempdir(), "recording-to-test-cssids")
     java, props = index(root)
     result = {"root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
     package, source = result["clientPackage"]["value"], result["testsRoot"]["value"]
@@ -334,7 +350,7 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
     else:
         for key in ("testLayout", "testStyle", "steps", "facades", "exemplars"):
             result[key] = missing("needs clientPackage and testsRoot")
-    result.update(cssids=cssids_source(root, cssids, gradle_home, m2_home),
+    result.update(cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
                   build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
     return result
 

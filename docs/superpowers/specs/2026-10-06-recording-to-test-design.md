@@ -107,7 +107,8 @@ user's `~/.centertest/cssid-finder.json` is never read or written.
      `<page instance>.getWizardButtons().get<Button>()`; the page instance
      (`new SubmissionWizardPage(getContext())`) is read from that page's cssids file.
    - `tabBar` (page `TabBar`): `new TabBar(getContext()).get<Tab>()`; a menu item
-     `TabBar-AccountTab-AccountTab_NewAccount` drops its tab prefix → `getNewAccount()`.
+     `TabBar-AccountTab-AccountTab_NewAccount` → `getAccount().getNewAccount()` (the generated
+     `getAccount()` expands the tab's submenu; corrected after the final review).
    - `rowColumn` (`…<LV>-<n>-<column>`, where `…<LV>` resolves to a `…Table().getFirstRow().select()`
      chain): table chain + column getter — `_Select` → `getSelect()`, `_Checkbox` → `get_CHECKBOX()`,
      otherwise `get<Column>()` (`addSubmission` → `getAddSubmission()`).
@@ -124,8 +125,9 @@ user's `~/.centertest/cssid-finder.json` is never read or written.
    `…getFirstRow()` + `.with("<header>", "<text>", "TextCell")` per key + `.select()`; add
    `.forMaximumPages(<page>)` when `page > 1`. The output keeps `rowKey` so Claude can swap the generic
    filter for a generated `with<Column>(…)` when the row selector class has one.
-4. Actions: `change` → `.set(<value>)` (selects use `display`); `click` → `.click()`; `part` expand/sort →
-   the corresponding call. A `[redacted]` value is never emitted; its step is marked `login: true`.
+4. Actions: `change` → `.set(<value>)` (selects use `display`); `click` → `.click()`. A click with
+   `part` expand or sort gets `java: null` and a warning in `review`: the generated tab getters expand
+   their own submenu, and no sort idiom was verified (ruling in the final review). A `[redacted]` value is never emitted; its step is marked `login: true`.
 5. Checks → `java` fragment:
 
 | recorder `assert` | widget call (`soft` → `…Soft` variant) |

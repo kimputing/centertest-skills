@@ -131,7 +131,8 @@ class ProjectTestCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def scan(self, **kwargs):
-        return sp.scan(self.root, gradle_home=self.gradle, m2_home=self.m2, **kwargs)
+        return sp.scan(self.root, gradle_home=self.gradle, m2_home=self.m2,
+                       cache_root=os.path.join(self.parent, "cssids-cache"), **kwargs)
 
 
 class TestsAndStepsTest(ProjectTestCase):
@@ -273,6 +274,20 @@ class CssidsSourceTest(ProjectTestCase):
         write(self.parent, "other-generated/src/main/resources/cssids/pc/B.properties", "k=v\n")
         self.assertEqual(self.scan()["cssids"]["value"],
                          os.path.join(self.parent, "acme-generated", "src", "main", "resources"))
+
+    def test_guidewire9_jar_with_root_cssids_files(self):
+        fake_project(self.root)
+        self.cache_jar("1.2", {"pc.cssids": '{"cssId": "Login:LoginScreen:LoginDV:submit"}\n', "com/acme/Foo.class": "x"})
+        cssids = self.scan()["cssids"]["value"]
+        self.assertTrue(os.path.isfile(os.path.join(cssids, "pc.cssids")))
+        self.assertFalse(os.path.exists(os.path.join(cssids, "com")))
+
+    def test_extracted_cssids_are_reused_across_scans(self):
+        fake_project(self.root)
+        self.cache_jar("1.2")
+        first, second = self.scan()["cssids"]["value"], self.scan()["cssids"]["value"]
+        self.assertEqual(first, second)
+        self.assertEqual(len(os.listdir(os.path.join(self.parent, "cssids-cache"))), 1)
 
     def test_override(self):
         fake_project(self.root)

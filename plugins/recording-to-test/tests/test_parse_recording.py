@@ -120,7 +120,7 @@ class FallbackRulesTest(unittest.TestCase):
                          "new TabBar(getContext()).getAccountTab()")
         self.assertEqual(self.resolve("pc", widgetId="TabBar-AccountTab-AccountTab_NewAccount",
                                       kind="MenuItemWidget")["getter"],
-                         "new TabBar(getContext()).getNewAccount()")
+                         "new TabBar(getContext()).getAccount().getNewAccount()")
 
     def test_row_select_column_with_row_key(self):
         result = self.resolve("pc", widgetId="OrganizationSearchPopup-OrganizationSearchPopupScreen-OrganizationSearchResultsLV-0-_Select",
@@ -224,6 +224,28 @@ class JavaFragmentsTest(unittest.TestCase):
         for unique, expected in cases:
             with self.subTest(unique=unique):
                 self.assertEqual(pr.unique_java(unique), expected)
+
+
+class ReviewFixesTest(unittest.TestCase):
+    def test_expand_click_is_not_translated_and_says_why(self):
+        item = pr.translate(CSSIDS, "pc", {"type": "click", "widgetId": "TabBar-AccountTab", "kind": "TabWidget",
+                                           "part": "expand", "text": "Account"})
+        self.assertIsNone(item["java"])
+        self.assertIn("expand", item["warning"])
+        self.assertTrue(pr.needs_review(item))
+
+    def test_sort_click_is_not_translated(self):
+        item = pr.translate(CSSIDS, "pc", {"type": "click", "widgetId": "X-Y-NameHeader", "kind": "div", "part": "sort"})
+        self.assertIsNone(item["java"])
+        self.assertIn("sort", item["warning"])
+
+    def test_several_matching_getters_are_reviewed(self):
+        self.assertTrue(pr.needs_review({"resolution": "resolved", "java": ".click()", "candidates": ["a", "b"]}))
+
+    def test_every_review_row_has_a_reason(self):
+        review = pr.build_plan(load("real-174907"), CSSIDS)["review"]
+        self.assertTrue(review)
+        self.assertEqual([r for r in review if not r["reason"]], [])
 
 
 def plan_for(name):

@@ -199,12 +199,16 @@ def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
             return {"resolution": "rule", "rule": "wizardButton",
                     "getter": f"{page}.getWizardButtons().get{cap(parts[1])}()"}
 
-    # tabBar: the TabBar page object has a getter per tab and per tab menu item
+    # tabBar: TabBar-AccountTab -> getAccountTab(); a menu item TabBar-AccountTab-AccountTab_NewAccount
+    # -> getAccount().getNewAccount(), where getAccount() expands the tab's submenu
     if parts[0] == "TabBar" and len(parts) >= 2:
-        last = parts[-1]
-        if len(parts) > 2 and last.startswith(parts[-2] + "_"):
-            last = last[len(parts[-2]) + 1:]
-        return {"resolution": "rule", "rule": "tabBar", "getter": f"new TabBar(getContext()).get{cap(last)}()"}
+        tab = parts[1]
+        if len(parts) == 2:
+            return {"resolution": "rule", "rule": "tabBar", "getter": f"new TabBar(getContext()).get{cap(tab)}()"}
+        item = parts[-1][len(tab) + 1:] if parts[-1].startswith(tab + "_") else parts[-1]
+        menu = tab[:-3] if tab.endswith("Tab") else tab
+        return {"resolution": "rule", "rule": "tabBar",
+                "getter": f"new TabBar(getContext()).get{cap(menu)}().get{cap(item)}()"}
 
     # rowColumn: <...LV>-<n>-<column>: the table's row chain plus the column's getter
     if len(parts) >= 3 and parts[-2].isdigit():
@@ -346,13 +350,36 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         item["key"] = action["key"]
     if (action.get("row") or 0) > 1 and not action.get("rowKey") and ".getFirstRow()" in (item.get("getter") or ""):
         item["warning"] = f"row {action['row']} picked by position; getFirstRow() selects the first row"
+    if action.get("part") == "expand":
+        item["java"] = None
+        item["warning"] = ("expand click not translated: the next menu getter opens it (TabBar.get<Tab>() "
+                           "expands its submenu); a tree node may need a hand-written expand")
+    elif action.get("part") == "sort":
+        item["java"] = None
+        item["warning"] = "sort click not translated: sort the list by hand if the test depends on its order"
     return item
 
 
 def needs_review(item: dict) -> bool:
     if item.get("page") == "Login":
         return False  # the login facade replaces whatever was typed on the login page
-    return item["resolution"] != "resolved" or item["java"] is None or "warning" in item
+    return (item["resolution"] != "resolved" or item["java"] is None
+            or "warning" in item or "candidates" in item)
+
+
+def review_reason(item: dict) -> str:
+    """Why an item is in the review list, for the confirmation table."""
+    if item.get("warning") or item.get("reason"):
+        return item.get("warning") or item["reason"]
+    if item["java"] is None:
+        return "not translated"
+    if "candidates" in item:
+        return f"{len(item['candidates'])} getters match; pick one"
+    if item["resolution"] == "partial":
+        return "no exact cssids key; partial match"
+    if item["resolution"] == "rule":
+        return f"no cssids key; built by the {item['rule']} rule, verify at compile"
+    return "no cssids key or rule; raw Widget<Type>.get(id) form"
 
 
 def build_plan(session: dict, cssids_dir: str) -> dict:
@@ -397,8 +424,7 @@ def build_plan(session: dict, cssids_dir: str) -> dict:
                 plan["review"].append({
                     "seq": entry["seq"], "label": translated["label"], "widgetId": translated.get("widgetId"),
                     "resolution": translated["resolution"], "rule": translated.get("rule"),
-                    "reason": translated.get("warning") or translated.get("reason")
-                    or ("not translated" if translated["java"] is None else None)})
+                    "reason": review_reason(translated)})
         if app and app not in plan["apps"]:
             plan["apps"].append(app)
         previous_app = app or previous_app
