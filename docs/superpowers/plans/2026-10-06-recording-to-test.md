@@ -69,7 +69,7 @@ CLAUDE.md                               # Task 10 (modify: plugin table + dev co
 **Interfaces:**
 - Produces: `scripts/find_getter.py` importable as module `find_getter` with `APP_MAP`, `detect_layout(cssids_dir, app_key)`, `normalize_css_id(css_id)`, `search_properties(props_dir, normalized, exact_only)`, `search_legacy(filepath, normalized)`, `get_page_name(css_id)`, `parse_properties_line(line)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `plugins/recording-to-test/tests/test_vendored_sync.py`:
 ```python
@@ -97,12 +97,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: FAIL — `test_vendored_copy_matches_cssid_finder … FAIL` with the "must be an unchanged copy" message.
 
-- [ ] **Step 3: Copy the script and add the manifests**
+- [x] **Step 3: Copy the script and add the manifests**
 
 ```bash
 mkdir -p plugins/recording-to-test/scripts plugins/recording-to-test/.claude-plugin
@@ -132,12 +132,12 @@ In `.claude-plugin/marketplace.json`, append after the `ddt-tools` entry (add a 
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 1 test … OK`. Also run `python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"` → no output.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugins/recording-to-test .claude-plugin/marketplace.json
@@ -161,7 +161,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (in `parse_recording`): `APPS: dict`, `REDACTED: str`, `class RecordingError(Exception)`, `jstr(value) -> str`, `load_session(path: str) -> dict`, `messages(step: dict) -> list[dict]`, `wait_title(title: str) -> str`.
 - Produces (in the test module): `RECORDINGS`, `CSSIDS`, `load(name) -> dict` helpers used by Tasks 3–6.
 
-- [ ] **Step 1: Create the trimmed real fixtures**
+- [x] **Step 1: Create the trimmed real fixtures**
 
 Run from the repo root (the source recordings are on this machine under `~/Centertest/recorder/recordings/`):
 ```bash
@@ -192,7 +192,7 @@ grep -inE 'token|secret|passw|@[a-z0-9-]+\.' plugins/recording-to-test/tests/fix
 ```
 Expected from the `grep`: only `"label": "Password"` lines and `"value": "[redacted]"` — no e-mail addresses, tokens or real passwords. If anything else appears, stop and ask the user before committing.
 
-- [ ] **Step 2: Create the synthetic fixture**
+- [x] **Step 2: Create the synthetic fixture**
 
 `plugins/recording-to-test/tests/fixtures/recordings/synthetic/session.json`:
 ```json
@@ -235,7 +235,7 @@ Expected from the `grep`: only `"label": "Password"` lines and `"value": "[redac
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `plugins/recording-to-test/tests/test_parse_recording.py`:
 ```python
@@ -308,12 +308,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR — `ModuleNotFoundError: No module named 'parse_recording'`.
 
-- [ ] **Step 5: Write minimal implementation**
+- [x] **Step 5: Write minimal implementation**
 
 `plugins/recording-to-test/scripts/parse_recording.py`:
 ```python
@@ -385,12 +385,12 @@ def wait_title(title) -> str:
     return (title or "").split(":")[0].strip()
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 8 tests … OK`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -419,7 +419,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `jstr` (Task 2), `find_getter` module (Task 1).
 - Produces: `ROW_SELECT = ".getFirstRow().select()"`, `SEGMENT` regex, `fill_iterators(getter, widget_id, form) -> str`, `lookup(cssids_dir, app, widget_id) -> tuple[str|None, list[str]]`, `with_row(getter, action) -> str`, `resolve(cssids_dir, app, action) -> dict` with keys `resolution` (`resolved`|`partial`|`unresolved`), `getter`, optional `candidates`, `reason`.
 
-- [ ] **Step 1: Create the cssids fixtures**
+- [x] **Step 1: Create the cssids fixtures**
 
 Lines marked real come from the OOTB v10 generated jar 6.13; the others are synthetic shapes for cases no real recording covers. `.properties` comment lines are not used (the files must contain only entries).
 
@@ -464,7 +464,7 @@ AccountSummary-AccountSummaryScreen-AccountNumber=new AccountSummaryPage(getCont
 ClaimSearch\:ClaimSearchScreen\:ClaimSearchResultsLV=new ClaimSearchPage(getContext()).getClaimSearchResultsTable().getFirstRow().select()
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Append to `tests/test_parse_recording.py` (above the `if __name__` line):
 ```python
@@ -503,12 +503,12 @@ class LookupTest(unittest.TestCase):
         self.assertEqual(pr.jstr("Zürich"), '"Zürich"')
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR/FAIL — `AttributeError: module 'parse_recording' has no attribute 'lookup'` (and `resolve`, `with_row`).
 
-- [ ] **Step 4: Write minimal implementation**
+- [x] **Step 4: Write minimal implementation**
 
 Append to `scripts/parse_recording.py`:
 ```python
@@ -573,12 +573,12 @@ def resolve(cssids_dir: str, app, action: dict) -> dict:
     return {"resolution": "unresolved", "reason": "no cssids entry"}
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 15 tests … OK`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -599,7 +599,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `lookup`, `with_row`, `jstr`, `ROW_SELECT` (Task 3).
 - Produces: `RAW_WIDGET: dict`, `ROW_COLUMNS: dict`, `cap(name)`, `split_id(widget_id) -> (parts, seps)`, `join_id(parts, seps) -> str`, `page_instance(cssids_dir, app, page) -> str|None`, `resolve_fallback(cssids_dir, app, action) -> dict` with `resolution` (`rule`|`raw`), `rule` (`toolbar`|`wizardButton`|`tabBar`|`rowColumn`|`raw`), `getter`, and `column` (rowColumn) or `widget` (raw). `resolve` now never returns `unresolved` for an action that has a widget id and a known app.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_parse_recording.py`:
 ```python
@@ -666,12 +666,12 @@ class FallbackRulesTest(unittest.TestCase):
         self.assertEqual((result["resolution"], result["widget"]), ("raw", "WidgetTextInput"))
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: FAIL/ERROR in `FallbackRulesTest` — `KeyError: 'rule'` / `'getter'` (resolve still returns `unresolved`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `scripts/parse_recording.py`:
 ```python
@@ -777,12 +777,12 @@ with
     return result
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 24 tests … OK`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -806,7 +806,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `jstr`, `REDACTED` (Task 2).
 - Produces: `unique_java(unique: dict) -> str|None`, `action_java(action: dict) -> str|None`, `check_java(check: dict) -> str|None`, `message_check_java(check: dict) -> str|None`, `NO_ERRORS: str`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_parse_recording.py`:
 ```python
@@ -875,12 +875,12 @@ class JavaFragmentsTest(unittest.TestCase):
                 self.assertEqual(pr.unique_java(unique), expected)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR — `AttributeError: module 'parse_recording' has no attribute 'check_java'` (and the others).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `scripts/parse_recording.py`:
 ```python
@@ -966,12 +966,12 @@ def message_check_java(check: dict):
     return None
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 28 tests … OK`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -992,7 +992,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: everything from Tasks 2–5.
 - Produces: `translate(cssids_dir, app, action) -> dict`, `needs_review(item) -> bool`, `imports_for(text, widget) -> set[str]`, `build_plan(session: dict, cssids_dir: str) -> dict` (shape in spec §4: `recording`, `test`, `notes`, `apps`, `steps[]`, `review[]`, `imports[]`), `main(argv=None) -> int` (exit 0, or 2 with `Error: …` on stderr).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_parse_recording.py`:
 ```python
@@ -1114,12 +1114,12 @@ class CommandLineTest(unittest.TestCase):
                 self.assertEqual(json.load(f)["test"]["testId"], "tc123")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR — `AttributeError: module 'parse_recording' has no attribute 'build_plan'`; the `CommandLineTest` cases fail (the script has no `main` yet, exit code 0 with no output).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `scripts/parse_recording.py`:
 ```python
@@ -1255,12 +1255,12 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 40 tests … OK`.
 
-- [ ] **Step 5: Smoke-run against the real OOTB cssids**
+- [x] **Step 5: Smoke-run against the real OOTB cssids**
 
 ```bash
 TMP=$(mktemp -d) && unzip -q -d "$TMP" ~/.gradle/caches/modules-2/files-2.1/com.ankrpt/ootb-v10-centertest-generated/6.13/*/ootb-v10-centertest-generated-6.13.jar 'cssids/*' \
@@ -1269,7 +1269,7 @@ TMP=$(mktemp -d) && unzip -q -d "$TMP" ~/.gradle/caches/modules-2/files-2.1/com.
 ```
 Expected: a counter with no `unresolved` key (every widget is `resolved`, `partial`, `rule` or `raw`). Paste the counter into the commit message body.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -1290,7 +1290,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (in `scan_project`): `fact(value, evidence)`, `missing(reason)`, `index(root) -> (java: dict[path, text], props: list[path])`, `client_package(root, props)`, `tests_root(root, java)`, `files_under(java, directory)`, `test_layout(tests_dir, tests)`, `test_style(tests)`, `step_conventions(root, steps, reusable_dir)`, `scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict` (keys this task: `root`, `clientPackage`, `testsRoot`, `testLayout`, `testStyle`, `steps`).
 - Produces (in the test module): `write(root, rel, text)`, `fake_project(root, source="main")`, constants `TEST_A/B/C`, `FACADE`, `LOGIN_STEP`, `ACCOUNT_STEP`, `SEARCH_STEP`, `BUILD` used by Tasks 8–9.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `plugins/recording-to-test/tests/test_scan_project.py`:
 ```python
@@ -1480,12 +1480,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR — `ModuleNotFoundError: No module named 'scan_project'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `plugins/recording-to-test/scripts/scan_project.py`:
 ```python
@@ -1658,12 +1658,12 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None) -> dict:
     return result
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 47 tests … OK`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -1684,7 +1684,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `index`, `files_under`, `rel`, `fact`, `missing`, `CENTERTEST_CLASS` (Task 7); test helpers `ProjectTestCase`, `fake_project` (Task 7).
 - Produces: `facades(root, java, steps) -> fact` whose value is a list of `{facade, method, params, returns, contextOnly, step?, pages?, titles?}`; `exemplars(root, tests, steps, tests_dir, reusable_dir) -> fact` with value `{center: {"test": path, "step": path}}`; `scan` result gains `facades`, `exemplars`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_scan_project.py` (above `if __name__`):
 ```python
@@ -1718,12 +1718,12 @@ class FacadesAndExemplarsTest(ProjectTestCase):
         self.assertIsNone(self.scan()["facades"]["value"])
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR — `KeyError: 'facades'` / `'exemplars'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `scripts/scan_project.py` above `def scan(`:
 ```python
@@ -1788,12 +1788,12 @@ In `scan`, extend the `result.update(...)` inside `if package and source:` and t
             result[key] = missing("needs clientPackage and testsRoot")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 51 tests … OK`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -1814,7 +1814,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: Task 7–8 functions and test helpers.
 - Produces: `generated_dependency(root) -> (group, artifact, version)|None`, `find_jar(group, artifact, version, gradle_home, m2_home) -> path|None`, `extract_cssids(jar) -> dir|None`, `generated_checkout(root) -> dir|None`, `cssids_source(root, override, gradle_home, m2_home) -> fact`, `build_info(root, props) -> fact` with value `{compile, run, profiles}`, `guidewire_version(root, props) -> fact`, `main(argv=None) -> int`. `scan` result gains `cssids`, `build`, `guidewireVersion`; `gradle_home` defaults to `$GRADLE_USER_HOME` or `~/.gradle`, `m2_home` to `~/.m2`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_scan_project.py`:
 ```python
@@ -1906,12 +1906,12 @@ class BuildAndCommandLineTest(ProjectTestCase):
         self.assertIn("project root not found", result.stderr)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: ERROR — `KeyError: 'cssids'` / `'build'` / `'guidewireVersion'`; command-line tests fail (no `main`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `scripts/scan_project.py` above `def scan(`:
 ```python
@@ -2062,12 +2062,12 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 61 tests … OK`.
 
-- [ ] **Step 5: Smoke-run against client-ootb-v10**
+- [x] **Step 5: Smoke-run against client-ootb-v10**
 
 ```bash
 python3 plugins/recording-to-test/scripts/scan_project.py /Users/arkadiuszfrankowski/projects/clients/gwis10/client-ootb-v10 \
@@ -2075,7 +2075,7 @@ python3 plugins/recording-to-test/scripts/scan_project.py /Users/arkadiuszfranko
 ```
 Expected: every fact `True`; evidence names `ootb-v10-centertest-generated-6.13.jar`; LOB prefixes include `'personalauto': 'PA'`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add plugins/recording-to-test
@@ -2097,7 +2097,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: the two script CLIs and their JSON (Tasks 6, 9).
 
-- [ ] **Step 1: Write SKILL.md**
+- [x] **Step 1: Write SKILL.md**
 
 `plugins/recording-to-test/skills/recording-to-test/SKILL.md`:
 ````markdown
@@ -2262,7 +2262,7 @@ Files created; facades reused; every `rule`/`raw`/`partial` getter and whether i
 items; compile and run result.
 ````
 
-- [ ] **Step 2: Write README.md and the plugin CLAUDE.md**
+- [x] **Step 2: Write README.md and the plugin CLAUDE.md**
 
 `plugins/recording-to-test/README.md`:
 ```markdown
@@ -2328,7 +2328,7 @@ There is no CI in this repo; run them before every commit.
   recordings; check new ones for sensitive data before committing.
 ```
 
-- [ ] **Step 3: Update the repo CLAUDE.md**
+- [x] **Step 3: Update the repo CLAUDE.md**
 
 In `CLAUDE.md`, add a row to the Plugins table after `ddt-tools`:
 ```markdown
@@ -2344,14 +2344,14 @@ python3 plugins/recording-to-test/scripts/scan_project.py /path/to/project
 python3 -m unittest discover -s plugins/recording-to-test/tests -v
 ```
 
-- [ ] **Step 4: Validate**
+- [x] **Step 4: Validate**
 
 Run: `claude plugin validate .`
 Expected: no errors for `recording-to-test`.
 Run: `python3 -m unittest discover -s plugins/recording-to-test/tests -v`
 Expected: `Ran 61 tests … OK`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugins/recording-to-test CLAUDE.md

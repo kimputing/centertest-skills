@@ -2,7 +2,7 @@
 
 - **Issue:** kimputing/centertest-skills#6
 - **Date:** 2026-10-06
-- **Status:** design approved in conversation; awaiting spec review
+- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); acceptance on client-ootb-v10 (plan Task 11) pending
 
 ## 1. Purpose
 
