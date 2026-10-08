@@ -1,0 +1,25 @@
+{
+  "description": "Kimputing team rules at session start; new kimputing/* issues go on project CT",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/add-issue-to-ct.sh\"",
+            "timeout": 30,
+            "statusMessage": "Adding new issue to CT project..."
+          }
+        ]
+      }
+    ]
+  }
+}
