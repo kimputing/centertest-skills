@@ -7,7 +7,7 @@ code exists in the corresponding xlsx file/sheet.
 
 Usage:
     ddt-check-code-usages.py                    # check all Java source files
-    ddt-check-code-usages.py src/main/java/com/copperpoint/tests/SomeTest.java  # check specific file
+    ddt-check-code-usages.py src/main/java/com/example/tests/SomeTest.java  # check specific file
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/ddt-tools/scripts/ddt-check-code-usages.py
 """

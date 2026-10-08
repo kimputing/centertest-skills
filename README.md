@@ -13,7 +13,6 @@ A Claude Code plugin marketplace distributing skills for CenterTest test automat
 | [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure and generate 15-sheet Excel report | Active |
 | [ddt-tools](plugins/ddt-tools/) | Validate DC references, diff xlsx, report unused codes | Active |
 | [recording-to-test](plugins/recording-to-test/) | Generate a CenterTest test from a CenterTest Recorder recording | Active |
-| [kimputing-team](plugins/kimputing-team/) | Kimputing staff setup: team rules, issues auto-added to project CT, Heimdall/PostgreSQL/ReportPortal/TimeTravel skills | Active (staff only) |
 
 ## Installation
 
@@ -26,7 +25,6 @@ Inside Claude Code, add the marketplace and install the plugins you want:
 /plugin install ddt-analyzer@centertest-skills
 /plugin install ddt-tools@centertest-skills
 /plugin install recording-to-test@centertest-skills
-/plugin install kimputing-team@centertest-skills   # Kimputing staff
 ```
 
 Each plugin is independent — install only the ones you need.
