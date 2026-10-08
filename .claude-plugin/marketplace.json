@@ -42,13 +42,6 @@
       "description": "Generate a CenterTest test from a CenterTest Recorder recording, following the project's own structure",
       "category": "developer-tools",
       "keywords": ["centertest", "recorder", "guidewire", "test-generation"]
-    },
-    {
-      "name": "kimputing-team",
-      "source": "./plugins/kimputing-team",
-      "description": "Kimputing staff setup — team rules, issues auto-added to project CT, Heimdall report, PostgreSQL, ReportPortal and TimeTravel skills",
-      "category": "team",
-      "keywords": ["kimputing", "team", "github", "heimdall"]
     }
   ]
 }
