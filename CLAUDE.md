@@ -39,6 +39,7 @@ plugins/<plugin-name>/
 | **ddt-analyzer** | DDT structure analysis, 15-sheet Excel report | 1 script |
 | **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + shared config |
 | **recording-to-test** | Recorder recording → CenterTest test in the project's structure | 2 scripts + vendored find_getter.py |
+| **kimputing-team** | Staff bundle: team rules (SessionStart), CT hook, 4 skills — the one plugin with several skills | 2 hooks + 2 scripts |
 
 ## Running scripts during development
 

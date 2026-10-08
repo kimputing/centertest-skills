@@ -1,0 +1,8 @@
+{
+  "name": "kimputing-team",
+  "description": "Kimputing team setup — team rules and issue conventions, auto-add new issues to project CT, and the Heimdall report, PostgreSQL, ReportPortal and TimeTravel skills",
+  "author": { "name": "Kimputing" },
+  "homepage": "https://github.com/Kimputing/centertest-skills",
+  "repository": "https://github.com/Kimputing/centertest-skills",
+  "license": "MIT"
+}
