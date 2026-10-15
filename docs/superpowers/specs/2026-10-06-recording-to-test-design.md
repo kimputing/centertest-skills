@@ -2,7 +2,7 @@
 
 - **Issue:** kimputing/centertest-skills#6
 - **Date:** 2026-10-06
-- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); acceptance on client-ootb-v10 (plan Task 11) pending
+- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); Recorder folder layout after 1.0.10 and removed checks handled (#12, 70 unit tests green); acceptance on client-ootb-v10 (plan Task 11) pending (#13)
 
 ## 1. Purpose
 
@@ -33,7 +33,10 @@ and can be run. First use: a demo video — record → generate → run green �
 ## 2. Inputs this design relies on
 
 **Recording** (`centertest-recorder/internal/session/session.go`, `meta.go`). Zip = one top-level folder
-`<YYYY-MM-DD_HHMMSS>_<slug>/` containing `session.json`. Only `session.json` is read.
+`<YYYY-MM-DD_HHMMSS>_<slug>/` containing `session.json`. Only `session.json` is read. On disk, recorders
+up to 1.0.10 keep `recordings/<rec>/session.json` beside `<rec>.zip`; later ones keep
+`recordings/<rec>/<rec>/session.json` and `recordings/<rec>/<rec>.zip`, so a folder is read as
+`<path>/session.json`, then `<path>/<basename>/session.json`.
 
 - `Session`: `id`, `name`, `toolVersion`, `steps[]`, `notes[]`, `meta`.
 - `Meta` (optional): `testId`, `description`, `prerequisites`, `expectedOutcome`, `featureIds[]`,
@@ -43,7 +46,8 @@ and can be run. First use: a demo video — record → generate → run green �
 - `Action`: `type` (click|change|key|check|dialog|switch), `widgetId`, `label`, `value` (`[redacted]` for
   passwords), `display`, `part` (expand|sort), `row`, `rowKey[] {header,text}`, `page`, `context[]`,
   `positional`; check fields `assert`, `expected` (`<blank>` = empty), `values[]`, `flag`, `soft`, `level`,
-  `kind`; `unique {rule, prefix, length, pattern, upper}` on `change` actions.
+  `kind`, `removed` (`true` = "Remove check" in the recorder's review; skipped); `unique {rule, prefix,
+  length, pattern, upper}` on `change` actions.
 
 **Target project** (verified on `client-ootb-v10`; detected, never hardcoded):
 tests in `src/main/java/<pkg>/tests/<center>/<lob>/<txn>/`, steps in `<pkg>/reusable/<center>/…`,

@@ -36,9 +36,12 @@ def jstr(value) -> str:
 
 def load_session(path: str) -> dict:
     """session.json from a recording folder, or from the zip the recorder writes
-    (<id>_<slug>/session.json under one top-level folder)."""
+    (<id>_<slug>/session.json under one top-level folder). Recorders after 1.0.10 keep a
+    recording as <rec>/<rec>/session.json beside <rec>/<rec>.zip, so the outer folder works too."""
     if os.path.isdir(path):
         session_file = os.path.join(path, "session.json")
+        if not os.path.isfile(session_file):
+            session_file = os.path.join(path, os.path.basename(os.path.normpath(path)), "session.json")
         if not os.path.isfile(session_file):
             raise RecordingError(f"no session.json in {path}")
         with open(session_file, encoding="utf-8") as f:
@@ -396,7 +399,8 @@ def build_plan(session: dict, cssids_dir: str) -> dict:
     }
     imports, uniques, previous_app = set(), {}, None
     for recorded_step in session.get("steps") or []:
-        recorded = recorded_step.get("actions") or []
+        # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
+        recorded = [a for a in recorded_step.get("actions") or [] if not a.get("removed")]
         if not recorded:
             continue
         app = APPS.get(recorded_step.get("app"))

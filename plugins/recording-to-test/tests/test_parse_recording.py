@@ -41,6 +41,15 @@ class LoadSessionTest(unittest.TestCase):
                         "2026-10-01_180418_test1/session.json")
             self.assertEqual(pr.load_session(path)["id"], "2026-10-01_180418")
 
+    def test_loads_outer_folder_of_the_recorder_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = os.path.join(tmp, "2026-10-01_180418_test1")
+            os.makedirs(os.path.join(outer, "2026-10-01_180418_test1"))
+            with open(os.path.join(RECORDINGS, "real-180418", "session.json"), encoding="utf-8") as src, \
+                    open(os.path.join(outer, "2026-10-01_180418_test1", "session.json"), "w", encoding="utf-8") as dst:
+                dst.write(src.read())
+            self.assertEqual(pr.load_session(outer)["id"], "2026-10-01_180418")
+
     def test_folder_without_session_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(pr.RecordingError, "no session.json"):
@@ -339,6 +348,19 @@ class PlanFromSyntheticRecordingTest(unittest.TestCase):
         self.assertEqual((billing["app"], billing["appSwitch"]), ("bc", True))
         self.assertEqual(billing["checks"][0]["uniqueFrom"], {"seq": 2, "label": "Name"})
         self.assertEqual(self.plan["apps"], ["pc", "bc"])
+
+
+class RemovedChecksTest(unittest.TestCase):
+    def test_checks_removed_in_review_are_skipped(self):
+        session = {"steps": [{"seq": 2, "app": "PolicyCenter", "screen": "SubmissionWizard", "title": "Offerings",
+                              "actions": [
+                                  {"type": "click", "widgetId": "SubmissionWizard-Next", "label": "Next"},
+                                  {"type": "check", "widgetId": "SubmissionWizard-OfferingScreen-OfferingSelection",
+                                   "kind": "select", "label": "Offering", "assert": "isSomethingNew", "removed": True},
+                                  {"type": "check", "kind": "message", "assert": "noErrorMessages", "removed": True}]}]}
+        plan = pr.build_plan(session, CSSIDS)
+        self.assertEqual(step(plan, 2)["checks"], [])
+        self.assertFalse(any(r["label"] == "Offering" or r["label"] == "" for r in plan["review"]))
 
 
 class CommandLineTest(unittest.TestCase):
