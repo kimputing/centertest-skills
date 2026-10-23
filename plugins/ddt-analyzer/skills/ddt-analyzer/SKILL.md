@@ -251,8 +251,8 @@ project's single `extends` entry doesn't happen to cover.
 
 ### Report output (Data Studio's `--xlsx`)
 
-The binary's `--analyze ... --xlsx <path>` writes a 15-sheet workbook with the **same sheet
-names** as the fallback script's report (deliberately kept identical, so the two reports
+The binary's `--analyze ... --xlsx <path>` writes a 28-sheet workbook. Its first 15 sheets
+have the **same sheet names** as the fallback script's report (deliberately kept identical, so the two reports
 line up **sheet-for-sheet** — e.g. row 12 of one `Unused_Codes` sheet lines up with the
 same category of finding in the other's `Unused_Codes` sheet). Their **column layouts
 differ per sheet**, though — e.g. `Unused_Codes` is 3 columns (`file`, `sheet`, `code`) in
@@ -262,7 +262,7 @@ wide DC-by-file "X"-marked matrix in the fallback; `DC_Metrics` and `Impact_Anal
 4 columns in Data Studio vs. 7 in the fallback. **A cell-by-cell diff tool will not work
 across the two reports** — compare sheet by sheet, not column by column.
 
-That sheet-for-sheet parity is a property of the **exported workbook only**. The 15 sheets
+That sheet-for-sheet parity is a property of the **exported workbook only**. Sheets 1-15
 below keep the retired Java `DDTAnalyzer`'s original order (unchanged since ANALYZEDDTFILES
 existed) precisely so an archived pre-migration report still lines up row group for row
 group against a fresh export. Data Studio's **on-screen** analysis view does not use that

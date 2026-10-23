@@ -25,7 +25,7 @@
     {
       "name": "ddt-analyzer",
       "source": "./plugins/ddt-analyzer",
-      "description": "Analyze CenterTest Data-Driven Testing structure — 15-sheet Excel report",
+      "description": "Analyze CenterTest Data-Driven Testing structure — 28-sheet Excel report (17 without Data Studio)",
       "category": "test-data",
       "keywords": ["centertest", "ddt", "test-data", "excel"]
     },
