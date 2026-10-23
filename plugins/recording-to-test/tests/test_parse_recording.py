@@ -50,6 +50,10 @@ class LoadSessionTest(unittest.TestCase):
                 dst.write(src.read())
             self.assertEqual(pr.load_session(outer)["id"], "2026-10-01_180418")
 
+    def test_loads_session_json_path(self):
+        self.assertEqual(pr.load_session(os.path.join(RECORDINGS, "real-180418", "session.json"))["id"],
+                         "2026-10-01_180418")
+
     def test_folder_without_session_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(pr.RecordingError, "no session.json"):
@@ -206,8 +210,16 @@ class JavaFragmentsTest(unittest.TestCase):
                          'MessagesUtil.assertMessageWith(getContext(), "Exact");')
         self.assertEqual(pr.message_check_java({"assert": "messageContaining", "expected": "Quote"}),
                          'MessagesUtil.assertMessageContaining(getContext(), "Quote");')
-        self.assertIn("MessagesUtil.getErrorMessages(getContext())).isEmpty()",
-                      pr.message_check_java({"assert": "noErrorMessages"}))
+        self.assertEqual(pr.message_check_java({"assert": "noErrorMessages"}),
+                         'CenterTestAssertion.withContext(getContext()).withDescription("No error messages")'
+                         '.assertThat(() -> Assertions.assertThat(MessagesUtil.getErrorMessages(getContext())).isEmpty());')
+
+    def test_soft_message_checks_let_the_test_go_on(self):
+        self.assertEqual(pr.message_check_java({"assert": "messageWith", "expected": "Exact", "soft": True}),
+                         'CenterTestAssertion.withContext(getContext()).withDescription("Message shown: Exact")'
+                         '.softAssertThat(() -> MessagesUtil.assertMessageWith(getContext(), "Exact"));')
+        self.assertIn('.softAssertThat(() -> Assertions.assertThat(MessagesUtil.getErrorMessages(getContext()))',
+                      pr.message_check_java({"assert": "noErrorMessages", "soft": True}))
 
     def test_actions(self):
         self.assertEqual(pr.action_java({"type": "click"}), ".click()")
@@ -317,7 +329,8 @@ class PlanFromSyntheticRecordingTest(unittest.TestCase):
 
     def test_notes_messages_and_unique_value(self):
         search = step(self.plan, 2)
-        self.assertEqual(self.plan["notes"], ["before the first step"])
+        self.assertEqual(self.plan["notes"], [{"seq": None, "text": "before the first step"},
+                                              {"seq": 2, "text": "pick the organization on page 2"}])
         self.assertEqual(search["notes"], ["pick the organization on page 2"])
         self.assertEqual(search["messages"], [{"text": "Legacy plain message", "level": ""}])
         name = search["actions"][0]
@@ -338,16 +351,47 @@ class PlanFromSyntheticRecordingTest(unittest.TestCase):
         self.assertEqual(reasons[(3, "Are you sure?")]["resolution"], "unresolved")
         self.assertEqual(reasons[(5, "")]["reason"], "unknown application")
 
-    def test_soft_message_check_is_flagged(self):
+    def test_soft_message_check_is_soft(self):
         message = step(self.plan, 3)["checks"][3]
-        self.assertEqual(message["java"], 'MessagesUtil.assertMessageContaining(getContext(), "Quote");')
-        self.assertIn("no soft variant", message["warning"])
+        self.assertEqual(message["java"],
+                         'CenterTestAssertion.withContext(getContext()).withDescription("Message shown containing: Quote")'
+                         '.softAssertThat(() -> MessagesUtil.assertMessageContaining(getContext(), "Quote"));')
+        self.assertNotIn("warning", message)
+        self.assertIn("com.ankrpt.centertest.assertion.CenterTestAssertion", self.plan["imports"])
 
     def test_app_switch_links_check_to_unique_value(self):
         billing = step(self.plan, 4)
         self.assertEqual((billing["app"], billing["appSwitch"]), ("bc", True))
         self.assertEqual(billing["checks"][0]["uniqueFrom"], {"seq": 2, "label": "Name"})
         self.assertEqual(self.plan["apps"], ["pc", "bc"])
+
+
+class StepNotesTest(unittest.TestCase):
+    """Recorder 1.1 keeps notes on the steps; a note step has no actions."""
+
+    def setUp(self):
+        session = {"steps": [
+            {"seq": 1, "kind": "start", "app": "PolicyCenter", "actions": []},
+            {"seq": 2, "app": "PolicyCenter", "screen": "AccountFile_Summary", "title": "Account Summary",
+             "actions": [{"type": "click", "widgetId": "TabBar-AccountTab", "label": "Account"}],
+             "notes": [{"time": 1, "text": "The account number is new on every run.", "source": "panel"}]},
+            {"seq": 3, "kind": "note", "app": "BillingCenter", "actions": [],
+             "notes": [{"time": 2, "text": "A quoted submission is not billed yet.", "source": "panel"}]}]}
+        self.plan = pr.build_plan(session, CSSIDS)
+
+    def test_step_with_only_a_note_is_kept(self):
+        self.assertEqual([s["seq"] for s in self.plan["steps"]], [2, 3])
+        note = step(self.plan, 3)
+        self.assertEqual((note["actions"], note["checks"]), ([], []))
+        self.assertEqual(note["notes"], ["A quoted submission is not billed yet."])
+
+    def test_plan_notes_collect_step_notes_in_order(self):
+        self.assertEqual(self.plan["notes"], [{"seq": 2, "text": "The account number is new on every run."},
+                                              {"seq": 3, "text": "A quoted submission is not billed yet."}])
+
+    def test_note_step_opens_no_application(self):
+        self.assertEqual(self.plan["apps"], ["pc"])
+        self.assertFalse(step(self.plan, 3)["appSwitch"])
 
 
 class RemovedChecksTest(unittest.TestCase):

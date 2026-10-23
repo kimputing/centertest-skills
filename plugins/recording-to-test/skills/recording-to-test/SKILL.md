@@ -18,7 +18,7 @@ the user approves.
 
 ## 1. Locate inputs
 
-- Recording: the path the user gave (.zip or folder). If none, ask.
+- Recording: the path the user gave (.zip, folder or `session.json`). If none, ask.
 - Project: the current directory if it has `build.gradle`; otherwise ask.
 
 ```bash
@@ -46,7 +46,9 @@ Read `project.json`. For every fact whose `value` is `null`, ask the user (show 
 
 In `plan.json`, a step's `actions` are what the user did **to reach** that screen (on the previous
 page); its `checks` verify the screen it arrived at. `getter` is the widget chain; `java` is the call
-on it (`null` = not translated). `review` lists everything that needs a human look.
+on it (`null` = not translated). `review` lists everything that needs a human look. A step with
+`notes` but no actions or checks (a note the analyst added on a screen) is kept for its notes;
+`notes` at the top lists every note in the recording with the `seq` of its step.
 
 ## 4. Read the exemplars
 
@@ -130,7 +132,8 @@ For an item with `candidates`, ask which one. Wait for the user to approve or ch
   3. that step's checks: `<getter><java>;` (message checks are whole statements already).
 - Recorded literals → `private static final String` constants named from the field label
   (`OCCURRENCE_LIMIT = "500,000"`), used in the `.set(...)`/assert calls.
-- Notes → a `//` comment at the line they belong to. Page messages are not copied.
+- Notes → a `//` comment at the line they belong to; a step with only notes → a comment after the
+  previous step's lines. Page messages are not copied.
 - A unique value: `var name = <unique.expr>;` then `.set(name)` and
   `Helper.getData(getContext()).setCustom(<KEY>, name);` when the project uses `setCustom` (search
   for it); a later check with `uniqueFrom` compares against `getCustom(<KEY>)`. If the project has no
@@ -153,11 +156,8 @@ Ask: run now? which profile (`build.value.profiles`)? Then run `build.value.run`
 `{testClass}` filled in. On failure, read the newest log under the project's `logs/` folder, fix the
 generated files only, show each change, rerun — at most 3 rounds.
 
-## 12. Offer suite membership
-
-Ask separately whether to add the test to a suite (e.g. `CenterTestSuiteList.json`). Edit only on yes.
-
-## 13. Report
+## 12. Report
 
 Files created; facades reused; every `rule`/`raw`/`partial` getter and whether it compiled; untranslated
-items; compile and run result.
+items; compile and run result. If the project runs tests from a suite file (e.g.
+`CenterTestSuiteList.json`), name it and the class to add — do not edit it.
