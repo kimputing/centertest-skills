@@ -36,7 +36,7 @@ plugins/<plugin-name>/
 |--------|---------|---------|
 | **centertest-healthcheck** | Java code quality analysis — 27 rules, HTML+Excel reports | 8 modules + 10 rule files |
 | **cssid-finder** | Find getter chains for Guidewire CSS IDs | 1 script |
-| **ddt-analyzer** | DDT structure analysis, 15-sheet Excel report | 1 script |
+| **ddt-analyzer** | DDT structure analysis, 28-sheet Excel report (17 without Data Studio) | 1 script |
 | **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + shared config |
 | **recording-to-test** | Recorder recording → CenterTest test in the project's structure | 2 scripts + vendored find_getter.py |
 

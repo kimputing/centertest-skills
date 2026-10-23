@@ -2,7 +2,7 @@
 
 ## What It Does
 
-Analyzes the full DDT (Data-Driven Testing) file structure of a CenterTest project. Produces a 15-sheet Excel report covering DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, and hierarchy validation.
+Analyzes the full DDT (Data-Driven Testing) file structure of a CenterTest project. Produces a 28-sheet Excel report through Data Studio (17 sheets from the fallback script) covering DC-to-Data relationships, code usage, test mappings, orphaned files, broken references, and hierarchy validation.
 
 ## Architecture
 
@@ -17,13 +17,10 @@ Reuses config from ddt-tools: `~/.centertest/ddt-tools.json` (shared `project_di
 - **DataDrivenHierarchy.json**: Defines parent-child relationships between DC files
 - **`code` column**: Every sheet has a `code` column — the unique identifier for each row
 
-## 15 Analysis Sheets
+## Report Sheets
 
-1. DC_Summary, DC_Tests, DC_Sheets, DC_References, DC_UnusedCodes
-2. Data_Summary, Data_Sheets, Data_CodeUsage, Data_SharedAcrossDC
-3. Hierarchy_Tree, Hierarchy_Inheritance
-4. Issues_BrokenRefs, Issues_OrphanFiles, Issues_MissingSheets
-5. Coverage_Matrix
+Data Studio writes 28 sheets; the fallback `scripts/ddt-analyzer.py` writes 17 in a different order.
+The sheet tables are in `skills/ddt-analyzer/SKILL.md` (Report output, and The fallback script's own sheets).
 
 ## Gotchas
 
