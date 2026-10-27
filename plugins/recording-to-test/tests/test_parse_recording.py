@@ -269,6 +269,105 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertEqual([r for r in review if not r["reason"]], [])
 
 
+GL = "SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet-GeneralLiabilityScreen-"
+OCCURRENCE = GL + "PolicyLineDV-GLGroupIterator-0-CoverageInputSet-CovPatternInputGroup-0-CovTermInputSet-OptionTermInput"
+DEDUCTIBLE = GL + "PolicyLineDV-GLGroupIterator-1-CoverageInputSet-CovPatternInputGroup-_checkbox"
+POLLUTANTS = (GL + "AdditionalCoveragesPanelSet-AdditionalCoveragesDV-0-CoverageInputSet-CovPatternInputGroup-0"
+              "-CovTermInputSet-StringTermInput")
+
+
+class CoverageUtilTest(unittest.TestCase):
+    """Coverage checkboxes and terms go through CoverageUtil, found by their labels, not by iterator position."""
+
+    def translate(self, **action):
+        return pr.translate(CSSIDS, "pc", action)
+
+    def test_coverage_checkbox_is_selected_by_its_label(self):
+        item = self.translate(type="change", widgetId=DEDUCTIBLE, kind="checkbox", label="GL Deductible",
+                              value=True, context=["Standard Coverages"])
+        self.assertEqual((item["resolution"], item["rule"], item["getter"], item["java"]),
+                         ("rule", "coverage", "coverageUtil", '.setSelected("GL Deductible", true)'))
+        self.assertEqual(item["coverage"], {"coverage": "GL Deductible", "covterm": None})
+        self.assertFalse(pr.needs_review(item))
+
+    def test_coverage_term_takes_its_coverage_from_the_context(self):
+        item = self.translate(type="change", widgetId=OCCURRENCE, kind="select", label="Occurrence Limit",
+                              value="500000", display="500,000", context=["Standard Coverages", "General Liability"])
+        self.assertEqual(item["java"], '.setCoverage("General Liability", "Occurrence Limit", "500,000")')
+        self.assertEqual(item["value"], "500,000")
+        self.assertFalse(pr.needs_review(item))
+
+    def test_coverage_term_without_a_coverage_title_is_reviewed(self):
+        item = self.translate(type="change", widgetId=POLLUTANTS, kind="text", label="Designated Pollutants",
+                              value="333", context=["Additional Coverages"])
+        self.assertEqual(item["java"], '.setCoverage("Designated Pollutants", "", "333")')
+        self.assertIn("no coverage title", item["warning"])
+        self.assertTrue(pr.needs_review(item))
+
+    def test_coverage_term_with_a_unique_value(self):
+        item = self.translate(type="change", widgetId=POLLUTANTS, kind="text", label="Limit", value="AB12",
+                              context=["Additional Coverages", "Designated Pollutants"],
+                              unique={"rule": "alnum", "length": 4})
+        self.assertEqual(item["java"], '.setCoverage("Designated Pollutants", "Limit", Utilities.getRandomString(4))')
+
+    def test_gw9_separators(self):
+        widget_id = OCCURRENCE.replace("-", ":")
+        item = self.translate(type="change", widgetId=widget_id, kind="select", label="Occurrence Limit",
+                              value="500,000", context=["General Liability"] * 2)
+        self.assertEqual(item["rule"], "coverage")
+
+    def test_coverage_term_checks(self):
+        context = ["Standard Coverages", "General Liability"]
+        cases = [
+            ({"assert": "isEqualTo", "expected": "500,000"},
+             '.assertEquals("General Liability", "Occurrence Limit", "500,000")'),
+            ({"assert": "isEditable"}, '.assertEditable("General Liability", "Occurrence Limit")'),
+            ({"assert": "isReadonly"}, '.assertReadOnly("General Liability", "Occurrence Limit")'),
+            ({"assert": "isNotEmpty"}, '.assertNotNull("General Liability", "Occurrence Limit")'),
+        ]
+        for check, expected in cases:
+            with self.subTest(check=check):
+                item = self.translate(type="check", widgetId=OCCURRENCE, kind="select", label="Occurrence Limit",
+                                      context=context, **check)
+                self.assertEqual((item["getter"], item["java"]), ("coverageUtil", expected))
+
+    def test_soft_coverage_check_is_a_whole_statement(self):
+        item = self.translate(type="check", widgetId=OCCURRENCE, kind="select", label="Occurrence Limit",
+                              context=["Standard Coverages", "General Liability"],
+                              **{"assert": "isEqualTo", "expected": "500,000", "soft": True})
+        self.assertIsNone(item["getter"])
+        self.assertEqual(item["java"],
+                         'CenterTestAssertion.withContext(getContext())'
+                         '.withDescription("General Liability / Occurrence Limit equals 500,000")'
+                         '.softAssertThat(() -> coverageUtil.assertEquals("General Liability", "Occurrence Limit", '
+                         '"500,000"));')
+
+    def test_check_coverage_util_cannot_make_is_reviewed(self):
+        item = self.translate(type="check", widgetId=DEDUCTIBLE, kind="checkbox", label="GL Deductible",
+                              context=["Standard Coverages"], **{"assert": "isChecked", "flag": True})
+        self.assertIsNone(item["java"])
+        self.assertIn("CoverageUtil", item["warning"])
+        self.assertTrue(pr.needs_review(item))
+
+    def test_click_on_a_coverage_widget_is_left_to_the_getters(self):
+        item = self.translate(type="click", widgetId=DEDUCTIBLE, kind="checkbox", label="GL Deductible")
+        self.assertNotEqual(item.get("rule"), "coverage")
+
+    def test_recording_uses_coverage_util_for_every_coverage(self):
+        plan = plan_for("real-174907")
+        items = [i for s in plan["steps"] for i in s["actions"] + s["checks"]
+                 if "CoverageInputSet" in (i.get("widgetId") or "")]
+        self.assertTrue(items)
+        self.assertEqual([i["widgetId"] for i in items if i.get("rule") != "coverage"], [])
+        self.assertEqual(item(items, OCCURRENCE)["java"],
+                         '.setCoverage("General Liability", "Occurrence Limit", "500,000")')
+        self.assertEqual(item(items, DEDUCTIBLE)["java"], '.setSelected("GL Deductible", true)')
+        self.assertIn("com.ankrpt.centertest.guidewire.runtime.CoverageUtil", plan["imports"])
+        reviewed = {r["widgetId"] for r in plan["review"]}
+        self.assertIn(POLLUTANTS, reviewed)
+        self.assertNotIn(OCCURRENCE, reviewed)
+
+
 def plan_for(name):
     return pr.build_plan(load(name), CSSIDS)
 
