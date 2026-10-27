@@ -312,6 +312,21 @@ def cssids_source(root, override, gradle_home, m2_home, cache_root):
                    "pass --cssids <generated project>/src/main/resources")
 
 
+def bootrun_properties(text: str) -> list:
+    """The -P properties the bootRun { } block reads (project.hasProperty / findProperty)."""
+    start = re.search(r"\bbootRun\s*\{", text)
+    if not start:
+        return []
+    depth, end = 0, len(text)
+    for i in range(start.end() - 1, len(text)):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        if depth == 0:
+            end = i
+            break
+    block = text[start.end():end]
+    return sorted(set(re.findall(r"""(?:hasProperty|findProperty)\(\s*['"](\w+)['"]""", block)))
+
+
 def build_info(root, props):
     build = os.path.join(root, "build.gradle")
     if not os.path.isfile(build):
@@ -320,10 +335,15 @@ def build_info(root, props):
     gradle = "./gradlew" if os.path.isfile(os.path.join(root, "gradlew")) else "gradle"
     profiles = sorted({m.group(1) for m in (re.fullmatch(r"profile\.([\w-]+)\.properties", os.path.basename(p))
                                             for p in props) if m})
-    run = None
+    run, read_props = None, bootrun_properties(text)
     if "bootRun" in text and "MainRunner" in text:
-        run = f'{gradle} bootRun --args="--spring.profiles.active={{profile}} --centerTest={{testClass}}"'
-    return fact({"compile": f"{gradle} compileJava", "run": run, "profiles": profiles}, "build.gradle")
+        if not read_props:
+            run = f'{gradle} bootRun --args="--spring.profiles.active={{profile}} --centerTest={{testClass}}"'
+        elif "centerTest" in read_props:  # the block passes -P values on; without centerTest ask the user
+            flags = (["-Pprofile={profile}"] if "profile" in read_props else []) + ["-PcenterTest={testClass}"]
+            run = f"{gradle} bootRun {' '.join(flags)}"
+    return fact({"compile": f"{gradle} compileJava", "run": run, "profiles": profiles,
+                 "bootRunProperties": read_props}, "build.gradle")
 
 
 def guidewire_version(root, props):

@@ -304,6 +304,33 @@ class BuildAndCommandLineTest(ProjectTestCase):
                          './gradlew bootRun --args="--spring.profiles.active={profile} --centerTest={testClass}"')
         self.assertEqual(build["profiles"], ["local", "qa"])
 
+    def test_run_command_from_the_properties_bootrun_reads(self):
+        fake_project(self.root)
+        write(self.root, "build.gradle", BUILD.replace("bootRun { }", '''bootRun {
+    if (project.hasProperty('centerTest')) {
+        args = ["--centerTest=${project.centerTest}"]
+    }
+    if (project.hasProperty('profile')) {
+        jvmArgs = ["-Dcentertest.profile=${project.profile}"]
+    }
+    if (project.hasProperty("restart")) { jvmArgs = ["-Dcentertest.execution.mode=Restart"] }
+}'''))
+        build = self.scan()["build"]["value"]
+        self.assertEqual(build["run"], "./gradlew bootRun -Pprofile={profile} -PcenterTest={testClass}")
+        self.assertEqual(build["bootRunProperties"], ["centerTest", "profile", "restart"])
+
+    def test_no_run_command_when_bootrun_reads_no_test_property(self):
+        fake_project(self.root)
+        write(self.root, "build.gradle", BUILD.replace("bootRun { }", '''bootRun {
+    def profile = project.findProperty("profile")
+    if (project.hasProperty("filter")) {
+        args = ["--spring.profiles.active=${profile}", "--filter=${project.findProperty("filter")}"]
+    }
+}'''))
+        build = self.scan()["build"]["value"]
+        self.assertIsNone(build["run"])
+        self.assertEqual(build["bootRunProperties"], ["filter", "profile"])
+
     def test_guidewire_version(self):
         fake_project(self.root)
         self.assertEqual(self.scan()["guidewireVersion"]["value"], "v10")

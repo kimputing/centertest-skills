@@ -2,7 +2,7 @@
 
 - **Issue:** kimputing/centertest-skills#6
 - **Date:** 2026-10-06
-- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); Recorder folder layout after 1.0.10 and removed checks handled (#12, 70 unit tests green); coverages through `CoverageUtil` and the wizard page created once per step (#19, 2026-10-27, 85 unit tests green); acceptance on client-ootb-v10 (plan Task 11) pending (#13)
+- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); Recorder folder layout after 1.0.10 and removed checks handled (#12, 70 unit tests green); coverages through `CoverageUtil` and the wizard page created once per step (#19, 2026-10-27, 85 unit tests green); calendar-picked dates, `_Cell` columns, checkbox `set("true")`, `-P` run command and the skill gaps from a policy-change run (#21, #22, 2026-10-27, 91 unit tests green); acceptance on client-ootb-v10 (plan Task 11) pending (#13)
 
 ## 1. Purpose
 

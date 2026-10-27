@@ -139,6 +139,7 @@ def resolve(cssids_dir: str, app, action: dict) -> dict:
 # Recorder widget kind -> CenterTest widget class for the raw Widget<Type>.get(id, getContext()) form
 RAW_WIDGET = {
     "text": "WidgetTextInput",
+    "date": "WidgetDateInput",
     "select": "WidgetRangeInput",
     "checkbox": "WidgetCheckBoxInput",
     "LinkWidget": "WidgetLink",
@@ -222,7 +223,9 @@ def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
         resolution, getters = lookup(cssids_dir, app, join_id(parts[:-2], seps[:-2]))
         if resolution == "resolved" and getters[0].endswith(ROW_SELECT):
             column = parts[-1]
-            getter = ROW_COLUMNS.get(column, f"get{cap(column)}")
+            # the live id of a cell ends in _Cell; the generated row getter does not (Description_Cell -> getDescription)
+            name = column[:-len("_Cell")] if column.endswith("_Cell") else column
+            getter = ROW_COLUMNS.get(column, f"get{cap(name)}")
             return {"resolution": "rule", "rule": "rowColumn", "column": column,
                     "getter": f"{getters[0]}.{getter}()"}
 
@@ -282,8 +285,8 @@ def action_java(action: dict):
     if action.get("type") != "change" or action.get("value") == REDACTED:
         return None
     value = action.get("value")
-    if isinstance(value, bool):
-        return f".set({str(value).lower()})"
+    if isinstance(value, bool):  # a checkbox: WidgetCheckBoxInput has only set(String)
+        return f'.set("{str(value).lower()}")'
     return f".set({value_java(action)})"
 
 
@@ -438,6 +441,14 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         item["key"] = action["key"]
     if (action.get("row") or 0) > 1 and not action.get("rowKey") and ".getFirstRow()" in (item.get("getter") or ""):
         item["warning"] = f"row {action['row']} picked by position; getFirstRow() selects the first row"
+    if action.get("source") == "request":
+        clicks = action.get("calendarClicks", 1)
+        item.update(source="request", postedDates=action.get("postedDates") or {})
+        item["warning"] = (f"date picked from the calendar: value taken from the form the step posted "
+                           f"(replaces {clicks} calendar click{'s' if clicks > 1 else ''}); check it")
+        if item["postedDates"]:
+            dates = ", ".join(f"{name} = {value}" for name, value in item["postedDates"].items())
+            item["warning"] += f"; dates also posted: {dates}. Ask how the recorded date relates to them"
     if action.get("part") == "expand":
         item["java"] = None
         item["warning"] = ("expand click not translated: the next menu getter opens it (TabBar.get<Tab>() "
@@ -472,6 +483,42 @@ def review_reason(item: dict) -> str:
     return "no cssids key or rule; raw Widget<Type>.get(id) form"
 
 
+DATE_VALUE = re.compile(r"\d{1,2}/\d{1,2}/\d{2,4}")
+CALENDAR_ICON = "_dateIcon"
+
+
+def is_date(value) -> bool:
+    return isinstance(value, str) and bool(DATE_VALUE.fullmatch(value.strip()))
+
+
+def with_picked_dates(actions: list, step: dict) -> list:
+    """A date picked from the calendar fires no change event: the recorder logs only clicks on the
+    field and its <id>_dateIcon. The value is in the form the step posted (requests[].fields), so the
+    first such click becomes that change ("source": "request") and the field's other calendar clicks
+    are folded into it. The other dates the step posted go with it, as context for the review."""
+    posted = {}
+    for request in step.get("requests") or []:
+        for field in request.get("fields") or []:
+            posted.setdefault(field.get("name"), field.get("value"))
+    changed = {a.get("widgetId") for a in actions if a.get("type") == "change"}
+    picked, result = {}, []
+    for action in actions:
+        widget_id = action.get("widgetId") or ""
+        field = widget_id[:-len(CALENDAR_ICON)] if widget_id.endswith(CALENDAR_ICON) else widget_id
+        value = posted.get(field) if field else None
+        if (action.get("type") != "click" or field in changed or not isinstance(value, str)
+                or not (action.get("kind") == "date" or is_date(value))):
+            result.append(action)
+        elif field in picked:
+            picked[field]["calendarClicks"] += 1
+        else:
+            picked[field] = dict(action, type="change", widgetId=field, kind="date", value=value,
+                                 source="request", calendarClicks=1,
+                                 postedDates={n: v for n, v in posted.items() if n != field and is_date(v)})
+            result.append(picked[field])
+    return result
+
+
 def build_plan(session: dict, cssids_dir: str) -> dict:
     meta = session.get("meta") or {}
     plan = {
@@ -488,7 +535,8 @@ def build_plan(session: dict, cssids_dir: str) -> dict:
     imports, uniques, previous_app = set(), {}, None
     for recorded_step in session.get("steps") or []:
         # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
-        recorded = [a for a in recorded_step.get("actions") or [] if not a.get("removed")]
+        recorded = with_picked_dates([a for a in recorded_step.get("actions") or [] if not a.get("removed")],
+                                     recorded_step)
         notes = [n.get("text", "") for n in recorded_step.get("notes") or []]
         plan["notes"] += [{"seq": recorded_step.get("seq"), "text": text} for text in notes]
         if not recorded and not notes:

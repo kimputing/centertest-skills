@@ -55,6 +55,9 @@ the iterator.
 When the recording has no coverage title (a single-term coverage), the label is used as the
 coverage and its first term is set. That line is on the review list.
 
+A date picked with the calendar is recorded as clicks only. Its value is taken from the form the
+step sent to the server, and that line is on the review list.
+
 A step creates its wizard page once, in a field set in its constructor, or uses the field of a
 reusable base step that already holds the wizard. It never writes `new SubmissionWizardPage(getContext())`
 in each method. `coverageUtil` is held the same way.

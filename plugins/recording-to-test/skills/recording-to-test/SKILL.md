@@ -23,6 +23,17 @@ the user approves.
 - **A wizard page is created once per step class.** It is held in a field set in the constructor
   (or inherited from a reusable base, see 9), and every method uses that field. Never write
   `new <X>WizardPage(getContext())` inside a method or a chain. The same goes for `coverageUtil`.
+- **The project's helpers before raw widget ids.** Before writing a `raw` item
+  (`Widget<Type>.get("<id>", getContext())`), search the steps root for a helper already used for
+  that kind of widget, and use it: `CoverageUtil` for coverages, `WidgetToolbarButtonWithMenu` for
+  toolbar menus, and so on. Write a value in the format the project's DDT data uses (e.g. `2000000`,
+  not `$2,000,000`): look at how existing steps set the same field.
+- **A value derived from data must match the recorded one.** When you replace a recorded literal
+  with a value read from `Helper` data or the screen (a date, a policy or account number), check
+  which record or term it comes from and compare it with the value in the recording. After a
+  renewal is bound, QuickJump opens the renewal term, so its dates are a year later than the
+  recorded ones. On a mismatch keep the recorded value, or ask, and never ship the derived one
+  unchecked.
 
 ## 1. Locate inputs
 
@@ -57,22 +68,45 @@ page); its `checks` verify the screen it arrived at. `getter` is the widget chai
 on it (`null` = not translated). A coverage checkbox or term has `rule: "coverage"`, getter
 `coverageUtil` and a `coverage: {coverage, covterm}` (labels taken from the recording):
 `coverageUtil.setSelected("GL Deductible", true)`, `coverageUtil.setCoverage("General Liability",
-"Occurrence Limit", "500,000")`. `review` lists everything that needs a human look. A step with
+"Occurrence Limit", "500,000")`. An action with `source: "request"` is a date picked from the calendar.
+The recorder saw only clicks (the field and its `_dateIcon`), so its value comes from the form the
+step posted. The parser has already folded those clicks into this one `.set(…)`. Its `postedDates`
+are the other dates that form posted (e.g. `PolicyPeriodEffDateID_Arg = 01/01/2028`, the period the
+open policy is on).
+`review` lists everything that needs a human look. A step with
 `notes` but no actions or checks (a note the analyst added on a screen) is kept for its notes;
 `notes` at the top lists every note in the recording with the `seq` of its step.
 
 ## 4. Read the exemplars
 
-Read `exemplars.<center>.test` and `.step` in full. If the recording's line of business differs,
-also read one test and one step from `tests/<center>/<lob>/` and `<steps root>/<center>/<lob>/` for
-that LOB. Copy their shape: imports, annotations, constructor form, how roles are obtained, how pages
-are held, indentation.
+**First, the base class for this transaction.** From the recording's wizard or pages, name the
+transaction (submission, policy change, renewal, cancellation, …) and find its abstract base in the
+steps root: `grep -rlE "abstract class Abstract\w*(PolicyChange|Submission|Renewal|Cancellation)" <steps.root>`
+(match the transaction you found). For example, a `PolicyChangeWizard` recording uses
+`AbstractPolicyChange`. Read it in full, plus one step that extends it. Its fields (the wizard page
+held once), constructor and helper methods are the convention the new step follows. The exemplar
+from the scan only fills in what the base doesn't show. If there is no such base, say so.
+
+Then read `exemplars.<center>.test` and `.step` in full. The scan picks these by size, not by
+transaction, so they come second to the base. If the recording's line of business differs, also
+read one test and one step from `tests/<center>/<lob>/` and `<steps root>/<center>/<lob>/` for that
+LOB. Copy their shape: imports, annotations, constructor form, how roles are obtained, indentation.
 
 ## 5. Segment
 
 Group the plan's items by the page their widget is on (`page`, the first id segment). Consecutive
 items on the same page form one segment; a popup page (`…Popup`) joins the segment that opened it.
 A whole wizard (`SubmissionWizard`, …) is one segment. The `login: true` step is its own segment.
+
+**Where the recording starts.** If the first step with actions is not the `login: true` step (the
+analyst started on an open policy, account or claim), the test's starting state is unknown: which
+role is logged in, and how the test reaches that screen with that record open. Don't guess. It is
+the first question at the confirmation gate.
+
+**Retries.** The analyst sometimes repeats an action because of a validation error: the same
+action on the same widget again (Next then Next, Issue then Issue), with no change of screen title
+in between and usually a field fixed in between. Generate the intended order (the fix, then the
+action once) and list each collapsed retry in the confirmation table and the report.
 
 ## 6. Match segments to facades
 
@@ -84,7 +118,7 @@ A segment becomes a facade call **only if all three hold**:
    state this test does not create (e.g. it reads a policy number from `Helper` data while the
    recording typed one) — if it does, it is not a match.
 
-The login segment always becomes `<Facade>.loginTo<App>(<role>)` — the context-only facade method
+The login segment, when the recording has one, always becomes `<Facade>.loginTo<App>(<role>)`: the context-only facade method
 whose `pages` include the login page for that center. Role: the most used in `testStyle.roles`
 unless the user picks another.
 
@@ -103,7 +137,15 @@ Address)`) is **not** reused: it becomes a new step; say which facade it resembl
 
 ## 8. Confirmation gate — STOP here until the user approves
 
-Show one message with:
+Show one message with, **first**, the starting state when the recording does not begin with a
+login (see 5):
+
+```
+Start: the recording begins on "Policy Summary: 0123456789", with no login.
+       How does the test get there? (login role, and the facade or step that creates or opens that policy)
+```
+
+then:
 
 ```
 #  Segment (recorded steps)          → Becomes                            Why
@@ -116,7 +158,21 @@ Review (from plan.review):
   seq 18  Next          rule wizardButton   wizardPage.getWizardButtons().getNext()
   seq 27  Designated…   rule coverage       coverageUtil.setCoverage("Designated Pollutants", "", "333") — no coverage title
   …
+Retries collapsed: seq 31-32 Next ×2 (Driver license fixed in between) → one Next after the fix
+Depends on the account's data:
+  seq 14  Existing Driver → row 0 of unassigned contacts — only works if the account has that contact
 ```
+
+**A calendar-picked date with `postedDates`** gets a question: how does the recorded date relate
+to them? For example, `12/31/2027` against `PolicyPeriodEffDateID_Arg = 01/01/2028` is "the open
+term's effective date − 1 day". The answer decides whether the test writes the literal or derives
+it from the policy, and a derived value is checked against the recorded one (see the rules).
+
+**Choices that depend on existing data** get a question: a pick from a list whose rows come from
+the account or policy (an existing driver or contact, a location, a prior claim, "row 0"). It only
+works if that data is already there. If the test creates its own account or policy, ask how the
+test gets that data: create it in an earlier step, or use a facade or DDT record. Don't assume the
+recorded environment's data.
 
 For an item with `candidates`, ask which one. Wait for the user to approve or change rows.
 
@@ -137,8 +193,8 @@ For an item with `candidates`, ask which one. Wait for the user to approve or ch
 - `@FlowTags`: `steps.bases[].flowTags` is the annotation that base's steps carry most often and
   `withFlowTags` how many carry one. If the project tags its steps, pick tags that fit **this** step
   (application, transaction) from the values its steps use — do not copy an unrelated transaction tag.
-- **Wizard page, once.** For a wizard segment (`SubmissionWizard`, `PolicyChangeWizard`, …), first
-  look for a reusable base that already holds that wizard page:
+- **Wizard page, once.** For a wizard segment (`SubmissionWizard`, `PolicyChangeWizard`, …), use
+  the transaction's base from 4 if it holds the wizard page. Otherwise look for another base that does:
   `grep -rnE "(protected|public) +(final +)?\w*WizardPage +\w+ *;" <steps.root>`.
   If a base holds the same wizard and its constructor needs only what this test has (the role
   context, no data objects), the new step extends it and uses its field. It overrides `execute()`
@@ -183,11 +239,14 @@ at most 3 rounds; then stop and report what is left. If the build fails on missi
 ## 11. Offer to run
 
 Ask: run now? which profile (`build.value.profiles`)? Then run `build.value.run` with `{profile}` and
-`{testClass}` filled in. On failure, read the newest log under the project's `logs/` folder, fix the
+`{testClass}` filled in. When `build.value.run` is `null`, the project's `bootRun` reads `-P`
+properties (`build.value.bootRunProperties`) but none named `centerTest`. Ask the user how this
+project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file), and don't guess. On failure, read the newest log under the project's `logs/` folder, fix the
 generated files only, show each change, rerun — at most 3 rounds.
 
 ## 12. Report
 
 Files created; facades reused; every `rule`/`raw`/`partial` getter and whether it compiled; untranslated
-items; compile and run result. If the project runs tests from a suite file (e.g.
+items; retries collapsed (which recorded steps became which generated lines); calendar-picked dates;
+values derived from data and what they were compared with; compile and run result. If the project runs tests from a suite file (e.g.
 `CenterTestSuiteList.json`), name it and the class to add — do not edit it.
