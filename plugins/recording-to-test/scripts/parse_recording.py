@@ -266,6 +266,15 @@ def unique_java(unique: dict):
     return None
 
 
+def value_java(action: dict) -> str:
+    """The Java value an entered value is set with: the generator call for a unique one, else the shown text."""
+    expr = unique_java(action["unique"]) if action.get("unique") else None
+    if expr:
+        return expr
+    display = action.get("display")
+    return jstr(display if display not in (None, '') else action.get("value"))
+
+
 def action_java(action: dict):
     """The call on the widget for a click or an entered value; None for anything else."""
     if action.get("type") == "click":
@@ -275,11 +284,7 @@ def action_java(action: dict):
     value = action.get("value")
     if isinstance(value, bool):
         return f".set({str(value).lower()})"
-    expr = unique_java(action["unique"]) if action.get("unique") else None
-    if expr:
-        return f".set({expr})"
-    display = action.get("display")
-    return f".set({jstr(display if display not in (None, '') else value)})"
+    return f".set({value_java(action)})"
 
 
 def check_java(check: dict):
@@ -322,6 +327,66 @@ def message_check_java(check: dict):
     return None
 
 
+COVERAGE_UTIL = "com.ankrpt.centertest.guidewire.runtime.CoverageUtil"
+# recorder assert -> CoverageUtil assertion on a coverage term; CoverageUtil has no ...Soft variants
+COVTERM_CHECKS = {"isEqualTo": ("assertEquals", "equals"), "isEditable": ("assertEditable", "is editable"),
+                  "isReadonly": ("assertReadOnly", "is read-only"), "isNotEmpty": ("assertNotNull", "is not empty")}
+
+
+def coverage_widget(action: dict):
+    """'checkbox' or 'term' for a coverage widget CoverageUtil handles by its labels, else None.
+    Its id holds the coverage's place in an iterator, which moves when the product model changes."""
+    if action.get("type") not in ("change", "check"):
+        return None
+    parts, _ = split_id(action.get("widgetId") or "")
+    if "CoverageInputSet" not in parts or "CovPatternInputGroup" not in parts:
+        return None
+    if "CovTermInputSet" in parts:
+        return "term"
+    return "checkbox" if parts[-1].lower() == "_checkbox" else None
+
+
+def coverage_target(action: dict, widget: str, label: str) -> dict:
+    """The coverage and term a coverage widget is on. A term's label is the term and the last
+    context entry its coverage; without a coverage title the label is the coverage, and a blank
+    term makes CoverageUtil take the coverage's first term."""
+    context = action.get("context") or []
+    result = {"resolution": "rule", "rule": "coverage", "getter": "coverageUtil"}
+    if widget == "checkbox":
+        result["coverage"] = {"coverage": label, "covterm": None}
+    elif len(context) >= 2:
+        result["coverage"] = {"coverage": context[-1], "covterm": label}
+    else:
+        result["coverage"] = {"coverage": label, "covterm": ""}
+        result["warning"] = ("the recording has no coverage title: the label is used as the coverage and "
+                             "its first term is set; check both on screen")
+    return result
+
+
+def coverage_action_java(action: dict, target: dict):
+    """setSelected for a coverage checkbox, setCoverage for a term; None for anything else."""
+    value = action.get("value")
+    if action.get("type") != "change" or value == REDACTED:
+        return None
+    coverage, covterm = jstr(target["coverage"]), target["covterm"]
+    if covterm is None:
+        return f".setSelected({coverage}, {str(value).lower()})" if isinstance(value, bool) else None
+    return f".setCoverage({coverage}, {jstr(covterm)}, {value_java(action)})"
+
+
+def coverage_check_java(check: dict, target: dict):
+    """The CoverageUtil assertion for a check on a coverage term; a soft check is wrapped as a whole statement."""
+    if target["covterm"] is None or check.get("assert") not in COVTERM_CHECKS:
+        return None
+    method, verb = COVTERM_CHECKS[check["assert"]]
+    args = [target["coverage"], target["covterm"]] + ([check.get("expected")] if method == "assertEquals" else [])
+    call = f"{method}({', '.join(jstr(a) for a in args)})"
+    if not check.get("soft"):
+        return "." + call
+    expected = f" {check.get('expected') or ''}" if method == "assertEquals" else ""
+    return described(f"{target['coverage']} / {target['covterm']} {verb}{expected}", "coverageUtil." + call, soft=True)
+
+
 FRAMEWORK_CLASSES = {
     "MessagesUtil": "com.ankrpt.centertest.guidewire.runtime.MessagesUtil",
     "CenterTestAssertion": "com.ankrpt.centertest.assertion.CenterTestAssertion",
@@ -349,11 +414,20 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         item.update(resolution="resolved", java=message_check_java(action),
                     soft=bool(action.get("soft")), expected=action.get("expected"))
         return item
-    item.update(resolve(cssids_dir, app, action))
+    coverage = coverage_widget(action)
+    item.update(coverage_target(action, coverage, item["label"]) if coverage else resolve(cssids_dir, app, action))
     if action.get("type") == "check":
-        item.update(java=check_java(action), soft=bool(action.get("soft")), expected=action.get("expected"))
+        java = coverage_check_java(action, item["coverage"]) if coverage else check_java(action)
+        item.update(java=java, soft=bool(action.get("soft")), expected=action.get("expected"))
+    else:
+        item["java"] = coverage_action_java(action, item["coverage"]) if coverage else action_java(action)
+    if coverage and item["java"] is None:
+        item["warning"] = (f"CoverageUtil has no call for this {action.get('assert') or action.get('type')} "
+                           f"on a coverage {coverage}; write it by hand on coverageUtil")
+    elif coverage and item.get("soft"):
+        item["getter"] = None  # a soft coverage check is a whole statement already
+    if action.get("type") == "check":
         return item
-    item["java"] = action_java(action)
     if item.get("column") == "_Checkbox" and item["java"]:
         item["java"] = ".click()"  # the project ticks a list row with get_CHECKBOX().click()
     if action.get("type") == "change" and action.get("value") != REDACTED:
@@ -377,6 +451,8 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
 def needs_review(item: dict) -> bool:
     if item.get("page") == "Login":
         return False  # the login facade replaces whatever was typed on the login page
+    if item.get("rule") == "coverage":
+        return item["java"] is None or "warning" in item  # CoverageUtil always compiles; only doubtful labels
     return (item["resolution"] != "resolved" or item["java"] is None
             or "warning" in item or "candidates" in item)
 
@@ -430,6 +506,8 @@ def build_plan(session: dict, cssids_dir: str) -> dict:
             translated = translate(cssids_dir, app, action)
             imports |= imports_for((translated.get("getter") or "") + (translated.get("java") or ""),
                                    translated.get("widget"))
+            if translated.get("rule") == "coverage":
+                imports.add(COVERAGE_UTIL)
             if action.get("type") == "check":
                 if translated.get("expected") in uniques:
                     translated["uniqueFrom"] = uniques[translated["expected"]]

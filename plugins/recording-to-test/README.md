@@ -40,6 +40,25 @@ which records the failure and lets the test go on.
 `MessagesUtil` has no soft form, so a soft message check is wrapped in
 `CenterTestAssertion…softAssertThat(() -> …)`.
 
+## Coverages and wizards
+
+Every coverage goes through `CoverageUtil`, which finds a coverage and its term by their screen
+labels. A generated coverage getter is never used, because it depends on the coverage's place in
+the iterator.
+
+| Recorded on a coverage | Generated call |
+|---|---|
+| tick / untick the coverage | `coverageUtil.setSelected("GL Deductible", true)` |
+| set a term | `coverageUtil.setCoverage("General Liability", "Occurrence Limit", "500,000")` |
+| `isEqualTo` / `isEditable` / `isReadonly` / `isNotEmpty` on a term | `assertEquals` / `assertEditable` / `assertReadOnly` / `assertNotNull` |
+
+When the recording has no coverage title (a single-term coverage), the label is used as the
+coverage and its first term is set. That line is on the review list.
+
+A step creates its wizard page once, in a field set in its constructor, or uses the field of a
+reusable base step that already holds the wizard. It never writes `new SubmissionWizardPage(getContext())`
+in each method. `coverageUtil` is held the same way.
+
 ## What it does not do (yet)
 
 DDT data sheets, `RestartPoints`, ReportPortal configuration, editing existing files (it tells you

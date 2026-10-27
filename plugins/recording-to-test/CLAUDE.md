@@ -28,7 +28,11 @@ There is no CI in this repo; run them before every commit.
   widget's page, not by `step.screen`.
 - About a third of real widget ids are not in cssids (wizard buttons, tab bar, list-row columns,
   coverage terms in iterators). `resolve_fallback()` builds them in the project's idioms; the
-  `raw` rule writes `Widget<Type>.get(id, getContext())`, which OOTB itself uses for coverage terms.
+  `raw` rule writes `Widget<Type>.get(id, getContext())`.
+- Coverage widgets (`…CoverageInputSet-CovPatternInputGroup…`) never reach `resolve()`: the
+  `coverage` rule in `translate()` turns them into `coverageUtil.setSelected/setCoverage/assert…`
+  from the recorded `label` (term) and `context[-1]` (coverage). This is a team rule: all coverage
+  work goes through `CoverageUtil`. Only an item with no coverage title or no `CoverageUtil` call is reviewed.
 - `find_getter()` prints and exits — call the module's lookup functions, not it.
 - OOTB writes `@FlowTags` in two forms (`("…")` and `({"…"})`); the scan reports the annotation as written.
 - cssids from the generated jar (`cssids/` in GW10, `<app>.cssids` at the root in GW9) are extracted

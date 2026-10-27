@@ -2,7 +2,7 @@
 
 - **Issue:** kimputing/centertest-skills#6
 - **Date:** 2026-10-06
-- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); Recorder folder layout after 1.0.10 and removed checks handled (#12, 70 unit tests green); acceptance on client-ootb-v10 (plan Task 11) pending (#13)
+- **Status:** Tasks 1–10 implemented on `feature/recording-to-test` (68 unit tests green; final review fixes applied 2026-10-06); Recorder folder layout after 1.0.10 and removed checks handled (#12, 70 unit tests green); coverages through `CoverageUtil` and the wizard page created once per step (#19, 2026-10-27, 85 unit tests green); acceptance on client-ootb-v10 (plan Task 11) pending (#13)
 
 ## 1. Purpose
 
@@ -116,8 +116,13 @@ user's `~/.centertest/cssid-finder.json` is never read or written.
    - `rowColumn` (`…<LV>-<n>-<column>`, where `…<LV>` resolves to a `…Table().getFirstRow().select()`
      chain): table chain + column getter — `_Select` → `getSelect()`, `_Checkbox` → `get_CHECKBOX()`,
      otherwise `get<Column>()` (`addSubmission` → `getAddSubmission()`).
-   - `raw` (everything else, e.g. coverage terms inside iterators): `Widget<Type>.get("<recorded id>",
-     getContext())`, as OOTB itself does for coverage terms (`WidgetTextInput.get(…)` in 10 files);
+   - `coverage` (#19, checked before the cssids lookup): a widget under `CoverageInputSet-CovPatternInputGroup`
+     becomes a call on the step's `coverageUtil`, found by labels, not iterator position: `_checkbox` →
+     `setSelected("<label>", true|false)`; a `CovTermInputSet` term → `setCoverage("<context[-1]>", "<label>", <value>)`,
+     its checks → `assertEquals` / `assertEditable` / `assertReadOnly` / `assertNotNull`. With no coverage title
+     (`context` shorter than 2) the label is the coverage and the term is blank (first term), and the item is reviewed.
+   - `raw` (everything else): `Widget<Type>.get("<recorded id>",
+     getContext())`;
      `<Type>` from the recorded kind (text → `WidgetTextInput`, select → `WidgetRangeInput`, checkbox →
      `WidgetCheckBoxInput`, `LinkWidget` → `WidgetLink`, tab/menu → `WidgetMenuItem`, toolbar →
      `WidgetToolbarButton`, `CheckedValuesToolbarButtonWidget` → `WidgetCheckedValuesToolbarButton`,
@@ -260,7 +265,10 @@ No `@DataDriven`, no `RestartPoints`.
 
 **Step class (one per new segment)** — extends the detected base, detected `@FlowTags`, `execute()`:
 
-- per recorded screen: `waitForPageTitle("<title>")`; `var page = new XPage(getContext());` with chains
+- the wizard page is a field set once in the constructor (`this.wizardPage = new SubmissionWizardPage(getContext());`),
+  or inherited from a reusable base step that already holds it, and every method uses it; never
+  `new <X>WizardPage(getContext())` per method (#19). `coverageUtil` is held the same way;
+- per recorded screen: `waitForPageTitle("<title>")`; another shared page in a local with chains
   shortened through it; the actions; then that screen's checks (checks verify the screen arrived at);
 - recorded literals → `private static final` constants named from field labels;
 - analyst notes → `//` comments at their step; page messages are not copied into code;
