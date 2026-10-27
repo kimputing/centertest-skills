@@ -151,6 +151,12 @@ class FallbackRulesTest(unittest.TestCase):
         self.assertEqual((box["rule"], box["column"]), ("rowColumn", "_Checkbox"))
         self.assertTrue(box["getter"].endswith(".select().get_CHECKBOX()"))
 
+    def test_row_cell_column_drops_the_cell_suffix(self):
+        cell = self.resolve("pc", widgetId="NewSubmission-NewSubmissionScreen-ProductOffersDV-ProductSelectionLV-4-Description_Cell",
+                            kind="text")
+        self.assertEqual(cell["column"], "Description_Cell")
+        self.assertTrue(cell["getter"].endswith(".getProductSelectionTable().getFirstRow().select().getDescription()"))
+
     def test_row_column_gw9_separators(self):
         result = self.resolve("cc", widgetId="ClaimSearch:ClaimSearchScreen:ClaimSearchResultsLV:2:_Select",
                               kind="SelectorCellValueWidget")
@@ -168,6 +174,8 @@ class FallbackRulesTest(unittest.TestCase):
         self.assertEqual(self.resolve("pc", widgetId="X-Y-_checkbox", kind="checkbox", inputType="checkbox")["widget"],
                          "WidgetCheckBoxInput")
         self.assertEqual(self.resolve("pc", widgetId="X-Y-Header_inner", kind="div")["widget"], "WidgetLabel")
+        self.assertEqual(self.resolve("pc", widgetId="X-Y-EffectiveDate", kind="date", inputType="text")["widget"],
+                         "WidgetDateInput")
 
     def test_app_without_cssids_falls_back_to_raw(self):
         result = self.resolve("ab", widgetId="ABContactDetailPopup-Name", kind="text")
@@ -225,7 +233,9 @@ class JavaFragmentsTest(unittest.TestCase):
         self.assertEqual(pr.action_java({"type": "click"}), ".click()")
         self.assertEqual(pr.action_java({"type": "change", "value": "su"}), '.set("su")')
         self.assertEqual(pr.action_java({"type": "change", "value": "1000", "display": "1,000"}), '.set("1,000")')
-        self.assertEqual(pr.action_java({"type": "change", "value": True}), ".set(true)")
+        # WidgetCheckBoxInput has only set(String); set(Boolean) is on the boolean radio/dropdown widgets
+        self.assertEqual(pr.action_java({"type": "change", "value": True}), '.set("true")')
+        self.assertEqual(pr.action_java({"type": "change", "value": False}), '.set("false")')
         self.assertIsNone(pr.action_java({"type": "change", "value": "[redacted]"}))
         self.assertIsNone(pr.action_java({"type": "key", "key": "Enter"}))
         self.assertEqual(pr.action_java({"type": "change", "value": "Acme", "unique": {"rule": "company"}}),
@@ -366,6 +376,52 @@ class CoverageUtilTest(unittest.TestCase):
         reviewed = {r["widgetId"] for r in plan["review"]}
         self.assertIn(POLLUTANTS, reviewed)
         self.assertNotIn(OCCURRENCE, reviewed)
+
+
+EFFECTIVE = "PolicyChangeWizard-PolicyChangeWizard_StartPolicyChangeScreen-StartPolicyChangeDV-EffectiveDate"
+
+
+class PickedDateTest(unittest.TestCase):
+    """A date picked with the calendar fires no change event: its value is only in the form the step posted."""
+
+    def plan(self, actions, fields):
+        session = {"steps": [{"seq": 2, "app": "PolicyCenter", "title": "Policy Change", "actions": actions,
+                              "requests": [{"method": "POST", "fields": fields}]}]}
+        return pr.build_plan(session, CSSIDS)
+
+    def test_calendar_clicks_become_one_set_of_the_posted_value(self):
+        # as recorded: the calendar icon, then the field; the value is only in the POST that followed
+        plan = self.plan([{"type": "click", "widgetId": EFFECTIVE + "_dateIcon", "kind": ""},
+                          {"type": "click", "widgetId": EFFECTIVE, "kind": "date", "label": "Effective Date"},
+                          {"type": "click", "widgetId": "PolicyChangeWizard-Next", "kind": "WizardButtonWidget"}],
+                         [{"name": "QuickJump", "value": ""}, {"name": EFFECTIVE, "value": "12/31/2027"},
+                          {"name": "PolicyPeriodEffDateID_Arg", "value": "01/01/2028"}])
+        actions = plan["steps"][0]["actions"]
+        self.assertEqual([a["widgetId"] for a in actions], [EFFECTIVE, "PolicyChangeWizard-Next"])
+        date = actions[0]
+        self.assertEqual((date["type"], date["java"], date["value"], date["source"]),
+                         ("change", '.set("12/31/2027")', "12/31/2027", "request"))
+        self.assertEqual(date["postedDates"], {"PolicyPeriodEffDateID_Arg": "01/01/2028"})
+        reason = next(r["reason"] for r in plan["review"] if r["widgetId"] == EFFECTIVE)
+        self.assertIn("calendar", reason)
+        self.assertIn("2 calendar clicks", reason)
+        self.assertIn("PolicyPeriodEffDateID_Arg = 01/01/2028", reason)
+
+    def test_raw_calendar_date_is_a_date_input(self):
+        plan = self.plan([{"type": "click", "widgetId": "X-Y-StartDate_dateIcon"}], [{"name": "X-Y-StartDate", "value": "1/2/2027"}])
+        date = plan["steps"][0]["actions"][0]
+        self.assertEqual((date["widgetId"], date["widget"], date["java"]), ("X-Y-StartDate", "WidgetDateInput", '.set("1/2/2027")'))
+        self.assertEqual(date["postedDates"], {})
+
+    def test_typed_date_is_left_alone(self):
+        plan = self.plan([{"type": "click", "widgetId": EFFECTIVE, "kind": "date"},
+                          {"type": "change", "widgetId": EFFECTIVE, "kind": "date", "value": "01/15/2027"}],
+                         [{"name": EFFECTIVE, "value": "01/15/2027"}])
+        self.assertEqual([a["type"] for a in plan["steps"][0]["actions"]], ["click", "change"])
+
+    def test_click_on_a_field_that_posted_no_date_stays_a_click(self):
+        plan = self.plan([{"type": "click", "widgetId": "X-Y-Name", "kind": "text"}], [{"name": "X-Y-Name", "value": "Acme"}])
+        self.assertEqual(plan["steps"][0]["actions"][0]["java"], ".click()")
 
 
 def plan_for(name):

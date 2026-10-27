@@ -33,6 +33,16 @@ There is no CI in this repo; run them before every commit.
   `coverage` rule in `translate()` turns them into `coverageUtil.setSelected/setCoverage/assert…`
   from the recorded `label` (term) and `context[-1]` (coverage). This is a team rule: all coverage
   work goes through `CoverageUtil`. Only an item with no coverage title or no `CoverageUtil` call is reviewed.
+- A date picked from the calendar fires no `change` event: the recorder logs only clicks on the
+  field and its `<id>_dateIcon`. The value is in the step's posted form (`requests[].fields`).
+  `with_picked_dates()` turns the first such click into that change (`source: "request"`, reviewed)
+  and folds the field's other calendar clicks into it. `postedDates` holds the other dates in the same
+  post, e.g. the policy period's `PolicyPeriodEffDateID_Arg`.
+- Recorded booleans come only from checkboxes. `WidgetCheckBoxInput` has only `set(String)`, so
+  they are written `.set("true")`. A row cell's live id ends in `_Cell`; its generated getter doesn't.
+- The run command comes from the `-P` properties the `bootRun` block reads (`-Pprofile`,
+  `-PcenterTest`). With no `centerTest` there it is `null` and the skill asks; the
+  `--spring.profiles.active` form is used only for a `bootRun` that reads no properties.
 - `find_getter()` prints and exits — call the module's lookup functions, not it.
 - OOTB writes `@FlowTags` in two forms (`("…")` and `({"…"})`); the scan reports the annotation as written.
 - cssids from the generated jar (`cssids/` in GW10, `<app>.cssids` at the root in GW9) are extracted
