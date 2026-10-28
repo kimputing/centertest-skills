@@ -67,16 +67,24 @@ in each method. `coverageUtil` is held the same way.
 - **Where the test starts**, when the recording doesn't begin with a login: the setup the other
   tests in the same `tests/<center>/<lob>/<txn>/` folder use (login, account, submission, policy
   search, restart point) and a data row that fits.
-- **Retries collapsed**: a value corrected after Next is set once, and a validation loop (errors at
+- **Retries collapsed**: a value corrected after Next is set once, a refused Next / Issue becomes the
+  fix then one click, and a validation loop (errors at
   Issue → Clear / Edit Policy Transaction → fix → Quote again) becomes the fix before the first Quote.
 - **Project helpers for blocker screens** ("Issues that block Issuance", "Risk Approval Details"):
   the project's methods that wait for that screen or open its page, instead of raw clicks.
+  Rows picked by recorded values (a vehicle, a date) are flagged like other picks of existing data.
 - **Exemplars by relevance**: a step from the same center/LOB/transaction folder, preferring one
   that was itself generated from a recording.
 - **Dates and identity values**: typed and calendar-picked dates as relative dates, and generators
   for names, licence numbers, VINs and SSNs that would collide on reruns.
 - **Final checks** from the analyst's notes and the expected outcome.
 - Picks that depend on the account's existing data (row 0 of a contact list) are flagged.
+
+- **Pinned ids**: when the getter found for a widget would look for a different id at runtime
+  (a bracketed toolbar segment, an iterator, a partial match), the recorded id is pinned with
+  `.withCssId(…)`.
+- **UW blocks** are handled through the project's helper after both Quote and Issue, with a
+  screenshot of the blocking issues for the report.
 
 Menu items are picked by their label on the menu button (`getAddDriver().get("New Person")`), and a
 click that only opened the menu is dropped.

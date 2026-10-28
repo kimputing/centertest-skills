@@ -75,8 +75,10 @@ What the scan gives besides the basics:
 
 ```bash
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/parse_recording.py" "<recording>" \
-  --cssids "<cssids.value from project.json>" --out "$WORK/plan.json"
+  --cssids "<cssids.value from project.json>" --project "$WORK/project.json" --out "$WORK/plan.json"
 ```
+
+`--project` lets the parser match each step to the project's helpers (see `helpers` and `blockers`).
 
 In `plan.json`, a step's `actions` are what the user did **to reach** that screen (on the previous
 page); its `checks` verify the screen it arrived at. `getter` is the widget chain; `java` is the call
@@ -98,13 +100,25 @@ More item fields:
   menu, which the parser dropped because the getter opens it. When the item stays `raw`, the opener
   stays as a raw click.
 - `dependsOnData: true`: a `raw` id that picks entry *n* of a list by its position
-  (`…-0-UnassignedDriver`). It works only if the account or policy has that data.
+  (`…-0-UnassignedDriver`), or a row picked by its recorded values (`.with("Vehicle #", "1")
+  .with("Year", "2015")`, or a date literal like `with("Close Date", "10/19/2026")`). It works only
+  if the account or policy has that data.
+- `blocker: true`: an item on a UW-issue or approval screen (`…UWIssueRowSet-SpecialApprove`). It is
+  replaced by the blocker helper (see `blockers`), never written raw.
 - `typedDate: true` (with `postedDates`): a date that was typed, not picked from the calendar.
 - `uniqueSuggested: {expr, recorded}`: an identity field (name, licence #, VIN, SSN, email) the
   analyst didn't mark unique. A fixed value collides on reruns.
 - `corrects: {seq, value}`: this change fixes a value set at an earlier step.
-- A `warning` that mentions a bracketed toolbar segment: the generated getter had `get[X_tb]Name()`,
-  rewritten to `getName().withCssId("<live id>")`. Check it at compile.
+- A `warning` that says the getter's cssids key is not the recorded id: the getter would look for
+  another id at runtime and fail there, not at compile time. Typical causes are a bracketed or
+  different `_tb` segment, an iterator `#` the getter doesn't fill, or a partial match. The parser
+  pinned the recorded id with `.withCssId("<recorded id>")`. If that widget class has no `withCssId`
+  (compile error), write `Widget<Type>.get("<recorded id>", getContext())` instead. Never drop the pin.
+
+Each step also has `pages` (its screen and its items' pages). With `--project` it has `helpers`: the
+project's methods that wait for its title or open one of its pages (`{method, matched}`).
+`blockers` (top level) lists the steps on a UW-issue or approval screen, found by title, page,
+message ("placed in the facility (RSP) pool") or item, each with its `helpers`.
 
 `retries` (top level) lists what the analyst redid:
 - `kind: "corrected"`: a value set at `seq` and changed at `fixedSeq` (e.g. licence # `2569874` →
@@ -112,6 +126,8 @@ More item fields:
 - `kind: "validationLoop"`: errors shown at `errorSeq` (`errors`, from the page messages), then
   `edit` (Clear / Edit Policy Transaction) at `editSeq`, the `fixes` made, and the transaction
   quoted or issued again at `resumeSeq`. `firstQuoteSeq` is the first Quote in the recording.
+- `kind: "refused"`: a Next / Quote / Issue at `seq` that left the screen on the same `title`. The
+  same button was clicked again at `retrySeq`, after the `fixes` (and any other clicks, `between`).
 
 ## 4. Read the exemplars
 
@@ -154,6 +170,9 @@ role is logged in, and how the test reaches that screen with that record open. D
   screen title in between and usually a field fixed in between: generate the fix, then the action
   once.
 - `retries` with `kind: "corrected"`: generate only the final value, at the first place it was set.
+- `retries` with `kind: "refused"`: generate the `fixes` before the click, then the click once. When
+  `between` holds clicks on a blocker screen (Issue ×2 around a UW approval), the blocker helper
+  replaces them.
 - `retries` with `kind: "validationLoop"`: the analyst got `errors` (e.g. at Issue), went back
   (Clear, Edit Policy Transaction), made `fixes`, and quoted again. Propose the intended order: the
   fixes at the screen where each field is first set, **before the first Quote** (`firstQuoteSeq`).
@@ -163,13 +182,21 @@ role is logged in, and how the test reaches that screen with that record open. D
 List each one (recorded seqs → generated lines, and the error text) in the confirmation table and the
 report.
 
-**Blocker screens.** For every screen title and every page in a segment's raw or partial items,
-look it up in `screenHelpers.value.titles` (a title prefix is enough) and `.pages`. A hit for a
-screen that blocks the transaction ("Issues that block Issuance", "Risk Approval Details", warnings
-to accept, a UW approval) means the project already handles it, e.g. `ApproveUWIssuesAndIssuePolicy.clearUWIssues()`
-or `AbstractPolicyChange.issueStep()`. Read that method and propose it instead of the raw clicks
-(e.g. 4 raw `BindPolicyChange` clicks plus a raw `SpecialApprove`). Show the replacement in the
-confirmation table.
+**Blocker screens.** Each entry in `blockers` is a screen that blocks the transaction ("Issues that
+block Issuance", "Risk Approval Details", warnings to accept, a UW approval). Its `helpers` are the
+project's methods for it, matched by title or by page (the project may handle the screen by its
+page, e.g. `UWBlockProgressIssuesPopup` in `AbstractPolicyChange.issueStep()`, and never name the
+title). Read the helper and propose it instead of the raw clicks (e.g. 4 raw `BindPolicyChange`
+clicks plus a raw `SpecialApprove`). If `helpers` is empty, search the steps root for the page name
+and the `blocker: true` widget ids before you write anything raw. Show the replacement in the
+confirmation table. Also look up `helpers` on the other steps of each segment: a hit there is a
+candidate too.
+
+**UW blocks anywhere.** UW rules depend on the data and the environment. A block the recording
+hit at Issue can come at Quote in another run ("placed in the facility (RSP) pool"), and the other
+way round. When `blockers` is not empty, propose that the step handle a block **after both Quote
+and Issue**, through the same helper. Add `takeScreenshot("<screen>: UW issues")` (on
+`BaseScenarioGw`) when the blocker screen shows, so the blocking issue text is in the run report.
 
 ## 6. Match segments to facades
 
@@ -236,10 +263,14 @@ Retries collapsed: seq 31-32 Next ×2 (Driver license fixed in between) → one 
             Drivers screen before the first Quote (seq 29); Clear / Edit Policy Transaction dropped
   seq 22→25 Licence # 2569874 corrected to 256987 → 256987 set once at seq 22
 Blocker screens:
-  seq 44  "Issues that block Issuance" → AbstractPolicyChange.issueStep() instead of 4 raw BindPolicyChange
-          clicks and a raw SpecialApprove
+  seq 44  "Issues that block Issuance" (page UWBlockProgressIssuesPopup) → AbstractPolicyChange.issueStep()
+          instead of 4 raw BindPolicyChange clicks and a raw SpecialApprove; handled after Quote and Issue,
+          with a screenshot of the issues
 Depends on the account's data:
   seq 14  Existing Driver → row 0 of unassigned contacts — only works if the account has that contact
+  seq 9   vehicle row Vehicle # = 1, Year = 2015, Make = Chevrolet → the test's own vehicle (from its DC row)?
+  seq 30  reopen filter Close Date = 10/19/2026 → today, or drop the filter?
+Pinned ids: seq 12 getSubstituteVeh_Ext().withCssId("…VehiclesListDetailPanel_tb-SubstituteVeh_Ext") (key had [VehiclesLV_tb])
 Dates: seq 21 Date of Birth 05/04/1980 typed → relative? (e.g. effective date − 46 years)
 Unique: seq 21 First name → PersonNameUtil…; seq 22 Licence # → numerify("######"); seq 30 VIN → vehicle().vin()
 Facade: PC.addDriverPolicyChange(context) added to PC.java (reusable/CLAUDE.md: every new step gets one)
@@ -269,8 +300,10 @@ with the right operator types" becomes a check per row on the driver table (`.wi
 filters, `assertEquals` on the type column). Show them in the table; the user approves or edits.
 
 **Choices that depend on existing data** get a question: a pick from a list whose rows come from
-the account or policy (an existing driver or contact, a location, a prior claim, "row 0"). It only
-works if that data is already there. If the test creates its own account or policy, ask how the
+the account or policy (an existing driver or contact, a location, a prior claim, "row 0", a row
+filtered by recorded values or a date). It only works if that data is already there. Rows of
+reference data (a product, a producer organization, a coverage pattern) usually stay as recorded.
+Rows of the policy's own data (vehicles, drivers, dates) should come from the test's data. If the test creates its own account or policy, ask how the
 test gets that data: create it in an earlier step, or use a facade or DDT record. Don't assume the
 recorded environment's data.
 
@@ -349,8 +382,21 @@ at most 3 rounds; then stop and report what is left. If the build fails on missi
 Ask: run now? which profile (`build.value.profiles`)? Then run `build.value.run` with `{profile}` and
 `{testClass}` filled in. When `build.value.run` is `null`, the project's `bootRun` reads `-P`
 properties (`build.value.bootRunProperties`) but none named `centerTest`. Ask the user how this
-project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file), and don't guess. On failure, read the newest log under the project's `logs/` folder, fix the
-generated files only, show each change, rerun — at most 3 rounds.
+project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file), and don't guess.
+
+**On failure, read the run's evidence first.** It is in `results/<timestamp>/<test>/TestRecord/`:
+the `*_Narrative.html` (each step, the failing widget, the error) and `Screenshots/`. `logs/` has
+the runner log but no page detail. Then:
+- **Check the screen before the id.** When a widget isn't found (`WI-005`) or a click times out,
+  look at the last screenshot and the page title the narrative shows first. If the page is not
+  where the step expected (still blocked by UW issues, a validation error, a warning to accept),
+  the missing widget is a symptom: handle that screen (blocker helper, the missing field) instead of
+  patching the id.
+- Only when the right page is shown, fix the getter. If it ends in `.withCssId(…)` or is raw, check
+  the recorded id against the page.
+
+Fix the generated files only (and the edits the guidance asked for), show each change, and rerun:
+at most 3 rounds.
 
 ## 12. Report
 
@@ -358,6 +404,7 @@ Files created; existing files edited because the project's guidance asks for it 
 facades and helpers reused; every `rule`/`raw`/`partial` getter and whether it compiled; untranslated
 items; retries and validation loops collapsed (which recorded steps became which generated lines);
 calendar-picked and typed dates; generated identity values; picks that depend on existing data;
+pinned ids (`withCssId`) and why; blocker screens and the helper used for each;
 values derived from data and what they were compared with; final checks added; compile and run
 result. If the project runs tests from a suite file (e.g. `CenterTestSuiteList.json`) and its
 guidance doesn't say to add new tests there, name it and the class to add, and don't edit it.
