@@ -121,7 +121,9 @@ class FallbackRulesTest(unittest.TestCase):
                               kind="ToolbarButtonWidget")
         self.assertEqual(result["rule"], "toolbar")
         self.assertEqual(result["getter"], "new SubmissionWizardPage(getContext()).getLineWizardStepSet()"
-                                           ".getLineWizardStepSetGLLineStep().getAdditionalCoveragesCard().getAdd()")
+                                           ".getLineWizardStepSetGLLineStep().getAdditionalCoveragesCard().getAdd()"
+                                           '.withCssId("SubmissionWizard-LOBWizardStepGroup-LineWizardStepSet'
+                                           '-GeneralLiabilityScreen-AdditionalCoveragesPanelSet-AdditionalCoveragesDV_tb-Add")')
 
     def test_wizard_button(self):
         result = self.resolve("pc", widgetId="SubmissionWizard-Next", kind="WizardButtonWidget")
@@ -504,7 +506,7 @@ class PlanFromSyntheticRecordingTest(unittest.TestCase):
         self.assertEqual(reasons[(2, "Name")]["reason"], "not translated")  # the Enter key
         self.assertEqual(reasons[(3, "Offering")]["reason"], "not translated")  # isSomethingNew
         self.assertEqual(reasons[(3, "Are you sure?")]["resolution"], "unresolved")
-        self.assertEqual(reasons[(5, "")]["reason"], "unknown application")
+        self.assertEqual(reasons[(5, "Widget")]["reason"], "unknown application")  # labelled from its id
 
     def test_soft_message_check_is_soft(self):
         message = step(self.plan, 3)["checks"][3]
@@ -570,21 +572,50 @@ VEHICLE_CARD = ("new PolicyChangeWizardPage(getContext()).getLineWizardStepSet()
 
 
 class ToolbarAndMenuTest(unittest.TestCase):
-    def test_bracketed_call_at_the_end_gets_the_live_id(self):
-        self.assertEqual(pr.unbracket("new P(getContext()).getCard().get[DriverLV_tb]AddDriver()", "P-DriverLV_tb-AddDriver"),
-                         ('new P(getContext()).getCard().getAddDriver().withCssId("P-DriverLV_tb-AddDriver")', True))
-
-    def test_bracketed_call_inside_a_chain_is_renamed(self):
-        self.assertEqual(pr.unbracket("new P(getContext()).get[DriverLV_tb]DriverTable().getFirstRow().select()",
-                                      "P-DriverLV-0-Name"),
+    def test_bracketed_call_is_renamed(self):
+        self.assertEqual(pr.unbracket("new P(getContext()).getCard().get[DriverLV_tb]AddDriver()"),
+                         ("new P(getContext()).getCard().getAddDriver()", True))
+        self.assertEqual(pr.unbracket("new P(getContext()).get[DriverLV_tb]DriverTable().getFirstRow().select()"),
                          ("new P(getContext()).getDriverTable().getFirstRow().select()", True))
-        self.assertEqual(pr.unbracket("new P(getContext()).getAdd()", "P-Add"), ("new P(getContext()).getAdd()", False))
+        self.assertEqual(pr.unbracket("new P(getContext()).getAdd()"), ("new P(getContext()).getAdd()", False))
 
     def test_cssids_getter_with_bracketed_segment_is_valid_java(self):
         result = pr.resolve(CSSIDS, "pc", {"widgetId": ADD_DRIVER, "kind": "ToolbarButtonWidget"})
         self.assertEqual(result["getter"], f'{VEHICLE_CARD}.getAddDriver().withCssId("{ADD_DRIVER}")')
-        self.assertNotIn("[", result["getter"])
-        self.assertEqual(result["warning"], pr.UNBRACKETED)
+        self.assertEqual(result["warning"], pr.PINNED)
+
+    def test_key_matches_the_recorded_id(self):
+        self.assertTrue(pr.key_matches("P-LV-[ROW]-Name", "P-LV-3-Name", takes_index=False))
+        self.assertTrue(pr.key_matches("P-It-#-Limit", "P-It-2-Limit", takes_index=True))
+        self.assertFalse(pr.key_matches("P-It-#-Limit", "P-It-2-Limit", takes_index=False))
+        self.assertFalse(pr.key_matches("P-[VehiclesLV_tb]-Sub", "P-VehiclesListDetailPanel_tb-Sub", takes_index=False))
+        self.assertFalse(pr.key_matches("P-Sub", "P-X_tb-Sub", takes_index=False))
+
+    def test_toolbar_segment_dropped_from_the_key_is_pinned(self):
+        live = ("PolicyChangeWizard-LOBWizardStepGroup-LineWizardStepSet-PAVehiclesScreen-PAVehiclesPanelSet"
+                "-VehiclesListDetailPanel_tb-SubstituteVeh_Ext")
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": live, "kind": "ToolbarButtonWidget"})
+        self.assertEqual(result["rule"], "toolbar")
+        self.assertTrue(result["getter"].endswith(f'.getSubstituteVeh_Ext().withCssId("{live}")'))
+
+    def test_iterator_the_getter_does_not_fill_is_pinned(self):
+        live = "PolicyChangeWizard-ViewQuoteScreen-RatingCumulDetailsPanelSet-0-OverrideRating"
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": live, "kind": "LinkWidget"})
+        self.assertEqual(result["getter"], "new PolicyChangeWizardPage(getContext()).getViewQuoteStep()"
+                                           f'.getRatingCumulDetails().getOverrideRating().withCssId("{live}")')
+        self.assertEqual(result["warning"], pr.PINNED)
+
+    def test_partial_match_is_pinned(self):
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": "PolicyChangeWizard-ViewQuoteScreen", "kind": "div"})
+        self.assertEqual(result["resolution"], "partial")
+        for getter in result.get("candidates", [result["getter"]]):
+            self.assertTrue(getter.endswith('.withCssId("PolicyChangeWizard-ViewQuoteScreen")'), getter)
+
+    def test_exact_key_and_rows_are_not_pinned(self):
+        self.assertNotIn("withCssId", pr.resolve(CSSIDS, "pc", {"widgetId": "Login-LoginScreen-LoginDV-username"})["getter"])
+        row = pr.resolve(CSSIDS, "pc", {"widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen"
+                                                    "-OrganizationSearchResultsLV-0-ContactCity"})
+        self.assertNotIn("withCssId", row["getter"])
 
     def test_menu_item_is_picked_by_label_on_its_button(self):
         result = pr.resolve(CSSIDS, "pc", {"widgetId": ADD_DRIVER + "-AddNewPerson", "kind": "MenuItemWidget",
@@ -627,7 +658,7 @@ class LabelsAndDataTest(unittest.TestCase):
     def test_input_name_is_not_a_label(self):
         cell = DRIVERS + "-DriverLV-1-Rated_IC"
         self.assertEqual(pr.item_label({"widgetId": cell, "name": cell, "column": "Rated_IC"}), "Rated")
-        self.assertEqual(pr.item_label({"widgetId": cell, "name": cell + "_checkbox"}), "")
+        self.assertEqual(pr.item_label({"widgetId": cell, "name": cell + "_checkbox"}), "Rated_IC")
         self.assertEqual(pr.item_label({"widgetId": cell, "label": "Premium applied", "name": cell}), "Premium applied")
 
     def test_cell_label_comes_from_the_column_header_in_the_dom(self):
@@ -700,6 +731,85 @@ class RetriesTest(unittest.TestCase):
                                     "resumeSeq": 8, "firstQuoteSeq": 5})
 
 
+UW_APPROVE = "UWBlockProgressIssuesPopup-UWBlockProgressIssuesScreen-RiskEvaluationPanelSet-1-UWIssueRowSet-SpecialApprove"
+PROJECT = {"screenHelpers": {"value": {
+    "titles": {"Risk Approval Details": ["ApproveUWIssuesAndIssuePolicy.clearUWIssues"]},
+    "pages": {"UWBlockProgressIssuesPopup": ["AbstractPolicyChange.issueStep"]}}}}
+
+
+def click(seq_label, widget_id=None, kind="ToolbarButtonWidget"):
+    return {"type": "click", "widgetId": widget_id or f"PolicyChangeWizard-{seq_label.replace(' ', '')}",
+            "kind": kind, "text": seq_label}
+
+
+class BlockersAndRefusalsTest(unittest.TestCase):
+    def test_uw_issue_row_is_a_blocker_not_account_data(self):
+        item = pr.translate(CSSIDS, "pc", {"type": "click", "widgetId": UW_APPROVE, "kind": "button", "text": "Special Approve"})
+        self.assertTrue(item["blocker"])
+        self.assertNotIn("dependsOnData", item)
+
+    def test_blocker_screen_is_matched_to_helpers_by_page(self):
+        session = {"steps": [
+            {"seq": 18, "app": "PolicyCenter", "screen": "PolicyChangeWizard", "title": "Quote",
+             "actions": [click("Issue Policy")]},
+            {"seq": 19, "app": "PolicyCenter", "screen": "UWBlockProgressIssuesPopup",
+             "title": "Issues that block Issuance",
+             "actions": [click("Special Approve", UW_APPROVE, "button")]}]}
+        plan = pr.build_plan(session, CSSIDS, project=PROJECT)
+        blocker, = plan["blockers"]
+        self.assertEqual((blocker["seq"], blocker["items"]), (19, ["Special Approve"]))
+        self.assertEqual(blocker["helpers"], [{"method": "AbstractPolicyChange.issueStep",
+                                               "matched": "page UWBlockProgressIssuesPopup"}])
+        self.assertEqual(step(plan, 19)["pages"], ["UWBlockProgressIssuesPopup"])
+        self.assertNotIn("helpers", step(pr.build_plan(session, CSSIDS), 19))  # no project.json: no lookup
+
+    def test_helper_matched_by_title_and_blocker_by_message(self):
+        session = {"steps": [{"seq": 3, "app": "PolicyCenter", "title": "Risk Approval Details: 123",
+                              "actions": [click("Quote")],
+                              "messages": [{"text": "Policy placed in the facility (RSP) pool", "level": "warning"}]}]}
+        blocker, = pr.build_plan(session, CSSIDS, project=PROJECT)["blockers"]
+        self.assertEqual(blocker["messages"], ["Policy placed in the facility (RSP) pool"])
+        self.assertEqual(blocker["helpers"][0]["method"], "ApproveUWIssuesAndIssuePolicy.clearUWIssues")
+
+    def test_refused_next_then_fix_then_next_again(self):
+        next_button = click("Next", "PolicyChangeWizard-Next", "WizardButtonWidget")
+        ownership = {"type": "change", "widgetId": "X-Ownership", "kind": "select", "label": "Ownership", "value": "Owned"}
+        session = {"steps": [
+            {"seq": 13, "app": "PolicyCenter", "title": "Vehicles", "actions": [click("Edit")]},
+            {"seq": 14, "app": "PolicyCenter", "title": "Vehicles", "actions": [next_button],
+             "messages": [{"text": "Ownership : Missing required field", "level": "error"}]},
+            {"seq": 15, "app": "PolicyCenter", "title": "Drivers", "actions": [ownership, dict(next_button)]}]}
+        refused = [r for r in pr.build_plan(session, CSSIDS)["retries"] if r["kind"] == "refused"]
+        self.assertEqual(refused, [{"kind": "refused", "seq": 14, "action": "Next", "title": "Vehicles",
+                                    "errors": ["Ownership : Missing required field"],
+                                    "fixes": [{"seq": 15, "label": "Ownership", "value": "Owned"}],
+                                    "between": [], "retrySeq": 15}])
+
+    def test_issue_clicked_twice(self):
+        issue = click("Issue Policy")
+        session = {"steps": [
+            {"seq": 17, "app": "PolicyCenter", "title": "Quote", "actions": [click("Quote")]},
+            {"seq": 18, "app": "PolicyCenter", "title": "Quote", "actions": [issue]},
+            {"seq": 19, "app": "PolicyCenter", "title": "Policy Change Bound", "actions": [dict(issue)]}]}
+        refused, = [r for r in pr.build_plan(session, CSSIDS)["retries"] if r["kind"] == "refused"]
+        self.assertEqual((refused["seq"], refused["retrySeq"], refused["fixes"]), (18, 19, []))
+
+    def test_row_filters_from_recorded_values_depend_on_data(self):
+        item = pr.translate(CSSIDS, "pc", {
+            "type": "click", "widgetId": "OrganizationSearchPopup-OrganizationSearchPopupScreen"
+                                         "-OrganizationSearchResultsLV-0-_Select", "kind": "SelectorCellValueWidget",
+            "rowKey": [{"header": "Vehicle #", "text": "1"}, {"header": "Close Date", "text": "10/19/2026"}]})
+        self.assertTrue(item["dependsOnData"])
+        self.assertIn("Vehicle # = 1, Close Date = 10/19/2026", item["warning"])
+        self.assertIn("Close Date = 10/19/2026 is a date literal", item["warning"])
+
+    def test_debug_tooltip_is_not_a_label(self):
+        crumb = {"widgetId": "RatingOverridePopup-__crumb__",
+                 "label": "See PolicyChangeWizard.pcf StackopenForEditInit: PolicyChangeWizard"}
+        self.assertEqual(pr.item_label(crumb), "Return to previous page")
+        self.assertEqual(pr.item_label({"widgetId": "P-Override", "label": "See P.pcf", "text": "Override"}), "Override")
+
+
 class SnapshotReaderTest(unittest.TestCase):
     def test_reads_dom_from_folder_and_zip(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -734,6 +844,18 @@ class CommandLineTest(unittest.TestCase):
         result = self.run_script("/no/such/recording", "--cssids", CSSIDS)
         self.assertEqual(result.returncode, 2)
         self.assertIn("not a recording", result.stderr)
+
+    def test_project_json_adds_helpers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, out = os.path.join(tmp, "project.json"), os.path.join(tmp, "plan.json")
+            with open(project, "w", encoding="utf-8") as f:
+                json.dump({"screenHelpers": {"value": {"titles": {"Account Summary": ["SearchForAccountPC.find"]}}}}, f)
+            result = self.run_script(os.path.join(RECORDINGS, "real-180418"), "--cssids", CSSIDS,
+                                     "--project", project, "--out", out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(out, encoding="utf-8") as f:
+                summary = step(json.load(f), 3)
+            self.assertEqual(summary["helpers"], [{"method": "SearchForAccountPC.find", "matched": "title 'Account Summary'"}])
 
     def test_writes_plan(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -49,9 +49,16 @@ There is no CI in this repo; run them before every commit.
 - OOTB writes `@FlowTags` in two forms (`("…")` and `({"…"})`); the scan reports the annotation as written.
 - cssids from the generated jar (`cssids/` in GW10, `<app>.cssids` at the root in GW9) are extracted
   once per jar into `<system temp>/recording-to-test-cssids/<hash>` and reused.
-- The generator writes a conditional toolbar segment into the getter itself:
-  `….get[DriverLV_tb]AddDriver()`. `unbracket()` rewrites it to `getAddDriver()` and, when that call
-  ends the chain, adds `.withCssId("<live id>")`. Every lookup result goes through it.
+- A getter compiles but fails at runtime when its cssids key isn't the recorded id: a bracketed,
+  dropped or different `_tb` segment, a `#` the getter doesn't fill, or a partial match.
+  `lookup_keyed()` reports that (`key_matches()`), and `pinned()` adds `.withCssId("<recorded id>")`
+  (not to row getters: the row API finds the row). The generator also writes the bracket into
+  method names (`….get[DriverLV_tb]AddDriver()`); `unbracket()` renames those, and they get pinned too.
+- `--project project.json` gives `build_plan` the scan's `screenHelpers`: each step's `helpers`
+  (by title prefix or by `pages`) and `blockers` (UW-issue/approval screens by title, page, message
+  or widget id). A project may handle a blocker by page only, never naming its title.
+- `refused()` finds a Next/Quote/Issue that left the same `waitTitle` and the same button clicked
+  again later (`kind: "refused"`).
 - A menu item reached through its button (`<button getter>.get("Label")`, rule `menuItem`) opens the
   menu itself, so the click that opened it is dropped (`fold_menu_openers`). A raw
   `WidgetMenuItem.get(id)` only moves to its element, so its opener stays.

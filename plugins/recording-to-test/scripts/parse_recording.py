@@ -3,7 +3,8 @@
 CenterTest Recorder recording -> plan JSON for the recording-to-test skill.
 
 Usage:
-  python3 parse_recording.py <recording.zip|folder|session.json> --cssids <resources dir> [--out plan.json]
+  python3 parse_recording.py <recording.zip|folder|session.json> --cssids <resources dir>
+                             [--project project.json] [--out plan.json]
 
 Reads only session.json. <resources dir> holds cssids/<app>/<Page>.properties (or the legacy
 <app>.cssids), e.g. the cssids/ that scan_project.py extracted from the project's *-generated jar.
@@ -126,9 +127,15 @@ def fill_iterators(getter: str, widget_id: str, form: str) -> str:
 def lookup(cssids_dir: str, app: str, widget_id: str):
     """find_getter's search: an exact key across all normalized forms first, then a partial one.
     Returns ('resolved' | 'partial', [getter, ...]) or (None, [])."""
+    resolution, getters, _ = lookup_keyed(cssids_dir, app, widget_id)
+    return resolution, getters
+
+
+def lookup_keyed(cssids_dir: str, app: str, widget_id: str):
+    """lookup() plus whether the id the getters resolve to at runtime differs from the recorded one."""
     layout, path = find_getter.detect_layout(cssids_dir, find_getter.APP_MAP[app][0])
     if layout is None:
-        return None, []
+        return None, [], False
     forms = find_getter.normalize_css_id(widget_id)
     for exact_only in ([True, False] if layout == "properties" else [True]):
         for form in forms:
@@ -138,31 +145,43 @@ def lookup(cssids_dir: str, app: str, widget_id: str):
                 found = find_getter.search_legacy(path, form)
             if found:
                 getters = list(dict.fromkeys(fill_iterators(g, widget_id, form) for g in found))
-                return ("resolved" if exact_only else "partial"), getters
-    return None, []
+                differs = not exact_only or not key_matches(form, widget_id, "#" in found[0])
+                return ("resolved" if exact_only else "partial"), getters, differs
+    return None, [], False
+
+
+def key_matches(form: str, widget_id: str, takes_index: bool) -> bool:
+    """Whether the cssids key a getter came from is the recorded id. '[ROW]' stands for any row (the
+    row API picks it); '#' for any index only when the getter takes that index. A bracketed or
+    dropped '_tb' segment, or a '#' the getter doesn't fill, is a different id at runtime."""
+    keys, ids = SEGMENT.split(form), SEGMENT.split(widget_id)
+    return len(keys) == len(ids) and all(
+        key == part or (part.isdigit() and (key == "[ROW]" or (key == "#" and takes_index)))
+        for key, part in zip(keys, ids))
 
 
 TOOLBAR_CALL = re.compile(r"\.get\[([^\[\]]*_tb)\](\w+)\(\)")
 
 
-def unbracket(getter: str, widget_id: str):
+def unbracket(getter: str):
     """The generator writes a conditional toolbar segment into the method name
-    ('.get[DriverLV_tb]AddDriver()'), which isn't Java. The page object's method is getAddDriver();
-    when that call ends the chain, withCssId() pins the live id. Returns (getter, changed)."""
-    calls = list(TOOLBAR_CALL.finditer(getter or ""))
-    if not calls:
-        return getter, False
-    fixed = TOOLBAR_CALL.sub(lambda m: f".get{m.group(2)}()", getter)
-    last = calls[-1]
-    parts, seps = split_id(widget_id)
-    if last.end() == len(getter) and last.group(1) in parts[:-1]:
-        i = parts.index(last.group(1))
-        fixed += f".withCssId({jstr(join_id(parts[:i + 2], seps[:i + 1]))})"
-    return fixed, True
+    ('.get[DriverLV_tb]AddDriver()'), which isn't Java; the page object's method is getAddDriver().
+    Returns (getter, changed)."""
+    fixed = TOOLBAR_CALL.sub(lambda m: f".get{m.group(2)}()", getter or "")
+    return fixed, fixed != (getter or "")
 
 
-UNBRACKETED = ("the generated getter had a bracketed toolbar segment ([X_tb]) in a method name; "
-               "rewritten as get<X>()/.withCssId(live id), verify at compile")
+def pinned(getter: str, widget_id: str) -> str:
+    """The getter with the recorded id pinned by withCssId(), unless it picks a list row (the row
+    API finds the row; pinning would fix it to the recorded one)."""
+    if ".getFirstRow()" in getter or ".withCssId(" in getter:
+        return getter
+    return f"{getter}.withCssId({jstr(widget_id)})"
+
+
+PINNED = ("the getter's cssids key is not the recorded id (a bracketed or different _tb segment, an iterator "
+          "the getter doesn't fill, or a partial match), so it fails at runtime; pinned with "
+          ".withCssId(recorded id). If its widget class has no withCssId, use Widget<Type>.get(recorded id)")
 
 
 def with_row(getter: str, action: dict) -> str:
@@ -183,16 +202,17 @@ def resolve(cssids_dir: str, app, action: dict) -> dict:
         return {"resolution": "unresolved", "reason": "no widget id"}
     if app is None:
         return {"resolution": "unresolved", "reason": "unknown application"}
-    resolution, getters = lookup(cssids_dir, app, widget_id)
+    resolution, getters, differs = lookup_keyed(cssids_dir, app, widget_id)
     menu = menu_item(cssids_dir, app, action) if resolution != "resolved" else None
     if getters and not menu:
-        fixed = [unbracket(g, widget_id) for g in getters]
-        getters = list(dict.fromkeys(g for g, _ in fixed))
+        fixed = [unbracket(g) for g in getters]
+        pin = differs or any(changed for _, changed in fixed)
+        getters = list(dict.fromkeys(pinned(g, widget_id) if pin else g for g, _ in fixed))
         result = {"resolution": resolution, "getter": with_row(getters[0], action)}
         if len(getters) > 1:
             result["candidates"] = [with_row(g, action) for g in getters]
-        if any(changed for _, changed in fixed):
-            result["warning"] = UNBRACKETED
+        if pin and ".withCssId(" in result["getter"]:
+            result["warning"] = PINNED
         return result
     result = menu or resolve_fallback(cssids_dir, app, action)
     result["getter"] = with_row(result["getter"], action)
@@ -259,11 +279,12 @@ def menu_item(cssids_dir: str, app: str, action: dict):
     if action.get("kind") != "MenuItemWidget" or not label or len(parts) < 3 or parts[0] == "TabBar":
         return None
     opener = join_id(parts[:-1], seps[:-1])
-    resolution, getters = lookup(cssids_dir, app, opener)
+    resolution, getters, differs = lookup_keyed(cssids_dir, app, opener)
     if resolution != "resolved":
         return None
+    getter, changed = unbracket(getters[0])
     return {"resolution": "rule", "rule": "menuItem",
-            "getter": f"{unbracket(getters[0], opener)[0]}.get({jstr(label)})"}
+            "getter": f"{pinned(getter, opener) if differs or changed else getter}.get({jstr(label)})"}
 
 
 def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
@@ -276,8 +297,9 @@ def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
     if any(p.endswith("_tb") for p in parts):
         bracketed = [f"[{p}]" if p.endswith("_tb") else p for p in parts]
         resolution, getters = lookup(cssids_dir, app, join_id(bracketed, seps))
-        if resolution == "resolved":
-            return {"resolution": "rule", "rule": "toolbar", "getter": unbracket(getters[0], widget_id)[0]}
+        if resolution == "resolved":  # the key has the segment bracketed or dropped: not the live id
+            return {"resolution": "rule", "rule": "toolbar", "getter": pinned(unbracket(getters[0])[0], widget_id),
+                    "warning": PINNED}
 
     # wizardButton: <Wizard>-Next -> new XWizardPage(getContext()).getWizardButtons().getNext()
     if kind == "WizardButtonWidget" and len(parts) == 2:
@@ -487,6 +509,8 @@ def imports_for(text: str, widget) -> set:
 
 
 CELL_SUFFIX = re.compile(r"_(Cell|IC|button|link|Input)$")
+# a debug tooltip Guidewire shows in development mode ("See PolicyChangeWizard.pcf StackopenForEditInit: …")
+JUNK_LABEL = re.compile(r"\.pcf\b|Stack\w*Init|\bat [\w.$]+\(")
 
 
 def item_label(action: dict) -> str:
@@ -495,10 +519,14 @@ def item_label(action: dict) -> str:
     name = action.get("name")
     if name and name in (action.get("widgetId"), f"{action.get('widgetId')}_checkbox"):
         name = None
-    label = action.get("label") or action.get("text") or name
+    label = next((l for l in (action.get("label"), action.get("text"), name) if l and not JUNK_LABEL.search(l)), "")
+    if not label and (action.get("widgetId") or "").endswith("__crumb__"):
+        label = "Return to previous page"
     if not label and action.get("column"):
         label = CELL_SUFFIX.sub("", action["column"]).lstrip("_")
-    return label or ""
+    if not label and action.get("widgetId"):
+        label = split_id(action["widgetId"])[0][-1].strip("_")
+    return label
 
 
 def warn(item: dict, text: str):
@@ -568,7 +596,19 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         item["key"] = action["key"]
     if (action.get("row") or 0) > 1 and not action.get("rowKey") and ".getFirstRow()" in (item.get("getter") or ""):
         item["warning"] = f"row {action['row']} picked by position; getFirstRow() selects the first row"
-    if item.get("resolution") in ("raw", "partial") and not action.get("rowKey") and positional_index(widget_id):
+    if BLOCKER_ID.search(widget_id or ""):
+        item["blocker"] = True
+        warn(item, "handles a UW issue / approval screen: use the project's blocker helper (plan.blockers) "
+                   "instead of raw clicks")
+    elif action.get("rowKey"):
+        item["dependsOnData"] = True
+        filters = ", ".join(f'{k.get("header")} = {k.get("text")}' for k in action["rowKey"])
+        dates = [f'{k.get("header")} = {k.get("text")}' for k in action["rowKey"] if is_date(k.get("text"))]
+        warn(item, f"row picked by its recorded values ({filters}): it only matches the recorded data; ask "
+                   "whether to filter by the test's own data")
+        if dates:
+            warn(item, f"{', '.join(dates)} is a date literal: make it relative or drop that filter")
+    elif item.get("resolution") in ("raw", "partial") and positional_index(widget_id):
         item["dependsOnData"] = True
         warn(item, f"picks entry {positional_index(widget_id)} of a list or iterator by its position "
                    "(e.g. an existing or unassigned contact): it only works if the account or policy "
@@ -739,6 +779,75 @@ def fold_menu_openers(items: list) -> list:
     return result
 
 
+BLOCKER_ID = re.compile(r"UWBlockProgress|RiskEvaluation|UWIssue|RiskApproval|SpecialApprove")
+BLOCKER_TEXT = re.compile(r"issues? that block|risk approval|uw issue|underwriter|approval required|"
+                          r"facility|rsp pool", re.I)
+
+
+def step_pages(entry: dict) -> list:
+    """The PCF pages a step's screen and items are on, as screenHelpers.pages keys them."""
+    pages = [entry.get("screen")] + [i.get("page") for i in entry["actions"] + entry["checks"]]
+    return sorted({p for p in pages if p and p != "_misc"})
+
+
+def helpers_for(entry: dict, screen_helpers: dict) -> list:
+    """The project's methods that wait for this step's title or open one of its pages."""
+    found = {}
+    title = entry.get("title") or ""
+    for key, refs in (screen_helpers.get("titles") or {}).items():
+        stem = key.rstrip(": ").strip()
+        if len(stem) > 3 and (title.startswith(stem) or (entry["waitTitle"] and stem.startswith(entry["waitTitle"]))):
+            for ref in refs:
+                found.setdefault(ref, f"title {key!r}")
+    for page in entry["pages"]:
+        for ref in (screen_helpers.get("pages") or {}).get(page, []):
+            found.setdefault(ref, f"page {page}")
+    return [{"method": ref, "matched": why} for ref, why in found.items()]
+
+
+def blockers(steps: list) -> list:
+    """Steps on a UW-issue or approval screen (by title, page message or widget), with the helpers
+    that handle that screen. UW rules depend on data and environment, so a block seen at Issue can
+    also come at Quote."""
+    found = []
+    for entry in steps:
+        texts = [m["text"] for m in entry["messages"] if BLOCKER_TEXT.search(m["text"])]
+        items = [i for i in entry["actions"] if i.get("blocker")]
+        if not (texts or items or BLOCKER_TEXT.search(entry.get("title") or "")
+                or any(BLOCKER_ID.search(p) for p in entry["pages"])):
+            continue
+        found.append({"seq": entry["seq"], "title": entry.get("title"), "pages": entry["pages"], "messages": texts,
+                      "items": [i["label"] for i in items], "helpers": entry.get("helpers")})
+    return found
+
+
+def refused(steps: list) -> list:
+    """A Next / Quote / Issue the application refused: the step it ended stayed on the same screen,
+    and the same button was clicked again later (usually after a field was fixed)."""
+    flat = [(entry, action) for entry in steps for action in entry["actions"]]
+    found = []
+    for index, entry in enumerate(steps[1:], 1):
+        if not entry["actions"]:
+            continue
+        click = entry["actions"][-1]
+        if (click["type"] != "click" or not RESUME.match(click["label"].strip())
+                or entry["waitTitle"] != steps[index - 1]["waitTitle"]):
+            continue
+        start = next(n for n, (_, a) in enumerate(flat) if a is click) + 1
+        again = next((n for n in range(start, len(flat)) if flat[n][1].get("widgetId") == click.get("widgetId")
+                      and flat[n][1]["type"] == "click"), None)
+        if again is None:
+            continue
+        between = flat[start:again]
+        found.append({"kind": "refused", "seq": entry["seq"], "action": click["label"], "title": entry["waitTitle"],
+                      "errors": [m["text"] for m in entry["messages"] if m["level"] in ("error", "warning")],
+                      "fixes": [{"seq": e["seq"], "label": a["label"], "value": a.get("value")}
+                                for e, a in between if a["type"] == "change"],
+                      "between": [{"seq": e["seq"], "label": a["label"]} for e, a in between if a["type"] != "change"],
+                      "retrySeq": flat[again][0]["seq"]})
+    return found
+
+
 EDIT_AGAIN = re.compile(r"^(Clear|Edit Policy Transaction|Edit Transaction|Edit Policy)$", re.I)
 RESUME = re.compile(r"^(Quote|Issue Policy|Issue|Bind Options|Bind Only|Submit|Next)$", re.I)
 
@@ -787,7 +896,7 @@ def retries(steps: list) -> list:
     return found
 
 
-def build_plan(session: dict, cssids_dir: str, read_file=None) -> dict:
+def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> dict:
     meta = session.get("meta") or {}
     plan = {
         "recording": {key: session.get(key) for key in ("id", "name", "toolVersion", "startUrl")},
@@ -798,7 +907,7 @@ def build_plan(session: dict, cssids_dir: str, read_file=None) -> dict:
                  "recordedBy": meta.get("recorderName")},
         # recordings before 1.1 kept notes on the session; 1.1 keeps them on the steps only
         "notes": [{"seq": None, "text": n.get("text", "")} for n in session.get("notes") or []],
-        "apps": [], "steps": [], "review": [], "retries": [], "imports": [],
+        "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "imports": [],
     }
     imports, uniques, previous_app = set(), {}, None
     for recorded_step in session.get("steps") or []:
@@ -853,7 +962,13 @@ def build_plan(session: dict, cssids_dir: str, read_file=None) -> dict:
                 plan["apps"].append(app)
             previous_app = app or previous_app
         plan["steps"].append(entry)
-    plan["retries"] = retries(plan["steps"])
+    screen_helpers = ((project or {}).get("screenHelpers") or {}).get("value")
+    for entry in plan["steps"]:
+        entry["pages"] = step_pages(entry)
+        if screen_helpers:
+            entry["helpers"] = helpers_for(entry, screen_helpers)
+    plan["retries"] = retries(plan["steps"]) + refused(plan["steps"])
+    plan["blockers"] = blockers(plan["steps"])
     plan["imports"] = sorted(imports)
     return plan
 
@@ -862,6 +977,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="CenterTest Recorder recording -> plan JSON")
     parser.add_argument("recording", help="the recording .zip, its folder, or its session.json")
     parser.add_argument("--cssids", required=True, help="resources dir holding cssids/<app>/ (or <app>.cssids)")
+    parser.add_argument("--project", help="project.json from scan_project.py: match screens to the project's helpers")
     parser.add_argument("--out", help="write the plan here instead of stdout")
     args = parser.parse_args(argv)
     if not os.path.isdir(args.cssids):
@@ -869,10 +985,15 @@ def main(argv=None) -> int:
         return 2
     try:
         session = load_session(args.recording)
+        project = None
+        if args.project:
+            with open(args.project, encoding="utf-8") as f:
+                project = json.load(f)
     except (RecordingError, ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
-    text = json.dumps(build_plan(session, args.cssids, file_reader(args.recording)), indent=2, ensure_ascii=False)
+    plan = build_plan(session, args.cssids, file_reader(args.recording), project)
+    text = json.dumps(plan, indent=2, ensure_ascii=False)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(text + "\n")
