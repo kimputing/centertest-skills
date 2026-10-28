@@ -222,6 +222,104 @@ class FacadesAndExemplarsTest(ProjectTestCase):
         self.assertIsNone(self.scan()["facades"]["value"])
 
 
+BASE_STEP = """package com.acme.reusable.pc.personalauto.policychange;
+import com.acme.generated.pages.pc.PolicyChangeWizardPage;
+import com.acme.generated.pages.pc.UWBlockProgressIssuesPopup;
+public abstract class AbstractPolicyChange extends BaseScenarioPC {
+  private static final String UW_TITLE = "Risk Approval Details";
+  protected final PolicyChangeWizardPage wizardPage;
+  private final Misc misc;
+  public AbstractPolicyChange(InvocationContext context, Misc misc) {
+    super(context);
+    this.misc = misc;
+    this.wizardPage = new PolicyChangeWizardPage(getContext());
+  }
+  protected boolean hasReformMode() { return misc != null && misc.isReform(); }
+  protected void issueStep() {
+    wizardPage.getIssue().click();
+    if (getPageTitle().contains("Issues that block Issuance")) {
+      new UWBlockProgressIssuesPopup(getContext()).getApprove().click();
+      waitForPageTitle(UW_TITLE);
+    }
+  }
+}
+"""
+RECORDED_STEP = """package com.acme.reusable.pc.personalauto.policychange;
+/**
+ * Adds a vehicle. Recorded as 2026-10-01_101010 by the CenterTest Recorder.
+ */
+public class AddVehiclePolicyChange extends AbstractPolicyChange {
+  public AddVehiclePolicyChange(InvocationContext context) { super(context, null); }
+  public void execute() { issueStep(); }
+}
+"""
+PLAIN_STEP = """package com.acme.reusable.pc.personalauto.policychange;
+public class AaaChangeAddress extends AbstractPolicyChange {
+  public AaaChangeAddress(InvocationContext context) { super(context, null); }
+  public void execute() { }
+}
+"""
+TEST_FLOW = """package com.acme.tests.pc.personalauto.policychange;
+@CenterTest
+public final class PA_AddDriverTest {
+  public enum RestartPoints { POLICY }
+  @CenterTestCase()
+  @DataDriven(datasource = "testdata/personalauto/PA_SubmissionDC.xlsx")
+  public void run(ScenarioContext scenarioContext) {
+    var producer = scenarioContext.getInvocationContext("producer");
+    PC.loginToPC(producer).execute();
+    new AddVehiclePolicyChange(producer).execute();
+    PC.searchForPolicyPC(producer).execute();
+  }
+}
+"""
+
+
+class ProjectKnowledgeTest(ProjectTestCase):
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+        java = "src/main/java/com/acme"
+        write(self.root, f"{java}/reusable/pc/personalauto/policychange/AbstractPolicyChange.java", BASE_STEP)
+        write(self.root, f"{java}/reusable/pc/personalauto/policychange/AddVehiclePolicyChange.java", RECORDED_STEP)
+        write(self.root, f"{java}/reusable/pc/personalauto/policychange/AaaChangeAddress.java", PLAIN_STEP)
+        write(self.root, f"{java}/tests/pc/personalauto/policychange/PA_AddDriverTest.java", TEST_FLOW)
+        write(self.root, f"{java}/reusable/CLAUDE.md", "Every new step gets a facade factory method.\n")
+        self.result = self.scan()
+
+    def test_guidance_files(self):
+        self.assertEqual(self.result["guidance"]["value"], ["src/main/java/com/acme/reusable/CLAUDE.md"])
+
+    def test_base_reports_which_methods_read_each_argument(self):
+        base, = self.result["transactionBases"]["value"]
+        self.assertEqual(base["class"], "AbstractPolicyChange")
+        self.assertEqual(base["constructors"], [{"params": "InvocationContext context, Misc misc",
+                                                 "argUsedBy": {"Misc misc": ["hasReformMode"]}}])
+        self.assertEqual(base["wizardFields"], ["PolicyChangeWizardPage wizardPage"])
+
+    def test_screen_helpers_by_title_and_page(self):
+        helpers = self.result["screenHelpers"]["value"]
+        self.assertEqual(helpers["titles"]["Issues that block Issuance"], ["AbstractPolicyChange.issueStep"])
+        self.assertEqual(helpers["titles"]["Risk Approval Details"], ["AbstractPolicyChange.issueStep"])
+        self.assertEqual(helpers["pages"]["UWBlockProgressIssuesPopup"], ["AbstractPolicyChange.issueStep"])
+        self.assertIn("LoginToPC.execute", helpers["pages"]["Login"])
+
+    def test_folders_rank_recorded_steps_first_and_show_test_flows(self):
+        folders = self.result["folders"]["value"]
+        steps = folders["steps"]["pc/personalauto/policychange"]
+        self.assertEqual(steps[0], {"path": "src/main/java/com/acme/reusable/pc/personalauto/policychange/"
+                                            "AddVehiclePolicyChange.java",
+                                    "extends": "AbstractPolicyChange", "recorded": True})
+        flow = next(t for t in folders["tests"]["pc/personalauto/policychange"] if t["path"].endswith("PA_AddDriverTest.java"))
+        self.assertEqual(flow["flow"], ["PC.loginToPC", "new AddVehiclePolicyChange", "PC.searchForPolicyPC"])
+        self.assertEqual((flow["restartPoints"], flow["dataDriven"]),
+                         (True, "testdata/personalauto/PA_SubmissionDC.xlsx"))
+
+    def test_project_without_guidance(self):
+        os.remove(os.path.join(self.root, "src", "main", "java", "com", "acme", "reusable", "CLAUDE.md"))
+        self.assertIsNone(self.scan()["guidance"]["value"])
+
+
 def make_jar(path, entries):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with zipfile.ZipFile(path, "w") as z:

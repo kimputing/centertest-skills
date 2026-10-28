@@ -209,6 +209,133 @@ def exemplars(root, tests, steps, tests_dir, reusable_dir):
     return fact(picked, "median-sized test and step class per center")
 
 
+METHOD = re.compile(r"(?:public|protected|private)\s+(?:(?:static|final|abstract|synchronized)\s+)*"
+                    r"(?:[\w<>\[\],.?]+\s+)?(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w.,\s]+)?\{")
+
+
+def methods_of(text: str) -> list:
+    """(name, params, body) for each method and constructor of a class, bodies by brace matching."""
+    found = []
+    for header in METHOD.finditer(text):
+        depth, end = 0, len(text)
+        for i in range(header.end() - 1, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                end = i
+                break
+        found.append((header.group(1), " ".join(header.group(2).split()), text[header.end():end]))
+    return found
+
+
+def class_name(path: str) -> str:
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+RECORDED = re.compile(r"/\*\*(?:(?!\*/).)*\bRecorded\b", re.S)
+FOLDER_LIMIT = 8
+
+
+def folders(root, tests, steps, tests_dir, reusable_dir, facade_names):
+    """Per <center>/<lob>/<transaction> folder: its step classes, those generated from a recording
+    first (Javadoc says "Recorded"), and its tests with the facade and step calls they make, in order."""
+    step_names = {class_name(p) for p, t in steps.items() if re.search(r"\bclass\s", t)}
+    calls = re.compile(r"\b(?:(" + "|".join(sorted(facade_names) or ["$^"]) + r")\.(\w+)|new\s+(\w+))\(")
+    by_folder = {"tests": collections.defaultdict(list), "steps": collections.defaultdict(list)}
+    for path, text in sorted(tests.items()):
+        flow = [f"{f}.{m}" if f else f"new {n}" for f, m, n in calls.findall(text) if f or n in step_names]
+        source = re.search(r"@DataDriven\([^)]*?datasource\s*=\s*\"([^\"]+)\"", text)
+        by_folder["tests"][rel(tests_dir, os.path.dirname(path))].append(
+            {"path": rel(root, path), "flow": flow, "restartPoints": "enum RestartPoints" in text,
+             "dataDriven": source.group(1) if source else None})
+    for path, text in sorted(steps.items()):
+        base = re.search(r"\bclass\s+\w+(?:<[^>]*>)?\s+extends\s+(\w+)", text)
+        if base and "interface " not in text:
+            by_folder["steps"][rel(reusable_dir, os.path.dirname(path))].append(
+                {"path": rel(root, path), "extends": base.group(1), "recorded": bool(RECORDED.search(text))})
+    value = {kind: {folder: sorted(entries, key=lambda e: not e.get("recorded"))[:FOLDER_LIMIT]
+                    for folder, entries in sorted(found.items())}
+             for kind, found in by_folder.items()}
+    if not value["tests"] and not value["steps"]:
+        return missing("no tests or steps in folders")
+    return fact(value, "tests and steps per folder; steps recorded from a recording first")
+
+
+def transaction_bases(root, steps):
+    """Each abstract Abstract* step base: its wizard-page fields and, per constructor argument
+    (other than the context), the methods that read it. An argument no method reads, or one
+    read only by an optional helper, doesn't stop a new step from extending the base."""
+    found = []
+    for path, text in sorted(steps.items()):
+        declared = re.search(r"\babstract\s+class\s+(Abstract\w+)(?:<[^>]*>)?(?:\s+extends\s+(\w+))?", text)
+        if not declared:
+            continue
+        name, methods = declared.group(1), methods_of(text)
+        constructors = []
+        for method, params, body in methods:
+            if method != name:
+                continue
+            fields = {param: field for field, param in re.findall(r"this\.(\w+)\s*=\s*(\w+)\s*;", body)}
+            uses = {}
+            for param in filter(None, (p.strip() for p in params.split(","))):
+                kind, arg = param.rsplit(" ", 1)
+                if kind.endswith("InvocationContext"):
+                    continue
+                field = fields.get(arg)
+                uses[param] = sorted({m for m, _, b in methods if m != name and field
+                                      and re.search(rf"\b{field}\b", b)})
+            constructors.append({"params": params, "argUsedBy": uses})
+        found.append({"class": name, "path": rel(root, path), "extends": declared.group(2),
+                      "constructors": constructors,
+                      "wizardFields": [f"{t} {n}" for t, n in re.findall(
+                          r"(?:protected|public)\s+(?:final\s+)?(\w*WizardPage)\s+(\w+)\s*;", text)]})
+    if not found:
+        return missing("no abstract Abstract* step bases under reusable/")
+    return fact(found, f"{len(found)} abstract step bases")
+
+
+TITLE_LITERAL = re.compile(r"(?:Title\w*\(\s*|Title\(\)\s*\.\s*\w+\(\s*)(?:\"([^\"]+)\"|([A-Z][A-Z0-9_]*)\b)")
+PAGE_CLASS = re.compile(r"new\s+(\w+)\(\s*getContext\(\)\s*\)")
+
+
+def screen_helpers(root, steps):
+    """The steps root's methods indexed by the screen titles they wait for or compare, and by the
+    generated pages they open ('…Page' dropped, so 'SubmissionWizard' is the PCF name a widget id
+    starts with). A blocker screen in a recording (UW issues, risk approval, warnings) is looked up here."""
+    titles, pages = collections.defaultdict(set), collections.defaultdict(set)
+    for path, text in sorted(steps.items()):
+        constants = dict(re.findall(r"static\s+final\s+String\s+(\w+)\s*=\s*\"([^\"]*)\"", text))
+        generated = set(GENERATED_PAGE.findall(text))
+        owner = class_name(path)
+        for method, _, body in methods_of(text):
+            if method == owner:
+                continue
+            ref = f"{owner}.{method}"
+            for literal, constant in TITLE_LITERAL.findall(body):
+                title = literal or constants.get(constant)
+                if title:
+                    titles[title].add(ref)
+            for page in PAGE_CLASS.findall(body):
+                if page in generated:
+                    pages[page[:-len("Page")] if page.endswith("Page") else page].add(ref)
+    if not titles and not pages:
+        return missing("no step methods wait for a title or open a generated page")
+    value = {"titles": {k: sorted(v) for k, v in sorted(titles.items())},
+             "pages": {k: sorted(v) for k, v in sorted(pages.items())}}
+    return fact(value, f"{len(titles)} titles, {len(pages)} pages")
+
+
+GUIDANCE_FILES = {"CLAUDE.md", "AGENTS.md"}
+
+
+def guidance(root):
+    """The project's own instructions for agents; the skill reads and follows them."""
+    found = []
+    for current, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        found += [rel(root, os.path.join(current, name)) for name in sorted(files) if name in GUIDANCE_FILES]
+    return fact(found, "CLAUDE.md / AGENTS.md files") if found else missing("no CLAUDE.md or AGENTS.md in the project")
+
+
 GENERATED_DEPENDENCY = re.compile(r"""["']([\w.\-]+):([\w.\-]*generated[\w.\-]*):(.*)$""", re.M)
 
 
@@ -366,11 +493,15 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
         steps = files_under(java, reusable_dir)
         result.update(testLayout=test_layout(tests_dir, tests), testStyle=test_style(tests),
                       steps=step_conventions(root, steps, reusable_dir), facades=facades(root, java, steps),
-                      exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir))
+                      exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir),
+                      transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps))
+        result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir,
+                                    {m["facade"] for m in result["facades"]["value"] or []})
     else:
-        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars"):
+        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
+                    "screenHelpers"):
             result[key] = missing("needs clientPackage and testsRoot")
-    result.update(cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
+    result.update(guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
                   build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
     return result
 

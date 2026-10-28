@@ -562,6 +562,163 @@ class RemovedChecksTest(unittest.TestCase):
         self.assertFalse(any(r["label"] == "Offering" or r["label"] == "" for r in plan["review"]))
 
 
+DRIVERS = ("PolicyChangeWizard-LOBWizardStepGroup-LineWizardStepSet-PAVehiclesScreen-PAVehiclesPanelSet"
+           "-VehiclesListDetailPanel-VehiclesDetailsCV-PersonalAuto_AssignDriversDV")
+ADD_DRIVER = DRIVERS + "-DriverLV_tb-AddDriver"
+VEHICLE_CARD = ("new PolicyChangeWizardPage(getContext()).getLineWizardStepSet().getPersonalVehiclesStep()"
+                ".getVehiclesDetailsCV().getVehicleDetailCard()")
+
+
+class ToolbarAndMenuTest(unittest.TestCase):
+    def test_bracketed_call_at_the_end_gets_the_live_id(self):
+        self.assertEqual(pr.unbracket("new P(getContext()).getCard().get[DriverLV_tb]AddDriver()", "P-DriverLV_tb-AddDriver"),
+                         ('new P(getContext()).getCard().getAddDriver().withCssId("P-DriverLV_tb-AddDriver")', True))
+
+    def test_bracketed_call_inside_a_chain_is_renamed(self):
+        self.assertEqual(pr.unbracket("new P(getContext()).get[DriverLV_tb]DriverTable().getFirstRow().select()",
+                                      "P-DriverLV-0-Name"),
+                         ("new P(getContext()).getDriverTable().getFirstRow().select()", True))
+        self.assertEqual(pr.unbracket("new P(getContext()).getAdd()", "P-Add"), ("new P(getContext()).getAdd()", False))
+
+    def test_cssids_getter_with_bracketed_segment_is_valid_java(self):
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": ADD_DRIVER, "kind": "ToolbarButtonWidget"})
+        self.assertEqual(result["getter"], f'{VEHICLE_CARD}.getAddDriver().withCssId("{ADD_DRIVER}")')
+        self.assertNotIn("[", result["getter"])
+        self.assertEqual(result["warning"], pr.UNBRACKETED)
+
+    def test_menu_item_is_picked_by_label_on_its_button(self):
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": ADD_DRIVER + "-AddNewPerson", "kind": "MenuItemWidget",
+                                           "text": "New Person"})
+        self.assertEqual((result["resolution"], result["rule"]), ("rule", "menuItem"))
+        self.assertEqual(result["getter"], f'{VEHICLE_CARD}.getAddDriver().withCssId("{ADD_DRIVER}").get("New Person")')
+
+    def test_menu_item_without_a_known_button_stays_raw(self):
+        result = pr.resolve(CSSIDS, "pc", {"widgetId": "AccountFile-AccountFileMenuActions-X-NewSubmission",
+                                           "kind": "MenuItemWidget", "text": "New Submission"})
+        self.assertEqual(result["rule"], "raw")
+
+    def plan(self, actions):
+        return pr.build_plan({"steps": [{"seq": 4, "app": "PolicyCenter", "title": "Vehicles", "actions": actions}]},
+                             CSSIDS)
+
+    def test_opener_is_dropped_when_the_item_opens_its_menu(self):
+        plan = self.plan([{"type": "click", "widgetId": ADD_DRIVER, "kind": "ToolbarButtonWidget", "text": "Add"},
+                          {"type": "click", "widgetId": ADD_DRIVER + "-AddNewPerson", "kind": "MenuItemWidget",
+                           "text": "New Person"}])
+        actions = step(plan, 4)["actions"]
+        self.assertEqual([a["widgetId"] for a in actions], [ADD_DRIVER + "-AddNewPerson"])
+        self.assertEqual(actions[0]["menuOpener"], "Add")
+
+    def test_opener_stays_raw_when_the_item_is_raw(self):
+        plan = self.plan([{"type": "click", "widgetId": "SubmissionWizard-OfferingScreen", "kind": "MenuActionsWidget",
+                           "text": "Actions"},
+                          {"type": "click", "widgetId": "SubmissionWizard-OfferingScreen-X-Y", "kind": "MenuItemWidget",
+                           "text": "Y"}])
+        opener, menu_item = step(plan, 4)["actions"]
+        self.assertEqual(opener["getter"], 'WidgetMenuItem.get("SubmissionWizard-OfferingScreen", getContext())')
+        self.assertNotIn("candidates", opener)
+        self.assertEqual(menu_item["rule"], "raw")
+
+
+class LabelsAndDataTest(unittest.TestCase):
+    def translate(self, **action):
+        return pr.translate(CSSIDS, "pc", action)
+
+    def test_input_name_is_not_a_label(self):
+        cell = DRIVERS + "-DriverLV-1-Rated_IC"
+        self.assertEqual(pr.item_label({"widgetId": cell, "name": cell, "column": "Rated_IC"}), "Rated")
+        self.assertEqual(pr.item_label({"widgetId": cell, "name": cell + "_checkbox"}), "")
+        self.assertEqual(pr.item_label({"widgetId": cell, "label": "Premium applied", "name": cell}), "Premium applied")
+
+    def test_cell_label_comes_from_the_column_header_in_the_dom(self):
+        cell = DRIVERS + "-DriverLV-1-Rated_IC"
+        dom = (f'<div id="{DRIVERS}-DriverLV-RatedHeader"><div class="gw-label"> Premium\n applied </div>'
+               f'<span></span></div><input id="{cell}">')
+        actions = pr.with_headers([{"type": "change", "widgetId": cell, "value": True}], dom)
+        self.assertEqual(actions[0]["label"], "Premium applied")
+
+    def test_pick_by_position_depends_on_data(self):
+        item = self.translate(type="click", widgetId="NewDriverPopup-ContactsLV-0-UnassignedDriver", kind="LinkWidget")
+        self.assertTrue(item["dependsOnData"])
+        self.assertIn("picks entry 0", item["warning"])
+
+    def test_typed_date_is_questioned(self):
+        session = {"steps": [{"seq": 3, "app": "PolicyCenter", "title": "Driver", "actions": [
+            {"type": "change", "widgetId": "NewDriverPopup-DateOfBirth", "kind": "text", "label": "Date of Birth",
+             "value": "05/04/1980"}],
+            "requests": [{"fields": [{"name": "PolicyChangeWizard-EffDate", "value": "01/01/2028"}]}]}]}
+        typed = pr.build_plan(session, CSSIDS)["steps"][0]["actions"][0]
+        self.assertTrue(typed["typedDate"])
+        self.assertEqual(typed["postedDates"], {"PolicyChangeWizard-EffDate": "01/01/2028"})
+        self.assertIn("date typed", typed["warning"])
+
+    def test_identity_fields_get_a_generator(self):
+        licence = self.translate(type="change", widgetId="X-LicenseNumber", kind="text", label="License #",
+                                 value="2569874")
+        self.assertEqual(licence["uniqueSuggested"],
+                         {"expr": 'Utilities.DataGenerator.getGenerator().numerify("#######")', "recorded": "2569874"})
+        vin = self.translate(type="change", widgetId="X-Vin", kind="text", label="VIN", value="1HGCM82633A004352")
+        self.assertEqual(vin["uniqueSuggested"]["expr"], "Utilities.DataGenerator.getGenerator().vehicle().vin()")
+        self.assertIsNone(pr.identity_value("License State", "CA"))
+        marked = self.translate(type="change", widgetId="X-FirstName", kind="text", label="First name", value="Ann",
+                                unique={"rule": "firstName"})
+        self.assertNotIn("uniqueSuggested", marked)
+
+
+class RetriesTest(unittest.TestCase):
+    def test_value_corrected_after_next(self):
+        session = {"steps": [
+            {"seq": 2, "app": "PolicyCenter", "title": "Driver", "actions": [
+                {"type": "change", "widgetId": "X-Licence", "kind": "text", "label": "Licence", "value": "2569874"},
+                {"type": "click", "widgetId": "PolicyChangeWizard-Next", "kind": "WizardButtonWidget", "label": "Next"}]},
+            {"seq": 3, "app": "PolicyCenter", "title": "Driver", "actions": [
+                {"type": "change", "widgetId": "X-Licence", "kind": "text", "label": "Licence", "value": "256987"}]}]}
+        plan = pr.build_plan(session, CSSIDS)
+        self.assertEqual(plan["retries"], [{"kind": "corrected", "label": "Licence", "widgetId": "X-Licence",
+                                            "seq": 2, "fixedSeq": 3, "from": "2569874", "to": "256987"}])
+        self.assertEqual(step(plan, 3)["actions"][0]["corrects"], {"seq": 2, "value": "2569874"})
+
+    def test_validation_fix_loop(self):
+        click = lambda seq, label: {"type": "click", "widgetId": f"PolicyChangeWizard-{label.replace(' ', '')}",
+                                    "kind": "ToolbarButtonWidget", "text": label}
+        session = {"steps": [
+            {"seq": 5, "app": "PolicyCenter", "title": "Policy Review", "actions": [click(5, "Quote")]},
+            {"seq": 6, "app": "PolicyCenter", "title": "Quote", "actions": [click(6, "Issue Policy")],
+             "messages": [{"text": "MVR Status is required", "level": "error"}]},
+            {"seq": 7, "app": "PolicyCenter", "title": "Quote", "actions": [click(7, "Clear"),
+                                                                            click(7, "Edit Policy Transaction")]},
+            {"seq": 8, "app": "PolicyCenter", "title": "Drivers", "actions": [
+                {"type": "change", "widgetId": "X-MVRStatus", "kind": "select", "label": "MVR Status",
+                 "value": "Ordered"}, click(8, "Quote")]},
+            {"seq": 9, "app": "PolicyCenter", "title": "Quote", "actions": [click(9, "Issue Policy")]}]}
+        loops = [r for r in pr.build_plan(session, CSSIDS)["retries"] if r["kind"] == "validationLoop"]
+        self.assertEqual(len(loops), 1)
+        self.assertEqual(loops[0], {"kind": "validationLoop", "editSeq": 7, "edit": "Clear → Edit Policy Transaction",
+                                    "errorSeq": 6,
+                                    "errors": ["MVR Status is required"],
+                                    "fixes": [{"seq": 8, "label": "MVR Status", "value": "Ordered"}],
+                                    "resumeSeq": 8, "firstQuoteSeq": 5})
+
+
+class SnapshotReaderTest(unittest.TestCase):
+    def test_reads_dom_from_folder_and_zip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "rec")
+            os.makedirs(os.path.join(folder, "dom"))
+            with open(os.path.join(folder, "session.json"), "w", encoding="utf-8") as f:
+                f.write("{}")
+            with open(os.path.join(folder, "dom", "0001.html"), "w", encoding="utf-8") as f:
+                f.write("<p>x</p>")
+            self.assertEqual(pr.file_reader(folder)("dom/0001.html"), "<p>x</p>")
+            self.assertIsNone(pr.file_reader(folder)("../session.json"))
+            path = os.path.join(tmp, "rec.zip")
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr("rec/session.json", "{}")
+                z.writestr("rec/dom/0001.html", "<p>z</p>")
+            self.assertEqual(pr.file_reader(path)("dom/0001.html"), "<p>z</p>")
+            self.assertIsNone(pr.file_reader(path)("dom/0002.html"))
+
+
 class CommandLineTest(unittest.TestCase):
     SCRIPT = os.path.join(SCRIPTS, "parse_recording.py")
 
