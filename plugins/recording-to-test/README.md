@@ -62,7 +62,31 @@ A step creates its wizard page once, in a field set in its constructor, or uses 
 reusable base step that already holds the wizard. It never writes `new SubmissionWizardPage(getContext())`
 in each method. `coverageUtil` is held the same way.
 
+## What it proposes at the confirmation table
+
+- **Where the test starts**, when the recording doesn't begin with a login: the setup the other
+  tests in the same `tests/<center>/<lob>/<txn>/` folder use (login, account, submission, policy
+  search, restart point) and a data row that fits.
+- **Retries collapsed**: a value corrected after Next is set once, and a validation loop (errors at
+  Issue → Clear / Edit Policy Transaction → fix → Quote again) becomes the fix before the first Quote.
+- **Project helpers for blocker screens** ("Issues that block Issuance", "Risk Approval Details"):
+  the project's methods that wait for that screen or open its page, instead of raw clicks.
+- **Exemplars by relevance**: a step from the same center/LOB/transaction folder, preferring one
+  that was itself generated from a recording.
+- **Dates and identity values**: typed and calendar-picked dates as relative dates, and generators
+  for names, licence numbers, VINs and SSNs that would collide on reruns.
+- **Final checks** from the analyst's notes and the expected outcome.
+- Picks that depend on the account's existing data (row 0 of a contact list) are flagged.
+
+Menu items are picked by their label on the menu button (`getAddDriver().get("New Person")`), and a
+click that only opened the menu is dropped.
+
+## Project guidance
+
+If the project has `CLAUDE.md` / `AGENTS.md` files, the skill follows them. When they ask for an
+edit to an existing file (for example a facade factory method for every new step), it makes that
+edit and lists it. Otherwise it only creates new files.
+
 ## What it does not do (yet)
 
-DDT data sheets, `RestartPoints`, ReportPortal configuration, editing existing files (it tells you
-which suite file to add the test to; you add it).
+DDT data sheets, ReportPortal configuration.

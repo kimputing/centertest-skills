@@ -8,9 +8,11 @@ Recorder recording → CenterTest test in the target project's structure. Design
 ## Architecture
 
 - `scripts/parse_recording.py` — `session.json` → plan JSON: getter per widget, Java fragment per
-  action/check, `review` list, framework `imports`.
+  action/check, `review` list, `retries`, framework `imports`.
 - `scripts/scan_project.py` — project → facts (package, layout, roles, step bases and their
-  `@FlowTags`, facades, exemplars, cssids source, build commands). Read-only.
+  `@FlowTags`, facades, exemplars, tests and steps per folder, `Abstract*` bases and which methods
+  read each constructor arg, screen helpers by title/page, the project's CLAUDE.md/AGENTS.md files,
+  cssids source, build commands). Read-only.
 - `scripts/find_getter.py` — **vendored, byte-identical** copy of `plugins/cssid-finder/scripts/find_getter.py`.
   Never edit it here; change cssid-finder, then `cp` it over. `tests/test_vendored_sync.py` fails when they differ.
 - `skills/recording-to-test/SKILL.md` — the judgment steps (segments, facade matches, names,
@@ -47,5 +49,19 @@ There is no CI in this repo; run them before every commit.
 - OOTB writes `@FlowTags` in two forms (`("…")` and `({"…"})`); the scan reports the annotation as written.
 - cssids from the generated jar (`cssids/` in GW10, `<app>.cssids` at the root in GW9) are extracted
   once per jar into `<system temp>/recording-to-test-cssids/<hash>` and reused.
+- The generator writes a conditional toolbar segment into the getter itself:
+  `….get[DriverLV_tb]AddDriver()`. `unbracket()` rewrites it to `getAddDriver()` and, when that call
+  ends the chain, adds `.withCssId("<live id>")`. Every lookup result goes through it.
+- A menu item reached through its button (`<button getter>.get("Label")`, rule `menuItem`) opens the
+  menu itself, so the click that opened it is dropped (`fold_menu_openers`). A raw
+  `WidgetMenuItem.get(id)` only moves to its element, so its opener stays.
+- A form input's `name` is its widget id in Guidewire, so it's never used as a label. A list cell
+  with no label gets its column header from the step's DOM snapshot (`dom/NNNN.html`, read via
+  `file_reader()`).
+- `retries()` runs on the finished plan: `corrected` (same widget, new value at a later step) and
+  `validationLoop` (Clear / Edit Policy Transaction after errors, the fixes, and the resume click).
+- `scan_project.py` reads Java with regexes (`methods_of()` matches brace-balanced bodies of methods
+  with an access modifier). Package-private methods are not indexed in `screenHelpers` /
+  `transactionBases`.
 - Fixture recordings under `tests/fixtures/recordings/real-*` are trimmed copies of real
   recordings; check new ones for sensitive data before committing.
