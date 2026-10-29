@@ -70,6 +70,16 @@ There is no CI in this repo; run them before every commit.
 - Wizard toolbar buttons (`…WizardToolbarButtonSet-…`) map by their recorded **label** to
   `WizardButtons` getters, which find the button by label too. Quote/Issue get `wizardAction`, and with
   `--project` the base's methods that click them (`transactionBases[].wizardActions`) as `baseMethods`.
+- `ID_SUFFIX` (`_Cell`, `_button`, `_link`, `_dateIcon`, `_<n>`) is stripped before a getter is built:
+  `without_suffix()` resolves the widget's own key, and `rowColumn` names the column without it.
+- A radio in a list row becomes `rowRadio`: a click on the recorded option plus a `then` check, because
+  `WidgetBooleanRadioCell.set` fails (WI-005) and `WidgetBooleanRadioInput.set` silently does nothing there.
+- `mark_new_rows()` marks rows of a table an earlier Add click added to (`newRow` → `getLastRow()`), but
+  not entries of an Add *menu* the row id is inside (picking an existing driver).
+- `with_transaction_dates()` collects the transaction's dates (set, or posted as the kept default) and
+  gives every later date `transactionDates` and `dateRelations` (transaction, posted, recording day).
+- `scan_project.py` indexes the widget-id literals each step method uses (`screenHelpers.ids`), so a
+  helper written for the same list in another wizard is found by the id's container (`id_tail()`).
 - `analyse()` runs on the finished plan: helpers, blockers, retries, `navigation` (Next-only steps),
   stronger checks and `noteChecks`. `snapshot()` reads a step's values from its posted fields and its
   DOM snapshot (`FieldValues`: `gw-ValueWidget` elements, labels from `<id>_Input > .gw-label`), lazily:

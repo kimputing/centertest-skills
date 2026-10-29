@@ -303,13 +303,17 @@ def transaction_bases(root, steps):
 
 TITLE_LITERAL = re.compile(r"(?:Title\w*\(\s*|Title\(\)\s*\.\s*\w+\(\s*)(?:\"([^\"]+)\"|([A-Z][A-Z0-9_]*)\b)")
 PAGE_CLASS = re.compile(r"new\s+(\w+)\(\s*getContext\(\)\s*\)")
+# a Guidewire widget id written as a literal (or the start of one, joined to more): "SubmissionWizard-…-ClaimsInfo_ICLV-"
+ID_LITERAL = re.compile(r"\"([A-Za-z]\w*(?:[-:][\w#\[\]]+){2,}[-:]?)\"")
 
 
 def screen_helpers(root, steps):
     """The steps root's methods indexed by the screen titles they wait for or compare, and by the
     generated pages they open ('…Page' dropped, so 'SubmissionWizard' is the PCF name a widget id
-    starts with). A blocker screen in a recording (UW issues, risk approval, warnings) is looked up here."""
-    titles, pages = collections.defaultdict(set), collections.defaultdict(set)
+    starts with), and by the widget ids they write as literals (ids). A blocker screen in a recording
+    (UW issues, risk approval, warnings) is looked up here, and a helper written for the same list in
+    another wizard is found by its id."""
+    titles, pages, ids = collections.defaultdict(set), collections.defaultdict(set), collections.defaultdict(set)
     for path, text in sorted(steps.items()):
         constants = dict(re.findall(r"static\s+final\s+String\s+(\w+)\s*=\s*\"([^\"]*)\"", text))
         generated = set(GENERATED_PAGE.findall(text))
@@ -325,11 +329,14 @@ def screen_helpers(root, steps):
             for page in PAGE_CLASS.findall(body):
                 if page in generated:
                     pages[page[:-len("Page")] if page.endswith("Page") else page].add(ref)
-    if not titles and not pages:
-        return missing("no step methods wait for a title or open a generated page")
+            for literal in ID_LITERAL.findall(body):
+                ids[literal].add(ref)
+    if not titles and not pages and not ids:
+        return missing("no step methods wait for a title, open a generated page or use a widget id")
     value = {"titles": {k: sorted(v) for k, v in sorted(titles.items())},
-             "pages": {k: sorted(v) for k, v in sorted(pages.items())}}
-    return fact(value, f"{len(titles)} titles, {len(pages)} pages")
+             "pages": {k: sorted(v) for k, v in sorted(pages.items())},
+             "ids": {k: sorted(v) for k, v in sorted(ids.items())}}
+    return fact(value, f"{len(titles)} titles, {len(pages)} pages, {len(ids)} widget ids")
 
 
 GUIDANCE_FILES = {"CLAUDE.md", "AGENTS.md"}
