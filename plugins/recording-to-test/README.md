@@ -77,7 +77,16 @@ in each method. `coverageUtil` is held the same way.
   that was itself generated from a recording.
 - **Dates and identity values**: typed and calendar-picked dates as relative dates, and generators
   for names, licence numbers, VINs and SSNs that would collide on reruns.
-- **Final checks** from the analyst's notes and the expected outcome.
+- **Final checks** from the analyst's notes and the expected outcome. When a note asks to verify,
+  confirm or ensure something ("rating territory codes are updated"), the fields matching its words
+  are listed with the values the recording shows for them, before and after (Stat. Territory
+  `102` → `105`), and an assertion is proposed from them.
+- **Stronger checks**: a recorded "is visible" check on a field that shows a value gets a value check
+  instead (contains the address just entered).
+- **Conditional notes** ("If there's an error…, override") are listed so you choose: always, or only
+  when the condition holds.
+- **Navigation**: Next clicks that pass screens without changing anything can become the project's
+  own way of moving between wizard screens (e.g. the left-hand menu).
 - Picks that depend on the account's existing data (row 0 of a contact list) are flagged.
 
 - **Pinned ids**: when the getter found for a widget would look for a different id at runtime
@@ -87,7 +96,11 @@ in each method. `coverageUtil` is held the same way.
   screenshot of the blocking issues for the report.
 
 Menu items are picked by their label on the menu button (`getAddDriver().get("New Person")`), and a
-click that only opened the menu is dropped.
+click that only opened the menu is dropped. A picker's menu (its menu icon, then an item such as
+"New Location") becomes `WidgetMenuItem.get("<…MenuIcon>", getContext()).get("New Location")`. A radio
+button is set on its widget's getter (`…_IC`, not the option's `…_IC_0`). Quote / Issue in a wizard's
+toolbar become `getWizardButtons().getQuote()` / `getIssuePolicy()`, or the transaction base's own
+quote and issue methods.
 
 ## Project guidance
 

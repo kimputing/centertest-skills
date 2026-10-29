@@ -810,6 +810,172 @@ class BlockersAndRefusalsTest(unittest.TestCase):
         self.assertEqual(pr.item_label({"widgetId": "P-Override", "label": "See P.pcf", "text": "Override"}), "Override")
 
 
+VEHICLE_DV = DRIVERS.replace("PersonalAuto_AssignDriversDV", "PersonalAuto_VehicleDV")
+GARAGE = VEHICLE_DV + "-PAGarageLocationInput"
+OVERRIDE = VEHICLE_DV + "-OverrideddressValidation_IC"
+VEHICLES_SCREEN = "PolicyChangeWizard-LOBWizardStepGroup-LineWizardStepSet-PAVehiclesScreen"
+QUOTE = VEHICLES_SCREEN + "-JobWizardToolbarButtonSet-QuoteTypeToolbarButtonSet-Quote"
+ISSUE = "PolicyChangeWizard-PolicyChangeWizard_QuoteScreen-JobWizardToolbarButtonSet-BindPolicyChange"
+STAT = VEHICLE_DV + "-StatTerritoryCode"
+RATING = VEHICLE_DV + "-RatingTerritoryCodesLV-0-Code"
+
+
+def value_widget(widget_id, label, inner):
+    return (f'<div id="{widget_id}_Input" class="gw-InputWidget"><div class="gw-label">{label}</div>'
+            f'<div class="gw-value"><div id="{widget_id}" class="gw-TextValueWidget gw-ValueWidget gw-readonly">'
+            f'<div class="gw-vw--value">{inner}</div><div class="gw-vw--children"><span>Edit</span></div>'
+            f'</div></div></div>')
+
+
+class GarageLocationRunTest(unittest.TestCase):
+    """Issues #30 and #31: a policy-change recording that changes the garage location."""
+
+    def plan(self, steps, files=None, project=None):
+        return pr.build_plan({"steps": steps}, CSSIDS, (files or {}).get, project)
+
+    def test_picker_menu_icon_and_item_are_one_menu_item(self):
+        plan = self.plan([{"seq": 12, "app": "PolicyCenter", "title": "Vehicles", "actions": [
+            {"type": "click", "widgetId": GARAGE + "MenuIcon", "kind": "MenuIconWidget", "text": ""},
+            {"type": "click", "widgetId": GARAGE + "-NewGarageLocation", "kind": "PickerMenuItemWidget",
+             "text": "New Location"}]}])
+        item, = step(plan, 12)["actions"]
+        self.assertEqual((item["rule"], item["getter"], item["java"]),
+                         ("menuItem", f'WidgetMenuItem.get("{GARAGE}MenuIcon", getContext()).get("New Location")',
+                          ".click()"))
+        self.assertIn("menuOpener", item)
+        self.assertIn("com.ankrpt.centertest.guidewire.widget.WidgetMenuItem", plan["imports"])
+        self.assertFalse(any(r["widgetId"].startswith(GARAGE) for r in plan["review"] if r["rule"] == "raw"))
+
+    def test_picker_item_in_the_next_step_still_folds_the_icon(self):
+        plan = self.plan([
+            {"seq": 12, "app": "PolicyCenter", "title": "Vehicles", "actions": [
+                {"type": "click", "widgetId": GARAGE + "MenuIcon", "kind": "MenuIconWidget"}]},
+            {"seq": 13, "app": "PolicyCenter", "title": "Vehicles", "actions": [
+                {"type": "click", "widgetId": GARAGE + "-NewGarageLocation", "kind": "PickerMenuItemWidget",
+                 "text": "New Location"}]}])
+        self.assertEqual([s["seq"] for s in plan["steps"]], [13])  # nothing left at seq 12
+        self.assertEqual(step(plan, 13)["actions"][0]["rule"], "menuItem")
+
+    def test_radio_option_suffix_is_dropped_for_the_getter(self):
+        plan = self.plan([{"seq": 18, "app": "PolicyCenter", "title": "Vehicles", "actions": [
+            {"type": "change", "widgetId": OVERRIDE + "_0", "kind": "input", "inputType": "radio",
+             "name": OVERRIDE, "value": "true", "display": "Yes"}]}])
+        item, = step(plan, 18)["actions"]
+        self.assertEqual((item["widgetId"], item["resolution"], item["radioOption"]), (OVERRIDE, "resolved", OVERRIDE + "_0"))
+        self.assertTrue(item["getter"].endswith(".getOverrideddressValidation_IC()"))
+        self.assertEqual(item["java"], '.set("true")')
+
+    def test_raw_radio_is_a_radio_input(self):
+        boolean = pr.translate(CSSIDS, "pc", {"type": "change", "widgetId": "X-Y-Flag_0", "inputType": "radio",
+                                              "kind": "input", "value": "false"})
+        self.assertEqual((boolean["widget"], boolean["getter"]),
+                         ("WidgetBooleanRadioInput", 'WidgetBooleanRadioInput.get("X-Y-Flag", getContext())'))
+        ranged = pr.translate(CSSIDS, "pc", {"type": "change", "widgetId": "X-Y-Kind_1", "inputType": "radio",
+                                             "kind": "input", "value": "owned", "display": "Owned"})
+        self.assertEqual((ranged["widget"], ranged["java"]), ("WidgetRangeRadioInput", '.set("Owned")'))
+
+    def test_wizard_toolbar_quote_and_issue(self):
+        quote = pr.resolve(CSSIDS, "pc", {"widgetId": QUOTE, "kind": "ToolbarButtonWidget", "text": "Quote"})
+        self.assertEqual((quote["rule"], quote["getter"], quote["wizardAction"]),
+                         ("wizardButton", "new PolicyChangeWizardPage(getContext()).getWizardButtons().getQuote()", "quote"))
+        issue = pr.resolve(CSSIDS, "pc", {"widgetId": ISSUE, "kind": "ToolbarButtonWidget", "text": "Issue Policy"})
+        self.assertEqual((issue["getter"], issue["wizardAction"]),
+                         ("new PolicyChangeWizardPage(getContext()).getWizardButtons().getIssuePolicy()", "issue"))
+        unknown = pr.resolve(CSSIDS, "pc", {"widgetId": ISSUE, "kind": "ToolbarButtonWidget", "text": "Odd Button"})
+        self.assertNotEqual(unknown.get("rule"), "wizardButton")
+
+    def test_quote_points_to_the_base_method(self):
+        project = {"transactionBases": {"value": [
+            {"class": "AbstractPolicyChange", "wizardFields": ["PolicyChangeWizardPage wizardPage"],
+             "wizardActions": {"quote": ["quoteStep"], "issue": ["issueStep"]}},
+            {"class": "AbstractSubmission", "wizardFields": ["SubmissionWizardPage wizardPage"],
+             "wizardActions": {"quote": ["quote"]}}]}}
+        plan = self.plan([{"seq": 9, "app": "PolicyCenter", "title": "Quote", "actions": [
+            {"type": "click", "widgetId": QUOTE, "kind": "ToolbarButtonWidget", "text": "Quote"}]}], project=project)
+        item = step(plan, 9)["actions"][0]
+        self.assertEqual(item["baseMethods"], ["AbstractPolicyChange.quoteStep"])
+        self.assertIn("AbstractPolicyChange.quoteStep", next(r["reason"] for r in plan["review"] if r["seq"] == 9))
+
+    def test_calendar_icon_in_the_step_before_its_date_is_dropped(self):
+        plan = self.plan([
+            {"seq": 3, "app": "PolicyCenter", "title": "Start Policy Change", "actions": [
+                {"type": "click", "widgetId": EFFECTIVE + "_dateIcon", "kind": ""}]},
+            {"seq": 4, "app": "PolicyCenter", "title": "Start Policy Change", "actions": [
+                {"type": "click", "widgetId": EFFECTIVE, "kind": "date", "label": "Effective Date"}],
+             "requests": [{"fields": [{"name": EFFECTIVE, "value": "10/20/2026"}]}]}])
+        self.assertEqual([s["seq"] for s in plan["steps"]], [4])  # nothing left at seq 3
+        date, = step(plan, 4)["actions"]
+        self.assertEqual((date["java"], date["source"]), ('.set("10/20/2026")', "request"))
+        self.assertFalse(any(r["widgetId"].endswith("_dateIcon") for r in plan["review"]))
+        self.assertIn("2 calendar clicks", next(r["reason"] for r in plan["review"] if r["widgetId"] == EFFECTIVE))
+
+    def test_dom_values(self):
+        reader = pr.FieldValues()
+        reader.feed(value_widget(STAT, "Stat. Territory", '<div class="gw-value-readonly-wrapper">105</div>')
+                    + value_widget(GARAGE, "Garaged At", '<select name="g"><option value="1">1: Edmonton</option>'
+                                                         '<option value="2" selected>2: Fort McMurray</option></select>')
+                    + value_widget(OVERRIDE, "Override", '<div class="gw-RangeRadioValueWidget--input-group">'
+                                   '<input type="radio" value="true" aria-label="Yes" checked><span>Yes</span>'
+                                   '<input type="radio" value="false" aria-label="No"><span>No</span></div>'))
+        self.assertEqual(reader.values(), {STAT: "105", GARAGE: "2: Fort McMurray", OVERRIDE: "Yes"})
+        self.assertEqual(reader.labels[STAT], "Stat. Territory")
+
+    def test_note_that_asks_for_a_check_gets_the_recorded_values(self):
+        files = {"dom/0019.html": value_widget(STAT, "Stat. Territory", "105") + value_widget(RATING, "Code", "11")}
+        plan = self.plan([
+            {"seq": 8, "app": "PolicyCenter", "title": "Vehicles", "actions": [click("Edit")],
+             "requests": [{"fields": [{"name": STAT, "value": "102"}, {"name": RATING, "value": "5"},
+                                      {"name": VEHICLE_DV + "-PostalCode", "value": "T5J"}]}]},
+            {"seq": 19, "app": "PolicyCenter", "title": "Policy Change Bound", "dom": "dom/0019.html",
+             "actions": [click("Issue Policy")],
+             "notes": [{"text": "Confirm address and rating territory codes are updated"}]}], files)
+        note, = plan["noteChecks"]
+        self.assertEqual(note["seq"], 19)
+        stat = next(f for f in note["fields"] if f["widgetId"] == STAT)
+        self.assertEqual((stat["values"], stat["changed"], stat["java"], stat["label"]),
+                         ([{"seq": 8, "value": "102"}, {"seq": 19, "value": "105"}], True, '.assertEquals("105")',
+                          "Stat. Territory"))
+        self.assertEqual(note["fields"][0]["widgetId"], RATING)  # rating + territor + code: the best match
+        self.assertNotIn(VEHICLE_DV + "-PostalCode", [f["widgetId"] for f in note["fields"]])  # only "code"
+        self.assertTrue(plan["notes"][0]["asksCheck"])
+
+    def test_conditional_note_is_flagged(self):
+        plan = self.plan([{"seq": 18, "app": "PolicyCenter", "title": "Vehicles", "actions": [], "notes": [
+            {"text": "If there's an error in validating address, override and continue"}]}])
+        self.assertEqual(plan["notes"], [{"seq": 18, "text": "If there's an error in validating address, override "
+                                                             "and continue", "conditional": True}])
+        self.assertEqual(plan["noteChecks"], [])
+
+    def test_visibility_check_on_a_field_with_a_value_suggests_a_value_check(self):
+        files = {"dom/0019.html": value_widget(GARAGE, "Garaged At", "2: 10 Main St, Fort McMurray, AB")}
+        plan = self.plan([
+            {"seq": 15, "app": "PolicyCenter", "title": "New Location", "actions": [
+                {"type": "change", "widgetId": "NewLocationPopup-AddressLine1", "kind": "text",
+                 "label": "Address 1", "value": "10 Main St"}]},
+            {"seq": 19, "app": "PolicyCenter", "title": "Vehicles", "dom": "dom/0019.html", "actions": [
+                click("OK", "NewLocationPopup-Update", "ToolbarButtonWidget"),
+                {"type": "check", "widgetId": GARAGE, "kind": "select", "label": "Garaged At", "assert": "isVisible"}]}],
+            files)
+        check, = step(plan, 19)["checks"]
+        self.assertEqual(check["java"], ".assertVisible(true)")
+        self.assertEqual(check["valueSuggested"], {"java": '.assertContains("10 Main St")',
+                                                   "shown": "2: 10 Main St, Fort McMurray, AB"})
+        self.assertIn("always passes", next(r["reason"] for r in plan["review"] if r["widgetId"] == GARAGE))
+        self.assertNotIn("recordedCheck", check)
+
+    def test_next_clicks_that_change_nothing_are_navigation(self):
+        next_button = click("Next", "PolicyChangeWizard-Next", "WizardButtonWidget")
+        plan = self.plan([
+            {"seq": 5, "app": "PolicyCenter", "title": "Policy Info", "actions": [
+                {"type": "change", "widgetId": EFFECTIVE, "kind": "date", "value": "10/20/2026"}, dict(next_button)]},
+            {"seq": 6, "app": "PolicyCenter", "title": "Drivers", "actions": [dict(next_button)]},
+            {"seq": 7, "app": "PolicyCenter", "title": "Vehicles", "actions": [dict(next_button)]},
+            {"seq": 8, "app": "PolicyCenter", "title": "Vehicles", "actions": [click("Edit")]}])
+        self.assertEqual(plan["navigation"], [{"seqs": [6, 7], "clicks": 2, "from": "Policy Info", "to": "Vehicles"}])
+        self.assertTrue(step(plan, 7)["actions"][0]["navigationOnly"])
+        self.assertNotIn("navigationOnly", step(plan, 5)["actions"][1])
+
+
 class SnapshotReaderTest(unittest.TestCase):
     def test_reads_dom_from_folder_and_zip(self):
         with tempfile.TemporaryDirectory() as tmp:

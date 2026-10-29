@@ -260,9 +260,14 @@ def folders(root, tests, steps, tests_dir, reusable_dir, facade_names):
     return fact(value, "tests and steps per folder; steps recorded from a recording first")
 
 
+# a base's methods that quote or issue the transaction, by the wizard button or toolbar getter they click
+WIZARD_ACTIONS = {"quote": re.compile(r"\.getQuote\(\)"),
+                  "issue": re.compile(r"\.get(?:Issue|IssuePolicy|IssueNow|Bind\w*)\(\)")}
+
+
 def transaction_bases(root, steps):
-    """Each abstract Abstract* step base: its wizard-page fields and, per constructor argument
-    (other than the context), the methods that read it. An argument no method reads, or one
+    """Each abstract Abstract* step base: its wizard-page fields, the methods that quote or issue
+    (wizardActions) and, per constructor argument (other than the context), the methods that read it. An argument no method reads, or one
     read only by an optional helper, doesn't stop a new step from extending the base."""
     found = []
     for path, text in sorted(steps.items()):
@@ -284,10 +289,13 @@ def transaction_bases(root, steps):
                 uses[param] = sorted({m for m, _, b in methods if m != name and field
                                       and re.search(rf"\b{field}\b", b)})
             constructors.append({"params": params, "argUsedBy": uses})
+        actions = {stage: sorted({m for m, _, b in methods if m != name and pattern.search(b)})
+                   for stage, pattern in WIZARD_ACTIONS.items()}
         found.append({"class": name, "path": rel(root, path), "extends": declared.group(2),
                       "constructors": constructors,
                       "wizardFields": [f"{t} {n}" for t, n in re.findall(
-                          r"(?:protected|public)\s+(?:final\s+)?(\w*WizardPage)\s+(\w+)\s*;", text)]})
+                          r"(?:protected|public)\s+(?:final\s+)?(\w*WizardPage)\s+(\w+)\s*;", text)],
+                      "wizardActions": {stage: found_in for stage, found_in in actions.items() if found_in}})
     if not found:
         return missing("no abstract Abstract* step bases under reusable/")
     return fact(found, f"{len(found)} abstract step bases")

@@ -62,6 +62,18 @@ There is no CI in this repo; run them before every commit.
 - A menu item reached through its button (`<button getter>.get("Label")`, rule `menuItem`) opens the
   menu itself, so the click that opened it is dropped (`fold_menu_openers`). A raw
   `WidgetMenuItem.get(id)` only moves to its element, so its opener stays.
+- `fold_openers()` runs over the whole recording before translation, because a click can end a step:
+  a `_dateIcon` click whose field is set later is dropped (counted in `calendarClicks`), and a
+  `MenuIconWidget` click right before a picker item becomes the item's `menuIcon` (`picker_item()`).
+- A radio is recorded on its option's `<input>` (`…_IC_0`, which has its own id); `radio_widget()`
+  strips the suffix before the lookup. A Yes/No radio is set with `"true"`/`"false"`.
+- Wizard toolbar buttons (`…WizardToolbarButtonSet-…`) map by their recorded **label** to
+  `WizardButtons` getters, which find the button by label too. Quote/Issue get `wizardAction`, and with
+  `--project` the base's methods that click them (`transactionBases[].wizardActions`) as `baseMethods`.
+- `analyse()` runs on the finished plan: helpers, blockers, retries, `navigation` (Next-only steps),
+  stronger checks and `noteChecks`. `snapshot()` reads a step's values from its posted fields and its
+  DOM snapshot (`FieldValues`: `gw-ValueWidget` elements, labels from `<id>_Input > .gw-label`), lazily:
+  only when a weak check or a note that asks for a check needs them.
 - A form input's `name` is its widget id in Guidewire, so it's never used as a label. A list cell
   with no label gets its column header from the step's DOM snapshot (`dom/NNNN.html`, read via
   `file_reader()`).
