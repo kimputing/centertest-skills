@@ -1031,7 +1031,7 @@ class ConvictionAndCoveragesRunTest(unittest.TestCase):
         self.assertEqual(pr.relation(datetime.date(1980, 5, 4), datetime.date(2026, 5, 4), "EffectiveDate"),
                          "EffectiveDate - 46 years")
         self.assertEqual(pr.relation(datetime.date(1980, 5, 4), datetime.date(2026, 10, 1), "EffectiveDate"),
-                         "EffectiveDate - 16951 days (≈ 46 years)")
+                         "EffectiveDate - 16951 days (about 46 years)")
 
     def test_row_of_a_table_the_recording_added_to_is_its_last_row(self):
         plan = self.plan([{"seq": 4, "app": "PolicyCenter", "title": "Organizations", "actions": [
@@ -1091,7 +1091,8 @@ class ConvictionAndCoveragesRunTest(unittest.TestCase):
 
     def test_coverage_note_check_uses_coverage_util_and_shows_the_screen(self):
         limit = LIAB + "-LimitTermInput"
-        files = {"dom/0005.html": coverage_dom("Bodily Injury", limit, "Limit", "$100,000"),
+        files = {"dom/0005.html": coverage_dom("Bodily Injury ", limit, "Limit", "$100,000")
+                 + f'<div id="{LIAB}-Hidden" class="gw-ValueWidget"><div class="gw-vw--value">x</div></div>',
                  "dom/0009.html": coverage_dom("Bodily Injury", limit, "Limit", "$200,000")
                  + value_widget(VEHICLES_SCREEN + "-TotalTransactionPremium", "Total Transaction Premium", "$4,761.00")
                  + value_widget(VEHICLES_SCREEN + "-AllPerils_Ext", "Description", "coverage list")}
@@ -1107,10 +1108,10 @@ class ConvictionAndCoveragesRunTest(unittest.TestCase):
                           'coverageUtil.assertEquals("Bodily Injury", "Limit", "$200,000");'))
         self.assertFalse(note["screen"]["shows"]["surcharge"])
         self.assertEqual(note["screen"]["amounts"][0]["value"], "$4,761.00")
-        self.assertEqual(plan["startValues"][0], {"coverage": "Bodily Injury", "covterm": "Limit",
-                                                  "value": "$100,000", "seq": 5})
+        self.assertEqual(plan["startValues"], [{"coverage": "Bodily Injury", "covterm": "Limit",
+                                                "value": "$100,000", "seq": 5}])  # trimmed; no unlabelled value
 
-    def test_helpers_by_list_id_and_transaction_base_first(self):
+    def test_helpers_by_list_id_then_transaction_base(self):
         claims = "PolicyChangeWizard-LOBWizardStepGroup-PAClaimsInfo-ClaimsInfo_ICLV"
         titles = {"Drivers": [f"Other{n}.wait" for n in range(8)] + ["AbstractPolicyChange.toDrivers"]}
         project = {"screenHelpers": {"value": {"titles": titles, "pages": {}, "ids": {
@@ -1121,11 +1122,150 @@ class ConvictionAndCoveragesRunTest(unittest.TestCase):
             {"type": "change", "widgetId": claims + "-0-Description", "kind": "text", "value": "hail"}]}],
             project=project)
         drivers = step(plan, 8)
-        self.assertEqual(drivers["helpers"][0]["method"], "AbstractPolicyChange.toDrivers")
-        self.assertEqual(drivers["helpers"][1], {"method": "AbstractPersonalAutoSubmission.addLossClaim",
+        self.assertEqual(drivers["helpers"][1]["method"], "AbstractPolicyChange.toDrivers")
+        self.assertEqual(drivers["helpers"][0], {"method": "AbstractPersonalAutoSubmission.addLossClaim",
                                                  "matched": "id …PAClaimsInfo-ClaimsInfo_ICLV (written for "
                                                             "SubmissionWizard: reuse or generalise?)"})
         self.assertEqual((len(drivers["helpers"]), drivers["helpersMore"]), (6, 4))
+
+
+DRIVERS_LV = "PolicyChangeWizard-LOBWizardStepGroup-LineWizardStepSet-PADriversScreen-PADriversPanelSet-DriversLV"
+
+
+class AddVehicleAndReplaceOperatorRunTest(unittest.TestCase):
+    """Issues #37, #38 and #39: policy changes that add a vehicle and replace the primary operator."""
+
+    def plan(self, steps, files=None, project=None, **session):
+        return pr.build_plan(dict(session, steps=steps), CSSIDS, (files or {}).get, project)
+
+    def test_driver_picked_from_the_add_menu_by_name(self):
+        plan = self.plan([{"seq": 8, "app": "PolicyCenter", "title": "Vehicles", "actions": [
+            {"type": "click", "widgetId": ADD_DRIVER, "kind": "ToolbarButtonWidget", "text": "Add"},
+            {"type": "click", "widgetId": ADD_DRIVER + "-0-Driver", "kind": "AddMenuItemWidget",
+             "label": "Driver Details", "text": "John Smith"}]}])
+        pick, = step(plan, 8)["actions"]
+        self.assertEqual((pick["rule"], pick["label"]), ("menuItem", "John Smith"))
+        self.assertEqual(pick["getter"], f'{VEHICLE_CARD}.getAddDriver().withCssId("{ADD_DRIVER}").get("John Smith")')
+        self.assertTrue(pick["dependsOnData"])  # a menu of the policy's drivers
+        self.assertEqual(pick["text"] if "text" in pick else pick["label"], "John Smith")
+
+    def test_submenu_clicked_in_the_recording_is_picked_by_label(self):
+        plan = self.plan([{"seq": 17, "app": "PolicyCenter", "title": "Drivers", "actions": [
+            {"type": "click", "widgetId": ADD_DRIVER, "kind": "ToolbarButtonWidget", "text": "Add"},
+            {"type": "click", "widgetId": ADD_DRIVER + "-AddExistingContact", "kind": "AddMenuItemWidget",
+             "text": "Existing Driver"},
+            {"type": "click", "widgetId": ADD_DRIVER + "-AddExistingContact-0-UnassignedDriver",
+             "kind": "AddMenuItemWidget", "label": "Driver Details", "text": "Ava Lindgren"}]}])
+        pick, = step(plan, 17)["actions"]
+        self.assertEqual(pick["getter"], f'{VEHICLE_CARD}.getAddDriver().withCssId("{ADD_DRIVER}")'
+                                         '.get("Existing Driver").get("Ava Lindgren")')
+        self.assertNotIn("submenus", pick)
+
+    def test_fixed_option_menu_entry_is_not_account_data(self):
+        vehicle_type = VEHICLES_SCREEN + "-CreateVehicleButton_IC-vehicleType_IC-5-VehiclesLVIterator_IC"
+        item = pr.translate(CSSIDS, "pc", {"type": "click", "widgetId": vehicle_type, "kind": "MenuItemWidget",
+                                           "text": "Private Passenger Vehicles (PPV)"})
+        self.assertNotIn("dependsOnData", item)
+        self.assertEqual(item["menuSearch"], ["CreateVehicleButton_IC", "vehicleType_IC"])
+        self.assertIn("menu of fixed options", item["warning"])
+
+    def test_menu_entry_inside_an_unrecorded_submenu_is_flagged(self):
+        item = pr.translate(CSSIDS, "pc", {"type": "click", "widgetId": ADD_DRIVER + "-Personal_IC-2-Type",
+                                           "kind": "MenuItemWidget", "text": "PPV"})
+        self.assertEqual((item["rule"], item["submenus"]), ("menuItem", ["Personal_IC"]))
+        self.assertIn("submenu Personal_IC", item["warning"])
+
+    def test_checkbox_of_an_existing_row_after_an_add_menu_is_not_a_new_row(self):
+        add = DRIVERS_LV + "_tb-AddDriver"
+        plan = self.plan([{"seq": 9, "app": "PolicyCenter", "title": "Drivers", "actions": [
+            {"type": "click", "widgetId": add, "kind": "ToolbarButtonWidget", "text": "Add"},
+            {"type": "click", "widgetId": add + "-AddExistingContact-0-UnassignedDriver", "kind": "AddMenuItemWidget",
+             "text": "John Smith"},
+            {"type": "click", "widgetId": DRIVERS_LV + "-0-_Checkbox", "kind": "checkbox"}]}])
+        self.assertNotIn("newRow", step(plan, 9)["actions"][-1])
+
+    def test_checkbox_after_a_plain_add_is_not_the_new_row(self):
+        plan = self.plan([{"seq": 9, "app": "PolicyCenter", "title": "Drivers", "actions": [
+            {"type": "click", "widgetId": DRIVERS_LV + "_tb-Add", "kind": "ToolbarButtonWidget", "text": "Add"},
+            {"type": "click", "widgetId": DRIVERS_LV + "-0-_Checkbox", "kind": "checkbox"},
+            {"type": "change", "widgetId": DRIVERS_LV + "-1-Name", "kind": "text", "value": "Ann"}]}])
+        tick, name = step(plan, 9)["actions"][1:]
+        self.assertNotIn("newRow", tick)
+        self.assertTrue(name["newRow"])
+
+    def test_issue_in_the_billing_toolbar(self):
+        issue = pr.resolve(CSSIDS, "pc", {"widgetId": "PolicyChangeWizard-PolicyChangeWizard_PaymentScreen"
+                                                      "-JobWizardBillingToolbarButtonSet-BindPolicyChange",
+                                          "kind": "ToolbarButtonWidget", "text": "Issue Policy"})
+        self.assertEqual((issue["rule"], issue["wizardAction"]), ("wizardButton", "issue"))
+
+    def test_dates_are_not_identity_values(self):
+        self.assertIsNone(pr.identity_value("Date of Full Licence", "05/04/2010"))
+        self.assertIsNotNone(pr.identity_value("Licence #", "2569874"))
+
+    def test_blocker_helpers_by_popup_page_and_name_first(self):
+        project = {"screenHelpers": {"value": {"titles": {"Quote": ["AddConvictionAndClaim.assertNoSurcharge"]},
+                                               "pages": {"PolicyChangeWizard": ["CreatePersonalAutoPolicyChange.selectTab"],
+                                                         "UWBlockProgressIssuesPopup": [
+                                                             "ReplacePrimaryOperator.issueWithSpecialApproval",
+                                                             "ReplacePrimaryOperator.closePopup"]}}}}
+        plan = self.plan([{"seq": 18, "app": "PolicyCenter", "screen": "UWBlockProgressIssuesPopup", "title": "Quote",
+                           "actions": [click("Issue Policy", "PolicyChangeWizard-IssuePolicy"),
+                                       click("Special Approve", UW_APPROVE, "button")]}], project=project)
+        methods = [h["method"] for h in step(plan, 18)["helpers"]]
+        self.assertEqual(methods[:2], ["ReplacePrimaryOperator.issueWithSpecialApproval",
+                                       "ReplacePrimaryOperator.closePopup"])
+        self.assertEqual(methods[-1], "CreatePersonalAutoPolicyChange.selectTab")
+
+    def test_next_and_coverage_amounts_follow_the_project(self):
+        project = {"idioms": {"value": {"wizardButtons": {"getNextV9": 12, "getNext": 1}, "coverageAmounts": "plain"}}}
+        plan = self.plan([{"seq": 5, "app": "PolicyCenter", "title": "PA Coverages", "actions": [
+            {"type": "change", "widgetId": OCCURRENCE.replace("SubmissionWizard", "PolicyChangeWizard"),
+             "kind": "select", "label": "Limit", "context": ["Coverages", "Liability"], "value": "2000000",
+             "display": "$2,000,000"},
+            click("Next", "PolicyChangeWizard-Next", "WizardButtonWidget")]}], project=project)
+        limit, next_button = step(plan, 5)["actions"]
+        self.assertEqual(limit["java"], '.setCoverage("Liability", "Limit", "2000000")')
+        self.assertTrue(next_button["getter"].endswith(".getWizardButtons().getNextV9()"), next_button["getter"])
+
+    def test_screens_at_the_end_that_change_nothing_are_verify_only(self):
+        plan = self.plan([
+            {"seq": 19, "app": "PolicyCenter", "title": "Policy Change Bound", "actions": [click("Issue Policy")]},
+            {"seq": 21, "app": "PolicyCenter", "title": "Review Changes", "actions": [click("View Policy")]},
+            {"seq": 22, "app": "PolicyCenter", "title": "Vehicles", "actions": [
+                {"type": "click", "widgetId": ORGS + "-0-ContactCity", "kind": "LinkWidget",
+                 "rowKey": [{"header": "Close Date", "text": "10/21/2026"}]}]}])
+        self.assertEqual(plan["verifyOnly"], [21, 22])
+        row = step(plan, 22)["actions"][0]
+        self.assertTrue(row["verifyOnly"])
+        self.assertNotIn("dependsOnData", row)
+        self.assertNotIn("verifyOnly", step(plan, 19)["actions"][0])
+
+    def test_policy_shape_and_step_screens(self):
+        def driver_rows(*names):
+            return "".join(f'<div id="{DRIVERS_LV}-{n}-Name" class="gw-ValueWidget"><div class="gw-vw--value">{name}'
+                           f'</div></div>' for n, name in enumerate(names))
+        files = {"dom/0003.html": driver_rows("Ann Lee") + f'<div id="{DRIVERS_LV}_tb-AddDriver-AddExistingContact-0'
+                                                           '-UnassignedDriver" class="gw-MenuItemWidget">John</div>',
+                 "dom/0019.html": driver_rows("John Smith")}
+        plan = self.plan([
+            {"seq": 3, "app": "PolicyCenter", "title": "Drivers", "dom": "dom/0003.html", "actions": [
+                {"type": "change", "widgetId": EFFECTIVE, "kind": "date", "value": "10/01/2026"},
+                click("Next", "PolicyChangeWizard-PolicyChangeWizard_PolicyInfoScreen-Next", "ToolbarButtonWidget")]},
+            {"seq": 19, "app": "PolicyCenter", "title": "Drivers", "dom": "dom/0019.html",
+             "actions": [click("Issue Policy")]}], files)
+        shape = {t["table"]: t for t in plan["policyShape"]}
+        self.assertEqual(shape["DriversLV"]["first"], {"seq": 3, "rows": 1, "names": ["Ann Lee"]})
+        self.assertEqual(shape["DriversLV"]["last"]["names"], ["John Smith"])
+        self.assertEqual(shape["AddExistingContact"]["first"]["rows"], 1)
+        self.assertEqual(step(plan, 3)["screens"], ["StartPolicyChangeScreen", "PolicyInfoScreen"])
+
+    def test_plan_json_is_ascii(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "plan.json")
+            pr.main([os.path.join(RECORDINGS, "synthetic"), "--cssids", CSSIDS, "--out", out])
+            with open(out, "rb") as f:
+                self.assertTrue(all(b < 128 for b in f.read()))
 
 
 class SnapshotReaderTest(unittest.TestCase):
