@@ -236,6 +236,9 @@ public abstract class AbstractPolicyChange extends BaseScenarioPC {
   }
   protected boolean hasReformMode() { return misc != null && misc.isReform(); }
   protected void quoteStep() { wizardPage.getWizardButtons().getQuote().click(); }
+  public void addLossClaim(String date) {
+    var table = TableSortable.get("SubmissionWizard-LOBWizardStepGroup-PAClaimsInfo-ClaimsInfo_ICLV", getContext());
+  }
   protected void issueStep() {
     wizardPage.getIssue().click();
     if (getPageTitle().contains("Issues that block Issuance")) {
@@ -301,6 +304,11 @@ class ProjectKnowledgeTest(ProjectTestCase):
     def test_base_reports_its_quote_and_issue_methods(self):
         base, = self.result["transactionBases"]["value"]
         self.assertEqual(base["wizardActions"], {"quote": ["quoteStep"], "issue": ["issueStep"]})
+
+    def test_screen_helpers_by_widget_id(self):
+        ids = self.result["screenHelpers"]["value"]["ids"]
+        self.assertEqual(ids["SubmissionWizard-LOBWizardStepGroup-PAClaimsInfo-ClaimsInfo_ICLV"],
+                         ["AbstractPolicyChange.addLossClaim"])
 
     def test_screen_helpers_by_title_and_page(self):
         helpers = self.result["screenHelpers"]["value"]

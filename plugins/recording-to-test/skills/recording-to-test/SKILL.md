@@ -110,6 +110,25 @@ More item fields:
 - `valueSuggested: {java, shown}` (on a check): a recorded "is visible" / "not empty" check, which
   always passes, on a field that shows a value. `java` checks the value instead: it contains the
   longest value entered earlier that it shows (the address just added), else it equals `shown`.
+- `rule: "suffix"` (with `stripped`): the id had a suffix the generated getter's id doesn't
+  (`…-Number_button`, `_link`, `_dateIcon`, `_<n>`), so the widget's getter is used (`getNumber()`, never
+  `getNumber_button()`). A `rowColumn` getter with a warning "no cssids key for column": the column's
+  getter was built from the id; check the row class has it (compile) before you rely on it.
+- `rule: "rowRadio"` (with `then`): a radio in a list row. Its cell's `set()` doesn't take
+  (`WidgetBooleanRadioCell.set` fails with WI-005, `WidgetBooleanRadioInput.set` leaves it unchanged),
+  so the recorded option is clicked (`WidgetButton.get("<id>_1", getContext()).click()`), and `then` is
+  the statement that checks it took (`getBoolean()`). Write `then` right after the click.
+- `newRow: true`: a row of a table the recording clicked Add on before, so it is the new row: the
+  getter selects it with `getLastRow().select()` and there is no data question. An entry picked from
+  an Add *menu* (an existing driver) is not a new row.
+- `transactionDates` and `dateRelations` (on a date): the transaction's own dates set or posted before
+  it (a policy change's effective date, even when the analyst kept the default), and the recorded
+  date against them, then against the step's other posted dates, then the recording day:
+  `[{anchor, value, seq, days, text: "EffectiveDate + 1 day"}]`, transaction dates first.
+- `cellById` (on a check): a check on a list row after the transaction was issued, i.e. on the
+  reopened, read-only job. There `getFirstRow()` / `getRows()` returned only the header row, while the
+  cell read by its id worked: write `<cellById><java>` (e.g. `WidgetLabel.get("…LV-0-Code",
+  getContext()).assertEquals("11")`).
 - `dependsOnData: true`: a `raw` id that picks entry *n* of a list by its position
   (`…-0-UnassignedDriver`), or a row picked by its recorded values (`.with("Vehicle #", "1")
   .with("Year", "2015")`, or a date literal like `with("Close Date", "10/19/2026")`). It works only
@@ -127,7 +146,10 @@ More item fields:
   (compile error), write `Widget<Type>.get("<recorded id>", getContext())` instead. Never drop the pin.
 
 Each step also has `pages` (its screen and its items' pages). With `--project` it has `helpers`: the
-project's methods that wait for its title or open one of its pages (`{method, matched}`).
+project's methods that use one of its lists (an id literal with the same container, from any wizard:
+`matched: "id …PAClaimsInfo-ClaimsInfo_ICLV (written for SubmissionWizard: reuse or generalise?)"`),
+wait for its title or open one of its pages (`{method, matched}`). Methods of the transaction's base
+come first; `helpersMore` counts the ones cut.
 `blockers` (top level) lists the steps on a UW-issue or approval screen, found by title, page,
 message ("placed in the facility (RSP) pool") or item, each with its `helpers`.
 
@@ -137,10 +159,22 @@ message ("placed in the facility (RSP) pool") or item, each with its `helpers`.
 `notes` entries carry `asksCheck: true` when the note asks to verify, confirm or ensure something,
 and `conditional: true` when it states a condition ("If there's an error…, override").
 `noteChecks` (top level) has one entry per note that asks for a check: its `words`, and the `fields`
-whose id or label has them. Each field has the values the recording shows, in order (`values`:
-`[{seq, value}]`, from the posted forms and the DOM snapshots), `changed`, `lastSeq` (the last step that
-showed it) and `java` (`assertEquals` on the last value). Best matches come first; `more` counts the
-ones left out.
+whose label or id has them. Each field has the values the recording shows, in order (`values`:
+`[{seq, value}]`, from the posted forms and the DOM snapshots), `changed`, `byLabel` (its label
+matched, not only its id), `lastSeq` (the last step that showed it) and `java` (`.assertEquals` on
+the last value, for its getter). A coverage term or checkbox has `coverage: {coverage, covterm}`
+(the coverage title from the screen) and its `java` is a whole statement on `coverageUtil`
+(`coverageUtil.assertEquals("Bodily Injury", "Limit", "$200,000");`). Changed fields matched by
+label come first; `more` counts the ones left out. `screen` is the note's own screen: `shows` says
+which of the note's words appear on it (`"surcharge": false`), and `amounts` its premium, cost,
+surcharge and discount values.
+
+`transactionDates` (top level): the transaction's own dates, `[{field, name, value, seq, source}]`,
+`source` `set` (the analyst entered it) or `posted` (the default the form posted).
+`outcomeMismatch` (top level, also in `review`): the expected outcome mentions more binds / issues
+than the recording makes (`mentioned`, `recorded`, `issueSeqs`).
+`startValues` (top level, when the recording doesn't start with a login): the coverages as the
+recording first shows them, before it changes them (`{coverage, covterm, value, seq}`).
 
 `retries` (top level) lists what the analyst redid:
 - `kind: "corrected"`: a value set at `seq` and changed at `fixedSeq` (e.g. licence # `2569874` →
@@ -185,7 +219,18 @@ role is logged in, and how the test reaches that screen with that record open. D
 2. The data source those tests use (`dataDriven`, e.g. `PA_SubmissionDC.xlsx`). Propose a DC row
    that meets what the recording needs (the vehicles and drivers on the opened policy, from its
    screens and notes, e.g. "Default": one PPV and one driver), and say how you chose it.
-3. "Something else": the user names it.
+3. **Chain after a recorded step**, when the recording continues where one of the folder's
+   `recorded: true` steps ends. Compare `startValues` (and the first values in `noteChecks`) with
+   those steps' constants and final assertions: e.g. Collision $500 / Comprehensive $1,000 / All
+   Perils off is exactly where `AddDeleteCoverages` ends. Name the step and the values that match.
+4. "Something else": the user names it.
+
+**When a start option chains an existing step**, read that step's end: its last `waitForPageTitle` and
+navigation. If it ends somewhere else than the recording starts (e.g. inside its bound transaction on
+"Quote", while the new step's first method waits for "Summary"), the chain fails at the first wait
+(`EXE-016 Page title 'Summary' wasn't located`). Propose the base's return helper in between
+(`grep -n "returnTo\|backTo" <transaction base>`, e.g. `AbstractPolicyChange.returnToPolicy()`), and
+show it in the start option.
 
 **Retries.** The analyst sometimes redoes things because of a validation error:
 - The same action on the same widget again (Next then Next, Issue then Issue), with no change of
@@ -305,6 +350,8 @@ Depends on the account's data:
   seq 30  reopen filter Close Date = 10/19/2026 → today, or drop the filter?
 Pinned ids: seq 12 getSubstituteVeh_Ext().withCssId("…VehiclesListDetailPanel_tb-SubstituteVeh_Ext") (key had [VehiclesLV_tb])
 Dates: seq 21 Date of Birth 05/04/1980 typed → relative? (e.g. effective date − 46 years)
+  seq 9 Date Convicted 10/02/2026 (calendar) → change date + 1 day (EffectiveDate 10/01/2026, set at seq 3)
+Radios in rows: seq 9 At fault = No → click …GRIDConvictionCol_1, then getBoolean() is false (new row: getLastRow())
 Unique: seq 21 First name → PersonNameUtil…; seq 22 Licence # → numerify("######"); seq 30 VIN → vehicle().vin()
 Facade: PC.addDriverPolicyChange(context) added to PC.java (reusable/CLAUDE.md: every new step gets one)
 Final checks (from the note at seq 52 and expectedOutcome):
@@ -320,6 +367,13 @@ Quote / Issue: seq 9 Quote → quoteStep(), seq 18 Issue Policy → issueStep() 
 Navigation: seq 6-7 Next ×2 (Policy Info → Vehicles) → wizardPage.getLEFT().getNavigate().getPersonalVehicles()
   (as CreatePersonalAutoOOSPolicyChange does)
 ```
+
+**Every date gets its relation proposed, closest first from `dateRelations`.** Transaction dates
+come first: in a policy change, a conviction, accident or licence date picked after the change date
+is almost always "= change date + n days", not "today − n". The wrong anchor changes the scenario
+(a conviction before the change date gets a midterm surcharge). Show `transactionDates` at the gate
+and check the date the test derives for the change against the recorded one, also when the analyst
+kept the default (`source: "posted"`).
 
 **A calendar-picked date with `postedDates`** gets a question: how does the recorded date relate
 to them? For example, `12/31/2027` against `PolicyPeriodEffDateID_Arg = 01/01/2028` is "the open
@@ -343,11 +397,26 @@ propose the check from them: a field that `changed` is checked for its last valu
 longer the first one); a field that didn't change while the note expects a change is called out.
 Pick the fields that fit the note, not every match, and look up each one's getter (cssids, or the
 row API for a list cell). Never write your own scripts over the DOM snapshots for this: the values
-are in `noteChecks`. A value that depends on rating (a premium, a territory code) is a check that
+are in `noteChecks`. Coverage fields are checked on `coverageUtil` as their `java` says (the
+CoverageUtil rule), never with a getter. Show `screen` next to the proposed check: when the note says
+something must not show ("no conviction surcharge") and `shows` says the word isn't on the screen at
+all, or `amounts` show the premium went up, ask what the check means before writing code: "no
+surcharge line" (the section is absent) or "no premium increase". A value that depends on rating (a premium, a territory code) is a check that
 the environment can break: say so, and offer a "changed" or "not empty" check instead.
 For a check with `valueSuggested`, propose its `java` instead of the visibility check. Use widget assertions on the screen the note is on, e.g. "both drivers listed
 with the right operator types" becomes a check per row on the driver table (`.with("Name", …)` row
 filters, `assertEquals` on the type column). Show them in the table; the user approves or edits.
+
+**Expected outcome against the recording.** When `outcomeMismatch` is set (the expected outcome
+describes two changes, an increase bound and then a decrease bound, while the recording made one
+change with both), ask which the test follows before generating.
+
+**Row filters.** A row picked by its recorded values is written `.with("<header>", "<value>",
+"TextCell")` (`"DateCell"` for a date). Before you keep it, look for the generated row selector's own
+method for that column (`with<Column>(String)`, e.g. `withEffectiveDate`, which knows the cell type):
+in the generated project's sources if they are checked out (`grep -rn "public .* with\w*(String"
+<generated src>/…/<Table>RowSelectorSingle.java`), else in the generated jar's sources. Use it when
+there is one.
 
 **Conditional notes** (`conditional: true`): list the condition and ask whether the step does it
 always (often the project's convention, e.g. override address validation every time) or only when
@@ -421,6 +490,8 @@ For an item with `candidates`, ask which one. Wait for the user to approve or ch
 - **Menu picks in the project's idiom.** A `menuItem` item is written as it comes. For a raw menu
   item, search the steps root for how the project picks from that menu (e.g.
   `getAddDriver().get("New Person")` on a `WidgetAddButtonWithMenu`) and write it that way.
+- A `rowRadio` item is its click followed by its `then`; a check with `cellById` approved at the gate is
+  written on `cellById`.
 - Approved retries, blocker helpers, base Quote / Issue methods, navigation, relative dates,
   generators, conditions and final checks go in as approved at the gate. A helper replaces the raw items it covers.
 - When the project's guidance asks for it, add the facade factory method for each new step to the
@@ -434,8 +505,10 @@ at most 3 rounds; then stop and report what is left. If the build fails on missi
 
 ## 11. Offer to run
 
-Ask: run now? which profile (`build.value.profiles`)? Then run `build.value.run` with `{profile}` and
-`{testClass}` filled in. When `build.value.run` is `null`, the project's `bootRun` reads `-P`
+Ask: run now? which profile? Offer **"no profile (default environment)"** first, a plain run with the
+environment from the project's `customer.centertest.properties`, which is the usual case, then each of
+`build.value.profiles`. Then run `build.value.run` with `{profile}` and
+`{testClass}` filled in; with no profile, leave the profile argument (`-Pprofile={profile}`) out. When `build.value.run` is `null`, the project's `bootRun` reads `-P`
 properties (`build.value.bootRunProperties`) but none named `centerTest`. Ask the user how this
 project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file), and don't guess.
 
@@ -461,6 +534,8 @@ items; retries and validation loops collapsed (which recorded steps became which
 calendar-picked and typed dates; generated identity values; picks that depend on existing data;
 pinned ids (`withCssId`) and why; blocker screens and the helper used for each; Quote / Issue routed
 through the base; Next clicks replaced by navigation; notes with a condition and what was chosen;
-values derived from data and what they were compared with; final checks added; compile and run
+values derived from data and what they were compared with; the date relations chosen;
+radios in rows (clicked and checked); rows read by id on a bound job; helpers from another wizard
+reused or generalised; the chain chosen for the start and any return helper in between; final checks added; compile and run
 result. If the project runs tests from a suite file (e.g. `CenterTestSuiteList.json`) and its
 guidance doesn't say to add new tests there, name it and the class to add, and don't edit it.

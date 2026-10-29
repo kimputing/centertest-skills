@@ -13,6 +13,7 @@ cannot resolve go through the fallback rules in resolve_fallback().
 """
 
 import argparse
+import datetime
 import html.parser
 import json
 import os
@@ -110,6 +111,7 @@ def wait_title(title) -> str:
 
 
 ROW_SELECT = ".getFirstRow().select()"
+LAST_ROW_SELECT = ".getLastRow().select()"
 SEGMENT = re.compile(r"[-:]")
 
 
@@ -185,13 +187,17 @@ PINNED = ("the getter's cssids key is not the recorded id (a bracketed or differ
 
 
 def with_row(getter: str, action: dict) -> str:
-    """Select a list row by its contents, as the recording identified it, instead of the first row."""
+    """Select a list row by its contents, as the recording identified it, instead of the first row.
+    A row the recording added (newRow) is the table's last row."""
+    if action.get("newRow") and ROW_SELECT in getter:
+        return getter.replace(ROW_SELECT, LAST_ROW_SELECT, 1)
     keys = action.get("rowKey") or []
     if not keys or ROW_SELECT not in getter:
         return getter
     page = action.get("page") or 1
     pages = f".forMaximumPages({page})" if page > 1 else ""
-    filters = "".join(f'.with({jstr(k.get("header"))}, {jstr(k.get("text"))}, "TextCell")' for k in keys)
+    filters = "".join(f'.with({jstr(k.get("header"))}, {jstr(k.get("text"))}, '
+                      f'"{"DateCell" if is_date(k.get("text")) else "TextCell"}")' for k in keys)
     return getter.replace(ROW_SELECT, f".getFirstRow(){pages}{filters}.select()", 1)
 
 
@@ -215,9 +221,29 @@ def resolve(cssids_dir: str, app, action: dict) -> dict:
         if pin and ".withCssId(" in result["getter"]:
             result["warning"] = PINNED
         return result
-    result = menu or resolve_fallback(cssids_dir, app, action)
+    result = menu or without_suffix(cssids_dir, app, action) or resolve_fallback(cssids_dir, app, action)
     result["getter"] = with_row(result["getter"], action)
     return result
+
+
+# parts of a live id the generated getter's id doesn't have: a cell, a button or link inside the
+# widget, a calendar icon, a radio option
+ID_SUFFIX = re.compile(r"_(Cell|button|link|dateIcon|\d+)$")
+
+
+def without_suffix(cssids_dir: str, app: str, action: dict):
+    """The getter of the widget a suffixed id is part of ('…-Number_button' -> getNumber(), never
+    getNumber_button()), when cssids has an exact key for the id without the suffix."""
+    widget_id = action.get("widgetId") or ""
+    stripped = ID_SUFFIX.sub("", widget_id)
+    if stripped == widget_id:
+        return None
+    resolution, getters, differs = lookup_keyed(cssids_dir, app, stripped)
+    if resolution != "resolved":
+        return None
+    getter, changed = unbracket(getters[0])
+    return {"resolution": "rule", "rule": "suffix", "stripped": widget_id[len(stripped):],
+            "getter": pinned(getter, stripped) if differs or changed else getter}
 
 
 # Recorder widget kind -> CenterTest widget class for the raw Widget<Type>.get(id, getContext()) form
@@ -369,11 +395,16 @@ def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
         resolution, getters = lookup(cssids_dir, app, join_id(parts[:-2], seps[:-2]))
         if resolution == "resolved" and getters[0].endswith(ROW_SELECT):
             column = parts[-1]
-            # the live id of a cell ends in _Cell; the generated row getter does not (Description_Cell -> getDescription)
-            name = column[:-len("_Cell")] if column.endswith("_Cell") else column
+            # the live id of a cell ends in _Cell, a button in it in _button; the generated row getter has
+            # neither (Description_Cell -> getDescription, Number_button -> getNumber)
+            name = ID_SUFFIX.sub("", column)
             getter = ROW_COLUMNS.get(column, f"get{cap(name)}")
-            return {"resolution": "rule", "rule": "rowColumn", "column": column,
-                    "getter": f"{getters[0]}.{getter}()"}
+            result = {"resolution": "rule", "rule": "rowColumn", "column": column,
+                      "getter": f"{getters[0]}.{getter}()"}
+            if column not in ROW_COLUMNS:
+                result["warning"] = (f"no cssids key for column {name}: {getter}() is built from the id; "
+                                     "check the row class has it before writing it")
+            return result
 
     widget = RAW_WIDGET.get(kind) or RAW_INPUT.get(action.get("inputType")) or "WidgetLabel"
     if widget == "WidgetBooleanRadioInput" and str(action.get("value")).lower() not in BOOLEAN_VALUES:
@@ -552,6 +583,7 @@ WIDGET_PACKAGE = "com.ankrpt.centertest.guidewire.widget."
 def imports_for(text: str, widget) -> set:
     """Framework classes a Java fragment uses; page-object imports are left to the skill."""
     found = {fqn for name, fqn in FRAMEWORK_CLASSES.items() if re.search(rf"\b{name}\.", text)}
+    found |= {WIDGET_PACKAGE + name for name in re.findall(r"\b(Widget\w+)\.get\(", text)}
     if widget:
         found.add(WIDGET_PACKAGE + widget)
     return found
@@ -623,6 +655,32 @@ def radio_widget(action: dict) -> dict:
     return dict(action, widgetId=RADIO_OPTION.sub("", widget_id), radioOption=widget_id)
 
 
+def row_radio(item: dict, action: dict) -> None:
+    """A radio in a list row: the cell's set() doesn't take (WidgetBooleanRadioCell.set fails with WI-005,
+    WidgetBooleanRadioInput.set leaves it unchanged), so the recorded option is clicked, and a Yes/No
+    radio is then checked through getBoolean()."""
+    option, widget_id, value = action["radioOption"], item["widgetId"], str(action.get("value")).lower()
+    item.update(resolution="rule", rule="rowRadio", widget="WidgetButton", java=".click()",
+                getter=f"WidgetButton.get({jstr(option)}, getContext())")
+    item.pop("candidates", None)
+    if value in BOOLEAN_VALUES:
+        shown = action.get("display") or ("Yes" if value == "true" else "No")
+        item["then"] = described(f"{item['label']} is {shown}",
+                                 f"Assertions.assertThat(WidgetBooleanRadioInput.get({jstr(widget_id)}, getContext())"
+                                 f".getBoolean()).isEqualTo({value})", soft=False)
+    warn(item, "a radio in a list row: its cell's set() doesn't take, so the recorded option is clicked"
+               + (" and then checked (then)" if "then" in item else ""))
+
+
+def closest_date(item: dict, action: dict) -> None:
+    """The transaction dates set or posted before this date, and the recorded date's relation to them."""
+    if action.get("transactionDates"):
+        item["transactionDates"] = action["transactionDates"]
+    if action.get("dateRelations"):
+        item["dateRelations"] = action["dateRelations"]
+        warn(item, f"closest: {action['dateRelations'][0]['text']}")
+
+
 def translate(cssids_dir: str, app, action: dict) -> dict:
     """One recorded action or check as plan data with its Java fragment."""
     action = radio_widget(action)
@@ -651,7 +709,11 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
     elif coverage and item.get("soft"):
         item["getter"] = None  # a soft coverage check is a whole statement already
     if action.get("type") == "check":
+        if action.get("newRow"):
+            item["newRow"] = True
         return item
+    if action.get("radioOption") and positional_index(widget_id) and item["java"]:
+        row_radio(item, action)
     if item.get("column") == "_Checkbox" and item["java"]:
         item["java"] = ".click()"  # the project ticks a list row with get_CHECKBOX().click()
     if action.get("type") == "change" and action.get("value") != REDACTED:
@@ -662,10 +724,14 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         item["key"] = action["key"]
     if (action.get("row") or 0) > 1 and not action.get("rowKey") and ".getFirstRow()" in (item.get("getter") or ""):
         item["warning"] = f"row {action['row']} picked by position; getFirstRow() selects the first row"
+    if action.get("newRow"):
+        item["newRow"] = action["newRow"]
     if BLOCKER_ID.search(widget_id or ""):
         item["blocker"] = True
         warn(item, "handles a UW issue / approval screen: use the project's blocker helper (plan.blockers) "
                    "instead of raw clicks")
+    elif action.get("newRow"):
+        pass  # the row this recording added: getLastRow(), no data question
     elif action.get("rowKey"):
         item["dependsOnData"] = True
         filters = ", ".join(f'{k.get("header")} = {k.get("text")}' for k in action["rowKey"])
@@ -674,7 +740,7 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
                    "whether to filter by the test's own data")
         if dates:
             warn(item, f"{', '.join(dates)} is a date literal: make it relative or drop that filter")
-    elif item.get("resolution") in ("raw", "partial") and positional_index(widget_id):
+    elif (item.get("resolution") in ("raw", "partial") or item.get("rule") == "rowRadio") and positional_index(widget_id):
         item["dependsOnData"] = True
         warn(item, f"picks entry {positional_index(widget_id)} of a list or iterator by its position "
                    "(e.g. an existing or unassigned contact): it only works if the account or policy "
@@ -683,6 +749,7 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         item.update(typedDate=True, postedDates=action.get("postedDates") or {})
         warn(item, "date typed: write it relative to today or to the policy's effective/change date "
                    "(e.g. date of birth = effective date - 30 years) unless the test needs this day; ask")
+        closest_date(item, action)
     identity = None if action.get("unique") else identity_value(item["label"], item.get("value"))
     if identity:
         item["uniqueSuggested"] = identity
@@ -696,6 +763,7 @@ def translate(cssids_dir: str, app, action: dict) -> dict:
         if item["postedDates"]:
             dates = ", ".join(f"{name} = {value}" for name, value in item["postedDates"].items())
             item["warning"] += f"; dates also posted: {dates}. Ask how the recorded date relates to them"
+        closest_date(item, action)
     if action.get("part") == "expand":
         item["java"] = None
         item["warning"] = ("expand click not translated: the next menu getter opens it (TabBar.get<Tab>() "
@@ -825,7 +893,7 @@ class FieldValues(html.parser.HTMLParser):
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.parts, self.labels, self.stack = {}, {}, []
+        self.parts, self.labels, self.stack, self.text, self.groups = {}, {}, [], [], {}
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -835,6 +903,8 @@ class FieldValues(html.parser.HTMLParser):
         if element_id and "gw-ValueWidget" in classes and not any("HeaderCell" in c for c in classes):
             ctx.update(value=element_id, skip=False, notext=False)
             self.parts.setdefault(element_id, [])
+        if element_id and element_id.endswith("CovPatternInputGroup") and a.get("aria-label"):
+            self.groups[element_id] = a["aria-label"]  # the coverage's title
         if element_id and element_id.endswith("_Input"):
             ctx["input"] = element_id[:-len("_Input")]
         if "gw-label" in classes and ctx["input"] and not ctx["value"]:
@@ -865,6 +935,7 @@ class FieldValues(html.parser.HTMLParser):
             self.stack.pop()
 
     def handle_data(self, data):
+        self.text.append(data)
         ctx = self.stack[-1] if self.stack else None
         if not ctx:
             return
@@ -887,19 +958,27 @@ def posted_fields(step: dict) -> dict:
     return fields
 
 
-def snapshot(step: dict, read_file) -> tuple:
-    """(values, labels) a step shows: its DOM snapshot's value widgets over the fields it posted
-    (a posted select value is a code; the snapshot has the text shown)."""
-    values = {k: str(v) for k, v in posted_fields(step).items() if v not in (None, "") and k != "QuickJump"}
-    labels = {}
+def snapshot(step: dict, read_file) -> dict:
+    """What a step shows: its DOM snapshot's value widgets over the fields it posted (a posted select value
+    is a code; the snapshot has the text shown), the labels, the coverage titles (groups) and the page text."""
+    found = {"values": {k: str(v) for k, v in posted_fields(step).items() if v not in (None, "") and k != "QuickJump"},
+             "labels": {}, "groups": {}, "text": None}
     dom = step.get("dom")
-    text = read_file(dom) if dom and read_file else None
-    if text:
+    html_text = read_file(dom) if dom and read_file else None
+    if html_text:
         reader = FieldValues()
-        reader.feed(text)
-        values.update({k: v for k, v in reader.values().items() if v})
-        labels = {k: " ".join(v.split()) for k, v in reader.labels.items() if v.strip()}
-    return values, labels
+        reader.feed(html_text)
+        found["values"].update({k: v for k, v in reader.values().items() if v})
+        found["labels"] = {k: " ".join(v.split()) for k, v in reader.labels.items() if v.strip()}
+        found["groups"] = reader.groups
+        found["text"] = " ".join("".join(reader.text).split())
+    return found
+
+
+def coverage_of(widget_id: str, groups: dict):
+    """The title of the coverage a widget is in ('…-CovPatternInputGroup-…'), or None."""
+    return next((title for group, title in groups.items()
+                 if widget_id.startswith(group) and widget_id[len(group):len(group) + 1] in ("-", ":")), None)
 
 
 ASKS_CHECK = re.compile(r"\b(verify|verified|confirm|ensure|check|make sure|validate|assert)\b", re.I)
@@ -941,15 +1020,33 @@ def field_words(widget_id: str, label: str) -> str:
     return " ".join(words).lower()
 
 
+AMOUNT_FIELD = re.compile(r"Premium|TotalCost|Cost$|Surcharge|Discount|Modifier", re.I)
+SCREEN_AMOUNTS = 10
+
+
+def note_field_java(widget_id: str, label: str, coverage, value: str) -> str:
+    """The check on a field's last value: on coverageUtil for a coverage (a whole statement), else the call on
+    the field's getter."""
+    if not coverage:
+        return f".assertEquals({jstr(value)})"
+    if widget_id.endswith("_checkbox"):
+        return f"Assertions.assertThat(coverageUtil.isSelected({jstr(coverage)})).isEqualTo({value == 'true'});"
+    return f"coverageUtil.assertEquals({jstr(coverage)}, {jstr(label)}, {jstr(value)});"
+
+
 def note_checks(plan: dict, snapshots: list) -> list:
-    """For each note that asks for a check (verify, confirm, ensure…), the fields whose id or label has the
+    """For each note that asks for a check (verify, confirm, ensure…), the fields whose label or id has the
     note's words, with the values the recording shows for them, in order (before → after), the last step
-    that showed them (lastSeq) and an assertion on the last value. Best matches first, then changed
-    fields, then fields still shown at the note's step."""
+    that showed them (lastSeq) and a check on the last value (on coverageUtil for a coverage term, with its
+    coverage title). Changed fields matched by their label come first, id-only matches last. The note's
+    screen comes with it: which words it shows (a "no surcharge" note on a screen without the word
+    surcharge is a question) and its premium / cost / surcharge amounts."""
     found = []
-    labels = {}
-    for _, step_labels in snapshots:
-        labels.update(step_labels)
+    labels, groups = {}, {}
+    for shot in snapshots:
+        labels.update(shot["labels"])
+        groups.update(shot["groups"])
+    seqs = [entry["seq"] for entry in plan["steps"]]
     for note in plan["notes"]:
         if not note.get("asksCheck"):
             continue
@@ -958,26 +1055,42 @@ def note_checks(plan: dict, snapshots: list) -> list:
         if not specific:
             continue
         observed, last_seen = {}, {}
-        for entry, (values, _) in zip(plan["steps"], snapshots):
-            for widget_id, value in values.items():
+        for entry, shot in zip(plan["steps"], snapshots):
+            for widget_id, value in shot["values"].items():
                 observed.setdefault(widget_id, [])
                 last_seen[widget_id] = entry["seq"]
                 if not observed[widget_id] or observed[widget_id][-1]["value"] != value:
                     observed[widget_id].append({"seq": entry["seq"], "value": value})
         fields = []
         for widget_id, seen in observed.items():
-            words = field_words(widget_id, labels.get(widget_id, ""))
-            matched = [s for s in stems if s in words]
+            label = labels.get(widget_id) or item_label({"widgetId": widget_id})
+            coverage = coverage_of(widget_id, groups)
+            if coverage and widget_id.endswith("_checkbox"):
+                label = coverage
+            by_label = [s for s in stems if s in f"{coverage or ''} {labels.get(widget_id, '')}".lower()]
+            matched = list(dict.fromkeys(by_label + [s for s in stems if s in field_words(widget_id, "")]))
             if not any(s in specific for s in matched):
                 continue
-            last = seen[-1]["value"]
-            fields.append({"widgetId": widget_id, "label": labels.get(widget_id) or item_label({"widgetId": widget_id}),
-                           "matched": matched, "values": seen, "changed": len(seen) > 1,
-                           "lastSeq": last_seen[widget_id], "java": f".assertEquals({jstr(last)})"})
+            field = {"widgetId": widget_id, "label": label, "matched": matched,
+                     "byLabel": any(s in specific for s in by_label), "values": seen, "changed": len(seen) > 1,
+                     "lastSeq": last_seen[widget_id],
+                     "java": note_field_java(widget_id, label, coverage, seen[-1]["value"])}
+            if coverage:
+                field["coverage"] = {"coverage": coverage, "covterm": None if widget_id.endswith("_checkbox") else label}
+            fields.append(field)
         at_note = note["seq"] or 0
-        fields.sort(key=lambda f: (-len(f["matched"]), not f["changed"], f["lastSeq"] < at_note, f["widgetId"]))
-        found.append({"seq": note["seq"], "text": note["text"], "words": specific,
-                      "fields": fields[:NOTE_FIELD_LIMIT], "more": max(0, len(fields) - NOTE_FIELD_LIMIT)})
+        fields.sort(key=lambda f: (not (f["changed"] and f["byLabel"]), not f["byLabel"], not f["changed"],
+                                   -len(f["matched"]), f["lastSeq"] < at_note, f["widgetId"]))
+        result = {"seq": note["seq"], "text": note["text"], "words": specific,
+                  "fields": fields[:NOTE_FIELD_LIMIT], "more": max(0, len(fields) - NOTE_FIELD_LIMIT)}
+        shot = snapshots[seqs.index(note["seq"])] if note["seq"] in seqs else None
+        if shot and shot["text"] is not None:
+            text = shot["text"].lower()
+            amounts = [{"widgetId": w, "label": labels.get(w) or item_label({"widgetId": w}), "value": v}
+                       for w, v in shot["values"].items() if AMOUNT_FIELD.search(split_id(w)[0][-1])]
+            result["screen"] = {"seq": note["seq"], "shows": {s: s in text for s in specific},
+                                "amounts": amounts[:SCREEN_AMOUNTS]}
+        found.append(result)
     return found
 
 
@@ -1099,6 +1212,135 @@ def fold_openers(steps_actions: list) -> None:
         actions[:] = [a for k, a in enumerate(actions) if (n, k) not in drop]
 
 
+ADD_CLICK = re.compile(r"^add\b", re.I)
+
+
+def row_table(widget_id: str):
+    """(id prefix, table segment, row index position) of a list-row id ('…-ConvictionsDV-0-Col'), or None."""
+    parts, _ = split_id(widget_id or "")
+    position = next((i for i in range(2, len(parts) - 1) if parts[i].isdigit()), None)
+    return (parts[:position - 1], parts[position - 1], position) if position else None
+
+
+def adds_to(click: dict, table, row_id: str) -> bool:
+    """Whether a click is the Add of that table: an Add (by label or id) whose id starts with the
+    table's container and whose next segment is the table or its toolbar (ConvictionsDV, ConvictionsLV_tb).
+    An Add menu the row is inside ('…-AddDriver-AddExistingContact-0-UnassignedDriver') lists existing
+    contacts: picking one of its entries is not a new row."""
+    prefix, segment, _ = table
+    click_id = click.get("widgetId") or ""
+    if re.match(re.escape(click_id) + r"[-:]", row_id):
+        return False
+    parts, _ = split_id(click_id)
+    label = click.get("text") or click.get("label") or ""
+    stem = re.sub(r"_?(LV|DV)$", "", segment)
+    return bool(click.get("type") == "click" and (ADD_CLICK.match(label.strip()) or parts[-1].startswith("Add"))
+                and len(parts) > len(prefix) and parts[:len(prefix)] == prefix
+                and parts[len(prefix)].startswith(stem))
+
+
+def mark_new_rows(steps_actions: list) -> None:
+    """A row item of a table the recording clicked Add on earlier is that new row (newRow), not the
+    account's data: getLastRow() selects it. Edits the lists in place."""
+    adds = []
+    for actions in steps_actions:
+        for k, action in enumerate(actions):
+            table = row_table(action.get("widgetId"))
+            if table and any(adds_to(add, table, action["widgetId"]) for add in adds):
+                actions[k] = dict(action, newRow=True)
+            if action.get("type") == "click":
+                adds.append(action)
+
+
+TRANSACTION_DATE = re.compile(r"Effective|EffDate|PeriodStart|ChangeDate|Cancel\w*Date|Reinstat\w*Date|RenewalDate",
+                              re.I)
+
+
+def parse_date(value):
+    """A recorded MM/DD/YYYY (or MM/DD/YY) date, else None."""
+    if not is_date(value):
+        return None
+    month, day, year = (int(p) for p in value.strip().split("/"))
+    try:
+        return datetime.date(year + 2000 if year < 100 else year, month, day)
+    except ValueError:
+        return None
+
+
+def date_name(field: str) -> str:
+    """'…-StartPolicyChangeDV-EffectiveDate' -> 'EffectiveDate', 'PolicyPeriodEffDateID_Arg' -> 'PolicyPeriodEffDateID'."""
+    return re.sub(r"_Arg$", "", split_id(field)[0][-1])
+
+
+def relation(day, anchor, name: str) -> str:
+    """'EffectiveDate + 1 day', 'EffectiveDate - 35 years' (same day and month), else days (≈ years)."""
+    days = (day - anchor).days
+    if days == 0:
+        return f"= {name}"
+    sign = "+" if days > 0 else "-"
+    if (day.month, day.day) == (anchor.month, anchor.day):
+        years = abs(day.year - anchor.year)
+        return f"{name} {sign} {years} year{'s' if years != 1 else ''}"
+    about = f" (≈ {round(abs(days) / 365.25)} years)" if abs(days) >= 365 else ""
+    return f"{name} {sign} {abs(days)} day{'s' if abs(days) != 1 else ''}{about}"
+
+
+def date_relations(value: str, anchors: list) -> list:
+    """The recorded date against each anchor (transaction dates first, then the other posted dates, then
+    the day it was recorded), closest first within each kind."""
+    day = parse_date(value)
+    found = []
+    for kind in ("transaction", "posted", "recorded on"):
+        same = []
+        for name, anchor_value, seq in [(n, v, s) for k, n, v, s in anchors if k == kind]:
+            anchor = parse_date(anchor_value)
+            if day and anchor:
+                same.append({"anchor": name, "value": anchor_value, "seq": seq, "days": (day - anchor).days,
+                             "text": relation(day, anchor, "today" if kind == "recorded on" else name)})
+        found += sorted(same, key=lambda r: abs(r["days"]))
+    return found
+
+
+def with_transaction_dates(recorded_steps: list, steps_actions: list, recorded_on) -> list:
+    """The transaction's own dates (a policy change's effective date, the period's start), whether the
+    analyst set them or kept the default the step posted. Every later date action gets them
+    (transactionDates) and its relations to them, its posted dates and the recording day
+    (dateRelations): a conviction must fall after the change date, not just before today. Edits the
+    lists in place; returns the dates as [{field, name, value, seq, source}]."""
+    known = {}
+    for step, actions in zip(recorded_steps, steps_actions):
+        seq = step.get("seq")
+        for k, action in enumerate(actions):
+            if action.get("type") != "change" or not is_date(action.get("value")):
+                continue
+            field = action.get("widgetId")
+            dates = [d for f, d in known.items() if f != field]
+            anchors = ([("transaction", d["name"], d["value"], d["seq"]) for d in dates]
+                       + [("posted", date_name(n), v, seq) for n, v in (action.get("postedDates") or {}).items()
+                          if n not in known]
+                       + ([("recorded on", "today", recorded_on.strftime("%m/%d/%Y"), None)] if recorded_on else []))
+            actions[k] = dict(action, transactionDates={d["name"]: d["value"] for d in dates},
+                              dateRelations=date_relations(action["value"], anchors))
+        for action in actions:
+            field = action.get("widgetId") or ""
+            if action.get("type") == "change" and is_date(action.get("value")) and TRANSACTION_DATE.search(field):
+                known[field] = {"field": field, "name": date_name(field), "value": action["value"], "seq": seq,
+                                "source": "set"}
+        for field, value in posted_fields(step).items():
+            if is_date(value) and TRANSACTION_DATE.search(field) and field not in known:
+                known[field] = {"field": field, "name": date_name(field), "value": value, "seq": seq,
+                                "source": "posted"}
+    return list(known.values())
+
+
+def recording_day(session: dict):
+    """The day the recording was made (its startedAt), for relations to "today"."""
+    try:
+        return datetime.date.fromisoformat((session.get("startedAt") or "")[:10])
+    except ValueError:
+        return None
+
+
 BLOCKER_ID =re.compile(r"UWBlockProgress|RiskEvaluation|UWIssue|RiskApproval|SpecialApprove")
 BLOCKER_TEXT = re.compile(r"issues? that block|risk approval|uw issue|underwriter|approval required|"
                           r"facility|rsp pool", re.I)
@@ -1110,9 +1352,33 @@ def step_pages(entry: dict) -> list:
     return sorted({p for p in pages if p and p != "_misc"})
 
 
-def helpers_for(entry: dict, screen_helpers: dict) -> list:
-    """The project's methods that wait for this step's title or open one of its pages."""
+HELPER_LIMIT = 6
+
+
+def id_tail(widget_id: str):
+    """The two segments that name a list's container ('…-PAClaimsInfo-ClaimsInfo_ICLV-0-Col' ->
+    'PAClaimsInfo-ClaimsInfo_ICLV'), the same in every wizard that shows the list; None for other ids."""
+    table = row_table(widget_id)
+    if not table or len(table[0]) < 1:
+        return None
+    parts, seps = split_id(widget_id)
+    position = table[2]
+    return join_id(parts[position - 2:position], seps[position - 2:position - 1])
+
+
+def helpers_for(entry: dict, screen_helpers: dict, plan_bases=()) -> list:
+    """The project's methods that use this step's lists (an id literal with the same container, from any
+    wizard), wait for its title or open one of its pages. Methods of the transaction's base come first;
+    the rest is cut at HELPER_LIMIT (helpersMore counts them)."""
     found = {}
+    for item in entry["actions"] + entry["checks"]:
+        tail = id_tail(item.get("widgetId"))
+        for literal, refs in (screen_helpers.get("ids") or {}).items() if tail else []:
+            if tail in literal:
+                page = split_id(literal)[0][0]
+                other = f" (written for {page}: reuse or generalise?)" if page not in entry["pages"] else ""
+                for ref in refs:
+                    found.setdefault(ref, f"id …{tail}{other}")
     title = entry.get("title") or ""
     for key, refs in (screen_helpers.get("titles") or {}).items():
         stem = key.rstrip(": ").strip()
@@ -1122,7 +1388,11 @@ def helpers_for(entry: dict, screen_helpers: dict) -> list:
     for page in entry["pages"]:
         for ref in (screen_helpers.get("pages") or {}).get(page, []):
             found.setdefault(ref, f"page {page}")
-    return [{"method": ref, "matched": why} for ref, why in found.items()]
+    ranked = sorted(found.items(), key=lambda kv: (kv[0].split(".")[0] not in plan_bases,
+                                                   not kv[1].startswith("id ")))
+    if len(ranked) > HELPER_LIMIT:
+        entry["helpersMore"] = len(ranked) - HELPER_LIMIT
+    return [{"method": ref, "matched": why} for ref, why in ranked[:HELPER_LIMIT]]
 
 
 def blockers(steps: list) -> list:
@@ -1228,13 +1498,15 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         # recordings before 1.1 kept notes on the session; 1.1 keeps them on the steps only
         "notes": [note_entry(None, n.get("text", "")) for n in session.get("notes") or []],
         "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "navigation": [], "noteChecks": [],
-        "imports": [],
+        "transactionDates": [], "imports": [],
     }
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
     steps_actions = [with_picked_dates([a for a in s.get("actions") or [] if not a.get("removed")], s)
                      for s in recorded_steps]
     fold_openers(steps_actions)
+    mark_new_rows(steps_actions)
+    plan["transactionDates"] = with_transaction_dates(recorded_steps, steps_actions, recording_day(session))
     imports, uniques, previous_app, reviewed, kept_steps = set(), {}, None, [], []
     for recorded_step, recorded in zip(recorded_steps, steps_actions):
         dom = recorded_step.get("dom")
@@ -1280,8 +1552,11 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         plan["steps"].append(entry)
         kept_steps.append(recorded_step)
     analyse(plan, kept_steps, read_file, project or {})
+    if plan.get("outcomeMismatch"):
+        plan["review"].append({"seq": None, "label": "Expected outcome", "widgetId": None, "resolution": "rule",
+                               "rule": "outcome", "reason": plan["outcomeMismatch"]["reason"]})
     for seq, translated in reviewed:
-        imports |= imports_for((translated.get("getter") or "") + (translated.get("java") or ""),
+        imports |= imports_for(" ".join(translated.get(k) or "" for k in ("getter", "java", "then", "cellById")),
                                translated.get("widget"))
         if translated.get("rule") == "coverage":
             imports.add(COVERAGE_UTIL)
@@ -1312,8 +1587,12 @@ def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
     bases = (project.get("transactionBases") or {}).get("value") or []
     for entry in plan["steps"]:
         entry["pages"] = step_pages(entry)
+    pages = {page for entry in plan["steps"] for page in entry["pages"]}
+    plan_bases = {base["class"] for base in bases
+                  if any(field.split()[0][:-len("Page")] in pages for field in base.get("wizardFields") or [])}
+    for entry in plan["steps"]:
         if screen_helpers:
-            entry["helpers"] = helpers_for(entry, screen_helpers)
+            entry["helpers"] = helpers_for(entry, screen_helpers, plan_bases)
         for item in entry["actions"]:
             if item.get("wizardAction"):
                 base_methods(item, bases)
@@ -1327,16 +1606,77 @@ def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
             cache[index] = snapshot(recorded_steps[index], read_file)
         return cache[index]
 
-    entered = []
+    entered, issued = [], False
     for index, entry in enumerate(plan["steps"]):
         entered += [str(a.get("value")) for a in entry["actions"]
                     if a["type"] == "change" and isinstance(a.get("value"), str) and a.get("value") != REDACTED]
+        issued = issued or any(issues(a) for a in entry["actions"])
         for item in entry["checks"]:
             check = item.pop("recordedCheck")
             if check.get("assert") in WEAK_CHECKS and item.get("widgetId"):
-                stronger_check(item, check, snapshot_of(index)[0], entered)
+                stronger_check(item, check, snapshot_of(index)["values"], entered)
+            if issued and row_table(item.get("widgetId")) and item.get("getter") and item["java"]:
+                bound_row(item)
     if any(n.get("asksCheck") for n in plan["notes"]):
         plan["noteChecks"] = note_checks(plan, [snapshot_of(i) for i in range(len(plan["steps"]))])
+    outcome_mismatch(plan)
+    starts_logged_in = bool(plan["steps"]) and plan["steps"][0]["login"]
+    if read_file and plan["steps"] and not starts_logged_in:
+        plan["startValues"] = start_values(plan, [snapshot_of(i) for i in range(len(plan["steps"]))])
+
+
+ISSUE_LABEL = re.compile(r"^(issue policy|issue now|issue|bind only|bind policy change)$", re.I)
+
+
+def issues(action: dict) -> bool:
+    """A click that issues or binds the transaction."""
+    return action["type"] == "click" and (action.get("wizardAction") == "issue"
+                                          or bool(ISSUE_LABEL.match(action["label"].strip())))
+
+
+def bound_row(item: dict) -> None:
+    """A check on a list row after the transaction was issued, i.e. on the reopened, read-only job:
+    there the row API returned only the header row, while the cell read by its id worked."""
+    item["cellById"] = f"WidgetLabel.get({jstr(item['widgetId'])}, getContext())"
+    warn(item, f"a row of a bound, read-only job: getFirstRow() / getRows() may return only the header "
+               f"row there; read the cell by its id ({item['cellById']}{item['java']})")
+
+
+OUTCOME_BINDS = re.compile(r"\b(bind|binds|bound|issue|issued)\b", re.I)
+
+
+def outcome_mismatch(plan: dict) -> None:
+    """The expected outcome mentions more binds / issues than the recording makes (e.g. "an increase
+    bound, then a decrease bound" against one change with both): a question for the gate."""
+    mentioned = len(OUTCOME_BINDS.findall(plan["test"].get("expectedOutcome") or ""))
+    refused_seqs = {r["seq"] for r in plan["retries"] if r["kind"] == "refused"}
+    made = [entry["seq"] for entry in plan["steps"] if entry["seq"] not in refused_seqs
+            and any(issues(a) for a in entry["actions"])]
+    if mentioned > len(made):
+        plan["outcomeMismatch"] = {
+            "mentioned": mentioned, "recorded": len(made), "issueSeqs": made,
+            "reason": f"the expected outcome mentions {mentioned} binds / issues, the recording makes {len(made)}"
+                      f"{' (seq ' + ', '.join(map(str, made)) + ')' if made else ''}: ask whether the test "
+                      "follows the recording or the expected outcome"}
+
+
+START_VALUES = 40
+
+
+def start_values(plan: dict, snapshots: list) -> list:
+    """The coverages as the recording first shows them, before it changes them: the state the policy was
+    in when the recording started. Compared with the folder's recorded steps' end state, it shows which
+    step this recording continues ("chain after X")."""
+    groups, found = {}, {}
+    for shot in snapshots:
+        groups.update(shot["groups"])
+    for entry, shot in zip(plan["steps"], snapshots):
+        for widget_id, value in shot["values"].items():
+            coverage = coverage_of(widget_id, groups)
+            if coverage and widget_id not in found:
+                term = None if widget_id.endswith("_checkbox") else (shot["labels"].get(widget_id) or "")
+                found[widget_id] = {"coverage": coverage, "covterm": term, "value": value, "seq": entry["seq"]}
+    return list(found.values())[:START_VALUES]
 
 
 def main(argv=None) -> int:

@@ -83,6 +83,16 @@ in each method. `coverageUtil` is held the same way.
   `102` → `105`), and an assertion is proposed from them.
 - **Stronger checks**: a recorded "is visible" check on a field that shows a value gets a value check
   instead (contains the address just entered).
+- **Dates against the transaction**: every date is related to the transaction's own dates first
+  (a conviction picked after a policy change is "change date + 1 day"), also when the analyst kept
+  the default change date, then to the other posted dates and to the recording day.
+- **Notes about coverages and amounts**: coverage fields are checked through `CoverageUtil` with their
+  coverage title, and the note's screen is summarised (does it show "surcharge" at all? what did the
+  premium do?) so a "no surcharge" note becomes a clear question.
+- **Where the test starts**: when the recording continues where one of the folder's recorded steps
+  ends (same coverages), "chain after that step" is offered, with the base's return helper when that
+  step ends elsewhere.
+- **Expected outcome against the recording**: two binds described, one recorded, is a question.
 - **Conditional notes** ("If there's an error…, override") are listed so you choose: always, or only
   when the condition holds.
 - **Navigation**: Next clicks that pass screens without changing anything can become the project's
@@ -98,7 +108,10 @@ in each method. `coverageUtil` is held the same way.
 Menu items are picked by their label on the menu button (`getAddDriver().get("New Person")`), and a
 click that only opened the menu is dropped. A picker's menu (its menu icon, then an item such as
 "New Location") becomes `WidgetMenuItem.get("<…MenuIcon>", getContext()).get("New Location")`. A radio
-button is set on its widget's getter (`…_IC`, not the option's `…_IC_0`). Quote / Issue in a wizard's
+button is set on its widget's getter (`…_IC`, not the option's `…_IC_0`); a radio in a list row is
+clicked on the recorded option and then checked, because the row cell's `set()` doesn't take. A row of
+a table the recording added to is its last row (`getLastRow()`), not existing data. Helpers written
+for the same list in another wizard (e.g. a submission's `addLossClaim`) are offered for reuse. Quote / Issue in a wizard's
 toolbar become `getWizardButtons().getQuote()` / `getIssuePolicy()`, or the transaction base's own
 quote and issue methods.
 
