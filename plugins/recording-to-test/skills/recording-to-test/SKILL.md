@@ -31,7 +31,7 @@ the user approves.
   (`Widget<Type>.get("<id>", getContext())`), search the steps root for a helper already used for
   that kind of widget, and use it: `CoverageUtil` for coverages, `WidgetToolbarButtonWithMenu` for
   toolbar menus, and so on. Write a value in the format the project's DDT data uses (e.g. `2000000`,
-  not `$2,000,000`): look at how existing steps set the same field.
+  not the formatted amount with a currency sign and commas): look at how existing steps set the same field.
 - **A value derived from data must match the recorded one.** When you replace a recorded literal
   with a value read from `Helper` data or the screen (a date, a policy or account number), check
   which record or term it comes from and compare it with the value in the recording. After a
@@ -100,6 +100,15 @@ More item fields:
   menu, which the parser dropped because the getter opens it. When the item stays `raw`, the opener
   stays as a raw click. A picker's menu (a `…MenuIcon` click, then the item) is written
   `WidgetMenuItem.get("<…MenuIcon>", getContext()).get("New Location")`, even across a step boundary.
+  An entry picked by its index (`…-AddDriver-0-Driver`, `…-AddExistingContact-0-UnassignedDriver`) is
+  picked by its recorded name on the nearest button with a getter, through the submenus the recording
+  clicked: `getAddDriver().withCssId("…").get("Existing Driver").get("John Smith")`. `label` is the
+  entry's text ("John Smith"); `text` keeps the recorded text when the label differs. `submenus` lists
+  submenus whose label wasn't recorded (hover-only, e.g. `vehicleType_IC` for "Personal"), and
+  `menuSearch` the id segments to grep the steps root for (`CreateVehicleButton_IC`): copy how the
+  project picks from that menu (`.get("Personal").get("Private Passenger Vehicles (PPV)")`). An entry of
+  a menu of the account's or policy's records (drivers, contacts) has `dependsOnData`; a menu of fixed
+  options (vehicle types) doesn't.
 - `radioOption`: a radio button recorded on its option's input (`…_IC_0`); `widgetId` and the getter
   are the widget without the suffix, and a Yes/No radio is set with `.set("true")` / `.set("false")`.
 - `rule: "wizardButton"` with `wizardAction: "quote" | "issue"`: Quote / Issue Policy in a wizard
@@ -107,6 +116,13 @@ More item fields:
   to `getWizardButtons().getQuote()` / `getIssuePolicy()`. With `--project`, `baseMethods` names the
   transaction base's own methods that click that button (e.g. `AbstractPolicyChange.quoteStep`).
 - `navigationOnly: true`: a Next that was the only action on its screen (see `navigation`).
+- `verifyOnly: true`: an action on the screens at the end of the recording that change nothing
+  (reopening the bound job, its vehicle and coverages, only to look; `plan.verifyOnly` lists their
+  seqs). They are candidates for final checks, not steps to replay; their row picks aren't data
+  questions unless you keep them (then the recorded filters, like a close date, need one).
+- `idiom`: the parser wrote this the project's way (`scan: idioms`): `getNextV9()` when the project's
+  steps call it rather than `getNext()`, and coverage amounts as plain numbers (`2000000`) when its
+  `setCoverage` calls use them.
 - `valueSuggested: {java, shown}` (on a check): a recorded "is visible" / "not empty" check, which
   always passes, on a field that shows a value. `java` checks the value instead: it contains the
   longest value entered earlier that it shows (the address just added), else it equals `shown`.
@@ -148,8 +164,12 @@ More item fields:
 Each step also has `pages` (its screen and its items' pages). With `--project` it has `helpers`: the
 project's methods that use one of its lists (an id literal with the same container, from any wizard:
 `matched: "id …PAClaimsInfo-ClaimsInfo_ICLV (written for SubmissionWizard: reuse or generalise?)"`),
-wait for its title or open one of its pages (`{method, matched}`). Methods of the transaction's base
-come first; `helpersMore` counts the ones cut.
+wait for its title or open one of its pages (`{method, matched}`). They are ranked: a list's id or a
+specific page (a popup such as `UWBlockProgressIssuesPopup`) before a title, before the wizard page every
+step of the transaction opens; on a blocker screen, methods named for it (`…SpecialApproval`, `…UW…`)
+first; the transaction base breaks ties. `helpersMore` counts the ones cut. `screens` lists the
+screens the step's actions were on (`StartPolicyChangeScreen`, `PolicyInfoScreen`, `dialog`): one
+recorded step can span several screens, a confirm dialog and a new job under one title.
 `blockers` (top level) lists the steps on a UW-issue or approval screen, found by title, page,
 message ("placed in the facility (RSP) pool") or item, each with its `helpers`.
 
@@ -164,7 +184,7 @@ whose label or id has them. Each field has the values the recording shows, in or
 matched, not only its id), `lastSeq` (the last step that showed it) and `java` (`.assertEquals` on
 the last value, for its getter). A coverage term or checkbox has `coverage: {coverage, covterm}`
 (the coverage title from the screen) and its `java` is a whole statement on `coverageUtil`
-(`coverageUtil.assertEquals("Bodily Injury", "Limit", "$200,000");`). Changed fields matched by
+(`coverageUtil.assertEquals("Bodily Injury", "Limit", "200,000");`). Changed fields matched by
 label come first; `more` counts the ones left out. `screen` is the note's own screen: `shows` says
 which of the note's words appear on it (`"surcharge": false`), and `amounts` its premium, cost,
 surcharge and discount values.
@@ -175,6 +195,10 @@ surcharge and discount values.
 than the recording makes (`mentioned`, `recorded`, `issueSeqs`).
 `startValues` (top level, when the recording doesn't start with a login): the coverages as the
 recording first shows them, before it changes them (`{coverage, covterm, value, seq}`).
+`policyShape` (same condition): the policy's own records, per list (`DriversLV`, `VehiclesLV`, an Add
+menu's entries such as `AddExistingContact` = unassigned contacts): `rows` and `names` when `first`
+shown and when `last` shown. Read the plan as JSON (it is ASCII, with `\u` escapes); never regex the
+DOM snapshots for this.
 
 `retries` (top level) lists what the analyst redid:
 - `kind: "corrected"`: a value set at `seq` and changed at `fixedSeq` (e.g. licence # `2569874` →
@@ -217,11 +241,13 @@ role is logged in, and how the test reaches that screen with that record open. D
    PC.createPersonalAutoSubmission → PC.searchForPolicyPC`, with a `RestartPoints` restart point
    after the setup when those tests use one.
 2. The data source those tests use (`dataDriven`, e.g. `PA_SubmissionDC.xlsx`). Propose a DC row
-   that meets what the recording needs (the vehicles and drivers on the opened policy, from its
-   screens and notes, e.g. "Default": one PPV and one driver), and say how you chose it.
+   that meets what the recording needs: the vehicles and drivers on the opened policy from
+   `policyShape` `first` (e.g. 2 vehicles, 1 driver and an unassigned contact → the row with two
+   vehicles, not "Default"), and who the recording adds or removes (`last`). Read the DC file's rows
+   to find it, and say how you chose it.
 3. **Chain after a recorded step**, when the recording continues where one of the folder's
    `recorded: true` steps ends. Compare `startValues` (and the first values in `noteChecks`) with
-   those steps' constants and final assertions: e.g. Collision $500 / Comprehensive $1,000 / All
+   those steps' constants and final assertions: e.g. Collision 500 / Comprehensive 1,000 / All
    Perils off is exactly where `AddDeleteCoverages` ends. Name the step and the values that match.
 4. "Something else": the user names it.
 
@@ -416,7 +442,8 @@ change with both), ask which the test follows before generating.
 method for that column (`with<Column>(String)`, e.g. `withEffectiveDate`, which knows the cell type):
 in the generated project's sources if they are checked out (`grep -rn "public .* with\w*(String"
 <generated src>/…/<Table>RowSelectorSingle.java`), else in the generated jar's sources. Use it when
-there is one.
+there is one. These methods are on a row selector, not on the table: `getDriverTable().getFirstRow()
+.withName("…").select()` (or on `getRows()` for a list), never `getDriverTable().withName(…)`.
 
 **Conditional notes** (`conditional: true`): list the condition and ask whether the step does it
 always (often the project's convention, e.g. override address validation every time) or only when
@@ -432,6 +459,12 @@ test gets that data: create it in an earlier step, or use a facade or DDT record
 recorded environment's data.
 
 For an item with `candidates`, ask which one. Wait for the user to approve or change rows.
+
+**"Just run it" / "run until it passes".** When the user says so before or at the gate, that is the
+approval to generate and run (compile, run, fix up to 3 rounds each). Still ask, in one message, what
+can't be defaulted: the start state when the recording doesn't begin with a login, and data the test
+may not have (`dependsOnData`, `outcomeMismatch`). Decide everything else with the proposals above as
+defaults, and list every default taken in the report.
 
 ## 9. Generate
 
@@ -487,9 +520,10 @@ For an item with `candidates`, ask which one. Wait for the user to approve or ch
   hashed classes).
 - `key` and `dialog` items have no Java; mention each in the report (e.g. Enter on a field is usually
   covered by the click that follows).
-- **Menu picks in the project's idiom.** A `menuItem` item is written as it comes. For a raw menu
-  item, search the steps root for how the project picks from that menu (e.g.
-  `getAddDriver().get("New Person")` on a `WidgetAddButtonWithMenu`) and write it that way.
+- **Menu picks in the project's idiom.** A `menuItem` item is written as it comes, plus the
+  `.get("<submenu>")` of any `submenus` it lists. For a raw menu item, search the steps root for its
+  `menuSearch` segments (as an id or as `get<Segment>()`) to see how the project picks from that menu
+  (e.g. `getAddDriver().get("New Person")` on a `WidgetAddButtonWithMenu`) and write it that way.
 - A `rowRadio` item is its click followed by its `then`; a check with `cellById` approved at the gate is
   written on `cellById`.
 - Approved retries, blocker helpers, base Quote / Issue methods, navigation, relative dates,
@@ -534,7 +568,9 @@ items; retries and validation loops collapsed (which recorded steps became which
 calendar-picked and typed dates; generated identity values; picks that depend on existing data;
 pinned ids (`withCssId`) and why; blocker screens and the helper used for each; Quote / Issue routed
 through the base; Next clicks replaced by navigation; notes with a condition and what was chosen;
-values derived from data and what they were compared with; the date relations chosen;
+values derived from data and what they were compared with; the date relations chosen; every
+default taken without asking (when the user said to just run it); verify-only screens dropped or
+turned into final checks;
 radios in rows (clicked and checked); rows read by id on a bound job; helpers from another wizard
 reused or generalised; the chain chosen for the start and any return helper in between; final checks added; compile and run
 result. If the project runs tests from a suite file (e.g. `CenterTestSuiteList.json`) and its

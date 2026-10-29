@@ -235,7 +235,10 @@ public abstract class AbstractPolicyChange extends BaseScenarioPC {
     this.wizardPage = new PolicyChangeWizardPage(getContext());
   }
   protected boolean hasReformMode() { return misc != null && misc.isReform(); }
+  private static final String LIMIT = "2000000";
   protected void quoteStep() { wizardPage.getWizardButtons().getQuote().click(); }
+  protected void next() { wizardPage.getWizardButtons().getNextV9().click(); }
+  protected void limits() { coverageUtil.setCoverage("Liability", "Limit", LIMIT); coverageUtil.setCoverage("Collision", "Deductible", "500"); }
   public void addLossClaim(String date) {
     var table = TableSortable.get("SubmissionWizard-LOBWizardStepGroup-PAClaimsInfo-ClaimsInfo_ICLV", getContext());
   }
@@ -304,6 +307,11 @@ class ProjectKnowledgeTest(ProjectTestCase):
     def test_base_reports_its_quote_and_issue_methods(self):
         base, = self.result["transactionBases"]["value"]
         self.assertEqual(base["wizardActions"], {"quote": ["quoteStep"], "issue": ["issueStep"]})
+
+    def test_idioms(self):
+        found = self.result["idioms"]["value"]
+        self.assertEqual(found["wizardButtons"], {"getQuote": 1, "getNextV9": 1})
+        self.assertEqual(found["coverageAmounts"], "plain")
 
     def test_screen_helpers_by_widget_id(self):
         ids = self.result["screenHelpers"]["value"]["ids"]

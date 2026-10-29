@@ -93,6 +93,10 @@ in each method. `coverageUtil` is held the same way.
   ends (same coverages), "chain after that step" is offered, with the base's return helper when that
   step ends elsewhere.
 - **Expected outcome against the recording**: two binds described, one recorded, is a question.
+- **The policy's data**: how many vehicles, drivers and unassigned contacts the opened policy has,
+  first and last, so the start option can name a data row that fits.
+- **Verify-only screens** at the end of a recording (reopening the bound job to look) are marked, and
+  proposed as final checks rather than replayed.
 - **Conditional notes** ("If there's an error…, override") are listed so you choose: always, or only
   when the condition holds.
 - **Navigation**: Next clicks that pass screens without changing anything can become the project's
@@ -111,7 +115,11 @@ click that only opened the menu is dropped. A picker's menu (its menu icon, then
 button is set on its widget's getter (`…_IC`, not the option's `…_IC_0`); a radio in a list row is
 clicked on the recorded option and then checked, because the row cell's `set()` doesn't take. A row of
 a table the recording added to is its last row (`getLastRow()`), not existing data. Helpers written
-for the same list in another wizard (e.g. a submission's `addLossClaim`) are offered for reuse. Quote / Issue in a wizard's
+for the same list in another wizard (e.g. a submission's `addLossClaim`) are offered for reuse.
+An entry picked from a menu by its position (a driver, an existing contact) is picked by its recorded
+name instead (`getAddDriver().get("Existing Driver").get("John Smith")`), and only menus of the
+policy's own records count as data. Next buttons and coverage amounts follow the project
+(`getNextV9()`, `2000000`), and helpers are ranked so a UW popup's `…SpecialApproval` methods come first. Quote / Issue in a wizard's
 toolbar become `getWizardButtons().getQuote()` / `getIssuePolicy()`, or the transaction base's own
 quote and issue methods.
 

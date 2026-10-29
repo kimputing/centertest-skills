@@ -80,6 +80,17 @@ There is no CI in this repo; run them before every commit.
   gives every later date `transactionDates` and `dateRelations` (transaction, posted, recording day).
 - `scan_project.py` indexes the widget-id literals each step method uses (`screenHelpers.ids`), so a
   helper written for the same list in another wizard is found by the id's container (`id_tail()`).
+- `menu_item()` walks up a menu entry's id to the nearest button with an exact key (past `-<n>-` and
+  submenus), picking recorded submenus by label (`with_submenu_labels()`); `DATA_MENU` decides
+  whether the menu lists the policy's records (`dependsOnData`) or fixed options.
+- `mark_new_rows()` needs a plain Add (not one that opens a menu) and takes the new row's index from
+  the first value entered on that table after it; a ticked checkbox doesn't decide it.
+- `mark_verify_only()`: the steps after the last one that sets a value or quotes/issues/submits.
+- `scan_project.py` `idioms`: the `WizardButtons` getters the steps call and whether `setCoverage`
+  amounts are plain or formatted; `apply_idioms()` rewrites the plan to match.
+- Both scripts write ASCII JSON (`ensure_ascii=True`): Windows readers decoding as cp1252 broke `≈`.
+  The SKILL text must never contain `$<digit>`: Claude Code substitutes skill arguments there
+  (`tests/test_skill_md.py`).
 - `analyse()` runs on the finished plan: helpers, blockers, retries, `navigation` (Next-only steps),
   stronger checks and `noteChecks`. `snapshot()` reads a step's values from its posted fields and its
   DOM snapshot (`FieldValues`: `gw-ValueWidget` elements, labels from `<id>_Input > .gw-label`), lazily:

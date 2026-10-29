@@ -339,6 +339,31 @@ def screen_helpers(root, steps):
     return fact(value, f"{len(titles)} titles, {len(pages)} pages, {len(ids)} widget ids")
 
 
+WIZARD_BUTTON_CALL = re.compile(r"getWizardButtons\(\)\s*\.\s*(get\w+)\(\)")
+SET_COVERAGE = re.compile(r"setCoverage\(\s*[^,()]+,\s*[^,()]+,\s*(?:\"([^\"]*)\"|([A-Z][A-Z0-9_]*)\b)")
+
+
+def idioms(steps):
+    """How the steps root writes what the parser would otherwise write its own way: the WizardButtons
+    getters it calls (getNextV9 or getNext) and whether coverage amounts are plain (2000000) or formatted
+    ($2,000,000), from setCoverage literals and the constants they name."""
+    buttons, plain, formatted = collections.Counter(), 0, 0
+    for text in steps.values():
+        buttons.update(WIZARD_BUTTON_CALL.findall(text))
+        constants = dict(re.findall(r"static\s+final\s+String\s+(\w+)\s*=\s*\"([^\"]*)\"", text))
+        for literal, constant in SET_COVERAGE.findall(text):
+            amount = literal or constants.get(constant) or ""
+            if re.fullmatch(r"\d+(\.\d+)?", amount):
+                plain += 1
+            elif re.fullmatch(r"\$?\d{1,3}(,\d{3})+(\.\d+)?|\$\d+(\.\d+)?", amount):
+                formatted += 1
+    if not buttons and not plain and not formatted:
+        return missing("no getWizardButtons() calls or setCoverage amounts under reusable/")
+    style = "plain" if plain > formatted else "formatted" if formatted > plain else None
+    return fact({"wizardButtons": dict(buttons.most_common()), "coverageAmounts": style},
+                f"{sum(buttons.values())} wizard button calls; coverage amounts {plain} plain, {formatted} formatted")
+
+
 GUIDANCE_FILES = {"CLAUDE.md", "AGENTS.md"}
 
 
@@ -509,12 +534,13 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
         result.update(testLayout=test_layout(tests_dir, tests), testStyle=test_style(tests),
                       steps=step_conventions(root, steps, reusable_dir), facades=facades(root, java, steps),
                       exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir),
-                      transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps))
+                      transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps),
+                      idioms=idioms(steps))
         result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir,
                                     {m["facade"] for m in result["facades"]["value"] or []})
     else:
         for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
-                    "screenHelpers"):
+                    "screenHelpers", "idioms"):
             result[key] = missing("needs clientPackage and testsRoot")
     result.update(guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
                   build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
@@ -522,6 +548,8 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
 
 
 def main(argv=None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
     parser = argparse.ArgumentParser(description="Detect a CenterTest project's conventions")
     parser.add_argument("root", nargs="?", default=".", help="project root (default: current directory)")
     parser.add_argument("--cssids", help="resources dir holding cssids/<app>/, when it cannot be detected")
@@ -530,7 +558,8 @@ def main(argv=None) -> int:
     if not os.path.isdir(args.root):
         print(f"Error: project root not found: {args.root}", file=sys.stderr)
         return 2
-    text = json.dumps(scan(args.root, args.cssids), indent=2, ensure_ascii=False)
+    # ASCII only (\u escapes): a reader that decodes the file as cp1252 on Windows still gets it right
+    text = json.dumps(scan(args.root, args.cssids), indent=2, ensure_ascii=True)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(text + "\n")
