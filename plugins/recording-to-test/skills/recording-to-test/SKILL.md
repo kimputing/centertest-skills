@@ -98,7 +98,18 @@ More item fields:
 - `rule: "menuItem"`: a menu item picked by its label on the button that opens the menu,
   `getAddDriver().withCssId("…").get("New Person")`. `menuOpener` names the click that opened the
   menu, which the parser dropped because the getter opens it. When the item stays `raw`, the opener
-  stays as a raw click.
+  stays as a raw click. A picker's menu (a `…MenuIcon` click, then the item) is written
+  `WidgetMenuItem.get("<…MenuIcon>", getContext()).get("New Location")`, even across a step boundary.
+- `radioOption`: a radio button recorded on its option's input (`…_IC_0`); `widgetId` and the getter
+  are the widget without the suffix, and a Yes/No radio is set with `.set("true")` / `.set("false")`.
+- `rule: "wizardButton"` with `wizardAction: "quote" | "issue"`: Quote / Issue Policy in a wizard
+  screen's toolbar (`…-JobWizardToolbarButtonSet-…-Quote`, `…-BindPolicyChange`), mapped by their label
+  to `getWizardButtons().getQuote()` / `getIssuePolicy()`. With `--project`, `baseMethods` names the
+  transaction base's own methods that click that button (e.g. `AbstractPolicyChange.quoteStep`).
+- `navigationOnly: true`: a Next that was the only action on its screen (see `navigation`).
+- `valueSuggested: {java, shown}` (on a check): a recorded "is visible" / "not empty" check, which
+  always passes, on a field that shows a value. `java` checks the value instead: it contains the
+  longest value entered earlier that it shows (the address just added), else it equals `shown`.
 - `dependsOnData: true`: a `raw` id that picks entry *n* of a list by its position
   (`…-0-UnassignedDriver`), or a row picked by its recorded values (`.with("Vehicle #", "1")
   .with("Year", "2015")`, or a date literal like `with("Close Date", "10/19/2026")`). It works only
@@ -119,6 +130,17 @@ Each step also has `pages` (its screen and its items' pages). With `--project` i
 project's methods that wait for its title or open one of its pages (`{method, matched}`).
 `blockers` (top level) lists the steps on a UW-issue or approval screen, found by title, page,
 message ("placed in the facility (RSP) pool") or item, each with its `helpers`.
+
+`navigation` (top level) lists runs of steps whose only action was Next: `seqs`, `clicks`, `from` and
+`to` (screen titles). Nothing was changed on those screens.
+
+`notes` entries carry `asksCheck: true` when the note asks to verify, confirm or ensure something,
+and `conditional: true` when it states a condition ("If there's an error…, override").
+`noteChecks` (top level) has one entry per note that asks for a check: its `words`, and the `fields`
+whose id or label has them. Each field has the values the recording shows, in order (`values`:
+`[{seq, value}]`, from the posted forms and the DOM snapshots), `changed`, `lastSeq` (the last step that
+showed it) and `java` (`assertEquals` on the last value). Best matches come first; `more` counts the
+ones left out.
 
 `retries` (top level) lists what the analyst redid:
 - `kind: "corrected"`: a value set at `seq` and changed at `fixedSeq` (e.g. licence # `2569874` →
@@ -181,6 +203,17 @@ role is logged in, and how the test reaches that screen with that record open. D
   the error text.
 List each one (recorded seqs → generated lines, and the error text) in the confirmation table and the
 report.
+
+**Quote and Issue through the base.** An item with `baseMethods` is replaced by a call to that
+method of the transaction base (the new step extends it, see 9), the way the folder's other steps
+quote and issue. Read the method first: if it does more than the recording did (e.g. it also
+handles a UW block), say so in the table.
+
+**Navigation-only Next clicks.** For each run in `navigation`, check how the folder's exemplar steps
+move between wizard screens. If they use the left-hand menu
+(`grep -rn "getLEFT()\|getNavigate()" <steps folder>`), propose that instead of the Next clicks (e.g.
+`wizardPage.getLEFT().getNavigate().getPersonalVehicles()` for "Vehicles"). Otherwise keep the Next
+clicks.
 
 **Blocker screens.** Each entry in `blockers` is a screen that blocks the transaction ("Issues that
 block Issuance", "Risk Approval Details", warnings to accept, a UW approval). Its `helpers` are the
@@ -276,6 +309,16 @@ Unique: seq 21 First name → PersonNameUtil…; seq 22 Licence # → numerify("
 Facade: PC.addDriverPolicyChange(context) added to PC.java (reusable/CLAUDE.md: every new step gets one)
 Final checks (from the note at seq 52 and expectedOutcome):
   Vehicles screen: driver table lists "Jane Doe" as Secondary and "John Roe" as Occasional
+  note seq 19 "Confirm address and rating territory codes are updated" (noteChecks):
+    Stat. Territory        102 (seq 8) → 105 (seq 19)   getStatTerritoryCode().assertEquals("105")
+    Rating territory code  5 → 11                        row 0 Code assertEquals("11")
+    Garaged At             Edmonton → Fort McMurray     getPAGarageLocationInput().assertContains("Fort McMurray")
+  seq 19 Garaged At: assertVisible(true) → assertContains("10 Main St") (valueSuggested)
+Conditions in notes: seq 18 "If there's an error in validating address, override…" →
+  override every time (the project's convention), or only when the error shows?
+Quote / Issue: seq 9 Quote → quoteStep(), seq 18 Issue Policy → issueStep() (AbstractPolicyChange)
+Navigation: seq 6-7 Next ×2 (Policy Info → Vehicles) → wizardPage.getLEFT().getNavigate().getPersonalVehicles()
+  (as CreatePersonalAutoOOSPolicyChange does)
 ```
 
 **A calendar-picked date with `postedDates`** gets a question: how does the recorded date relate
@@ -295,9 +338,21 @@ suggested `expr`. Keep the recorded value only when the user says the test needs
 
 **Final checks.** When the recording ends on screens that only verify (it reopens the policy or
 views a screen with no changes), or a note or `test.expectedOutcome` says what to verify, propose
-assertions for it. Use widget assertions on the screen the note is on, e.g. "both drivers listed
+assertions for it. For a note in `noteChecks`, show its fields with their values before → after and
+propose the check from them: a field that `changed` is checked for its last value (or that it is no
+longer the first one); a field that didn't change while the note expects a change is called out.
+Pick the fields that fit the note, not every match, and look up each one's getter (cssids, or the
+row API for a list cell). Never write your own scripts over the DOM snapshots for this: the values
+are in `noteChecks`. A value that depends on rating (a premium, a territory code) is a check that
+the environment can break: say so, and offer a "changed" or "not empty" check instead.
+For a check with `valueSuggested`, propose its `java` instead of the visibility check. Use widget assertions on the screen the note is on, e.g. "both drivers listed
 with the right operator types" becomes a check per row on the driver table (`.with("Name", …)` row
 filters, `assertEquals` on the type column). Show them in the table; the user approves or edits.
+
+**Conditional notes** (`conditional: true`): list the condition and ask whether the step does it
+always (often the project's convention, e.g. override address validation every time) or only when
+the condition holds (e.g. `if (MessagesUtil…)` around it). Never turn a condition into an
+unconditional action without saying so.
 
 **Choices that depend on existing data** get a question: a pick from a list whose rows come from
 the account or policy (an existing driver or contact, a location, a prior claim, "row 0", a row
@@ -366,8 +421,8 @@ For an item with `candidates`, ask which one. Wait for the user to approve or ch
 - **Menu picks in the project's idiom.** A `menuItem` item is written as it comes. For a raw menu
   item, search the steps root for how the project picks from that menu (e.g.
   `getAddDriver().get("New Person")` on a `WidgetAddButtonWithMenu`) and write it that way.
-- Approved retries, blocker helpers, relative dates, generators and final checks go in as approved at
-  the gate. A helper replaces the raw items it covers.
+- Approved retries, blocker helpers, base Quote / Issue methods, navigation, relative dates,
+  generators, conditions and final checks go in as approved at the gate. A helper replaces the raw items it covers.
 - When the project's guidance asks for it, add the facade factory method for each new step to the
   facade interface (same form as its neighbours), and use it in the test.
 
@@ -404,7 +459,8 @@ Files created; existing files edited because the project's guidance asks for it 
 facades and helpers reused; every `rule`/`raw`/`partial` getter and whether it compiled; untranslated
 items; retries and validation loops collapsed (which recorded steps became which generated lines);
 calendar-picked and typed dates; generated identity values; picks that depend on existing data;
-pinned ids (`withCssId`) and why; blocker screens and the helper used for each;
+pinned ids (`withCssId`) and why; blocker screens and the helper used for each; Quote / Issue routed
+through the base; Next clicks replaced by navigation; notes with a condition and what was chosen;
 values derived from data and what they were compared with; final checks added; compile and run
 result. If the project runs tests from a suite file (e.g. `CenterTestSuiteList.json`) and its
 guidance doesn't say to add new tests there, name it and the class to add, and don't edit it.

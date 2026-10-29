@@ -203,7 +203,8 @@ def resolve(cssids_dir: str, app, action: dict) -> dict:
     if app is None:
         return {"resolution": "unresolved", "reason": "unknown application"}
     resolution, getters, differs = lookup_keyed(cssids_dir, app, widget_id)
-    menu = menu_item(cssids_dir, app, action) if resolution != "resolved" else None
+    menu = picker_item(action) or ((menu_item(cssids_dir, app, action) or wizard_toolbar(cssids_dir, app, action))
+                                   if resolution != "resolved" else None)
     if getters and not menu:
         fixed = [unbracket(g) for g in getters]
         pin = differs or any(changed for _, changed in fixed)
@@ -228,6 +229,8 @@ RAW_WIDGET = {
     "LinkWidget": "WidgetLink",
     "TabWidget": "WidgetMenuItem",
     "MenuItemWidget": "WidgetMenuItem",
+    "MenuIconWidget": "WidgetMenuItem",
+    "PickerMenuItemWidget": "WidgetMenuItem",
     "MenuActionsWidget": "WidgetMenuItem",
     "ToolbarButtonWidget": "WidgetToolbarButton",
     "PickerToolbarButtonWidget": "WidgetToolbarButton",
@@ -237,6 +240,9 @@ RAW_WIDGET = {
     "ImageButtonWidget": "WidgetButton",
     "button": "WidgetButton",
 }
+# an input recorded without a widget kind, by its type (a radio's value says boolean or range)
+RAW_INPUT = {"checkbox": "WidgetCheckBoxInput", "radio": "WidgetBooleanRadioInput"}
+BOOLEAN_VALUES = ("true", "false")
 # Generated row getters for Guidewire's built-in list columns
 ROW_COLUMNS = {"_Select": "getSelect", "_Checkbox": "get_CHECKBOX"}
 
@@ -287,6 +293,45 @@ def menu_item(cssids_dir: str, app: str, action: dict):
             "getter": f"{pinned(getter, opener) if differs or changed else getter}.get({jstr(label)})"}
 
 
+def picker_item(action: dict):
+    """A pick from a picker's menu, clicked right after its menu icon (menuIcon, set by fold_openers):
+    WidgetMenuItem.get(icon id).get(label) opens the menu itself, as projects write it."""
+    icon, label = action.get("menuIcon"), action.get("text") or action.get("label")
+    if not icon or not label:
+        return None
+    return {"resolution": "rule", "rule": "menuItem", "widget": "WidgetMenuItem",
+            "getter": f"WidgetMenuItem.get({jstr(icon)}, getContext()).get({jstr(label)})"}
+
+
+# labels of the wizard toolbar buttons WizardButtons has a getter for (it finds the button by label)
+WIZARD_LABELS = ["Back", "Bind Options", "Cancel", "Cancel Now", "Cancel/Rewrite", "Close Options", "Decline",
+                 "Delete", "Edit", "Edit Policy Transaction", "Finish", "Finish Quote", "Full App", "Issue Now",
+                 "Issue Policy", "Next", "Non-Renew", "Not-Taken", "OK", "Print Quote", "Quote", "Rate",
+                 "Refer to Agent for Issue", "Reinstate", "Release Lock", "Renew", "Save Draft",
+                 "Schedule Cancellation", "Start Cancellation", "Submit", "Update", "Versions", "Withdraw",
+                 "Withdraw Transaction"]
+WIZARD_GETTERS = {label.lower(): "get" + "".join(cap(w) for w in re.split(r"\W+", label) if w) for label in WIZARD_LABELS}
+WIZARD_STAGES = {"getQuote": "quote", "getIssuePolicy": "issue", "getIssueNow": "issue"}
+
+
+def wizard_toolbar(cssids_dir: str, app: str, action: dict):
+    """A button in a wizard screen's toolbar (…-JobWizardToolbarButtonSet-QuoteTypeToolbarButtonSet-Quote,
+    …-JobWizardToolbarButtonSet-BindPolicyChange): <wizard page>.getWizardButtons().get<Label>(), picked
+    by the label the recording shows. Quote and Issue carry wizardAction, which the base may handle."""
+    parts, _ = split_id(action.get("widgetId") or "")
+    label = (action.get("text") or action.get("label") or "").strip().lower()
+    if not any(p.endswith("WizardToolbarButtonSet") for p in parts) or label not in WIZARD_GETTERS:
+        return None
+    page = page_instance(cssids_dir, app, parts[0])
+    if not page:
+        return None
+    method = WIZARD_GETTERS[label]
+    result = {"resolution": "rule", "rule": "wizardButton", "getter": f"{page}.getWizardButtons().{method}()"}
+    if method in WIZARD_STAGES:
+        result["wizardAction"] = WIZARD_STAGES[method]
+    return result
+
+
 def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
     """Ids cssids has no entry for, built in the project's own idioms. Always returns a result:
     the last rule writes the raw Widget<Type>.get(id, getContext()) form."""
@@ -330,7 +375,9 @@ def resolve_fallback(cssids_dir: str, app: str, action: dict) -> dict:
             return {"resolution": "rule", "rule": "rowColumn", "column": column,
                     "getter": f"{getters[0]}.{getter}()"}
 
-    widget = RAW_WIDGET.get(kind) or ("WidgetCheckBoxInput" if action.get("inputType") == "checkbox" else "WidgetLabel")
+    widget = RAW_WIDGET.get(kind) or RAW_INPUT.get(action.get("inputType")) or "WidgetLabel"
+    if widget == "WidgetBooleanRadioInput" and str(action.get("value")).lower() not in BOOLEAN_VALUES:
+        widget = "WidgetRangeRadioInput"
     return {"resolution": "raw", "rule": "raw", "widget": widget,
             "getter": f"{widget}.get({jstr(widget_id)}, getContext())"}
 
@@ -388,6 +435,8 @@ def action_java(action: dict):
     value = action.get("value")
     if isinstance(value, bool):  # a checkbox: WidgetCheckBoxInput has only set(String)
         return f'.set("{str(value).lower()}")'
+    if action.get("inputType") == "radio" and str(value).lower() in BOOLEAN_VALUES:
+        return f'.set("{str(value).lower()}")'  # a Yes/No radio: set("true") whatever the options are labelled
     return f".set({value_java(action)})"
 
 
@@ -562,12 +611,29 @@ def identity_value(label: str, value) -> dict:
     return None
 
 
+RADIO_OPTION = re.compile(r"_\d+$")
+
+
+def radio_widget(action: dict) -> dict:
+    """A radio button is recorded on its option's <input> ('…_IC_0'), which has its own id; the widget,
+    and its getter, is the id without the option suffix."""
+    widget_id = action.get("widgetId") or ""
+    if action.get("inputType") != "radio" or not RADIO_OPTION.search(widget_id):
+        return action
+    return dict(action, widgetId=RADIO_OPTION.sub("", widget_id), radioOption=widget_id)
+
+
 def translate(cssids_dir: str, app, action: dict) -> dict:
     """One recorded action or check as plan data with its Java fragment."""
+    action = radio_widget(action)
     widget_id = action.get("widgetId")
     item = {"type": action.get("type"), "widgetId": widget_id,
             "page": find_getter.get_page_name(widget_id) if widget_id else None,
             "label": item_label(action)}
+    if action.get("radioOption"):
+        item["radioOption"] = action["radioOption"]
+    if action.get("menuOpener"):
+        item["menuOpener"] = action["menuOpener"]
     if action.get("kind") == "message":  # page-message checks have no widget
         item.update(resolution="resolved", java=message_check_java(action),
                     soft=bool(action.get("soft")), expected=action.get("expected"))
@@ -749,6 +815,229 @@ def with_headers(actions: list, dom) -> list:
     return [dict(a, label=headers[a["widgetId"]]) if headers.get(a.get("widgetId")) else a for a in actions]
 
 
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
+
+class FieldValues(html.parser.HTMLParser):
+    """What a DOM snapshot shows in each value widget (an element with class gw-ValueWidget): the text of
+    a read-only value, an input's value, a select's selected option, a checked radio's label. And each
+    input's label, from '<id>_Input' > .gw-label. The recorder copies live values into the attributes."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts, self.labels, self.stack = {}, {}, []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        classes, element_id = (a.get("class") or "").split(), a.get("id")
+        ctx = dict(self.stack[-1]) if self.stack else {"value": None, "input": None, "label": None, "skip": False,
+                                                       "notext": False, "option": None}
+        if element_id and "gw-ValueWidget" in classes and not any("HeaderCell" in c for c in classes):
+            ctx.update(value=element_id, skip=False, notext=False)
+            self.parts.setdefault(element_id, [])
+        if element_id and element_id.endswith("_Input"):
+            ctx["input"] = element_id[:-len("_Input")]
+        if "gw-label" in classes and ctx["input"] and not ctx["value"]:
+            ctx["label"] = ctx["input"]
+            self.labels.setdefault(ctx["input"], "")
+        if "gw-vw--children" in classes:
+            ctx["skip"] = True
+        if any(c.endswith("--input-group") for c in classes):
+            ctx["notext"] = True  # a radio group's option labels: only the checked one counts
+        if tag == "option":
+            ctx["option"] = "selected" in a
+        value_id = ctx["value"] if not ctx["skip"] else None
+        if value_id and tag == "input":
+            kind = (a.get("type") or "text").lower()
+            if kind == "radio" and "checked" in a:
+                self.parts[value_id].append(a.get("aria-label") or a.get("value") or "")
+            elif kind == "checkbox":
+                self.parts[value_id].append("true" if "checked" in a else "false")
+            elif kind not in ("radio", "hidden", "button", "submit"):
+                self.parts[value_id].append(a.get("value") or "")
+        elif value_id and tag == "br":
+            self.parts[value_id].append(" ")
+        if tag not in VOID_TAGS:
+            self.stack.append(ctx)
+
+    def handle_endtag(self, tag):
+        if tag not in VOID_TAGS and self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data):
+        ctx = self.stack[-1] if self.stack else None
+        if not ctx:
+            return
+        if ctx["label"]:
+            self.labels[ctx["label"]] += data
+        if ctx["value"] and not ctx["skip"] and not ctx["notext"] and ctx["option"] is not False:
+            self.parts[ctx["value"]].append(data)
+
+    def values(self) -> dict:
+        return {k: " ".join("".join(v).split()) for k, v in self.parts.items()}
+
+
+def posted_fields(step: dict) -> dict:
+    """The form fields the step posted, the last post's value for each (the form when the step ended)."""
+    fields = {}
+    for request in step.get("requests") or []:
+        for field in request.get("fields") or []:
+            if field.get("name"):
+                fields[field["name"]] = field.get("value")
+    return fields
+
+
+def snapshot(step: dict, read_file) -> tuple:
+    """(values, labels) a step shows: its DOM snapshot's value widgets over the fields it posted
+    (a posted select value is a code; the snapshot has the text shown)."""
+    values = {k: str(v) for k, v in posted_fields(step).items() if v not in (None, "") and k != "QuickJump"}
+    labels = {}
+    dom = step.get("dom")
+    text = read_file(dom) if dom and read_file else None
+    if text:
+        reader = FieldValues()
+        reader.feed(text)
+        values.update({k: v for k, v in reader.values().items() if v})
+        labels = {k: " ".join(v.split()) for k, v in reader.labels.items() if v.strip()}
+    return values, labels
+
+
+ASKS_CHECK = re.compile(r"\b(verify|verified|confirm|ensure|check|make sure|validate|assert)\b", re.I)
+CONDITIONAL = re.compile(r"\b(if|unless|in case|only when|whenever)\b", re.I)
+NOTE_STOPWORDS = {
+    "verify", "verified", "confirm", "ensure", "check", "make", "sure", "validate", "assert", "that", "this",
+    "these", "those", "there", "their", "they", "them", "then", "than", "with", "without", "from", "into", "onto",
+    "after", "before", "have", "been", "were", "will", "would", "should", "could", "must", "also", "both",
+    "each", "every", "when", "where", "which", "what", "while", "only", "just", "still", "same", "other",
+    "changed", "change", "changes", "updated", "update", "updates", "correct", "correctly", "properly", "shown",
+    "show", "shows", "displayed", "display", "screen", "page", "field", "fields", "value", "values", "the",
+    "and", "are", "for", "new", "old", "is", "was", "has", "not", "all", "any", "set", "now", "here", "again",
+    "click", "clicked", "select", "selected", "enter", "entered", "test", "policy", "unless", "case"}
+# words too common in ids to match a field on their own
+GENERIC_STEMS = {"code", "name", "number", "type", "date", "status", "info", "detail", "description"}
+NOTE_FIELD_LIMIT = 12
+
+
+def stem(word: str) -> str:
+    """A crude stem, so a note's word matches the id: territories / territory -> territor, codes -> code."""
+    word = word.lower()
+    for suffix in ("ies", "es", "s", "ed", "ing"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            word = word[:-len(suffix)]
+            break
+    return word[:-1] if len(word) > 4 and word.endswith("y") else word
+
+
+def note_stems(text: str) -> list:
+    words = re.findall(r"[A-Za-z]{3,}", text or "")
+    return list(dict.fromkeys(stem(w) for w in words if w.lower() not in NOTE_STOPWORDS))
+
+
+def field_words(widget_id: str, label: str) -> str:
+    """What a note's words are matched against: the id's last segment, a list's name when the id is a
+    list cell, and the label the screen shows."""
+    parts, _ = split_id(widget_id)
+    words = [parts[-1]] + [p for p, after in zip(parts, parts[1:]) if after.isdigit()] + [label or ""]
+    return " ".join(words).lower()
+
+
+def note_checks(plan: dict, snapshots: list) -> list:
+    """For each note that asks for a check (verify, confirm, ensure…), the fields whose id or label has the
+    note's words, with the values the recording shows for them, in order (before → after), the last step
+    that showed them (lastSeq) and an assertion on the last value. Best matches first, then changed
+    fields, then fields still shown at the note's step."""
+    found = []
+    labels = {}
+    for _, step_labels in snapshots:
+        labels.update(step_labels)
+    for note in plan["notes"]:
+        if not note.get("asksCheck"):
+            continue
+        stems = note_stems(note["text"])
+        specific = [s for s in stems if s not in GENERIC_STEMS]
+        if not specific:
+            continue
+        observed, last_seen = {}, {}
+        for entry, (values, _) in zip(plan["steps"], snapshots):
+            for widget_id, value in values.items():
+                observed.setdefault(widget_id, [])
+                last_seen[widget_id] = entry["seq"]
+                if not observed[widget_id] or observed[widget_id][-1]["value"] != value:
+                    observed[widget_id].append({"seq": entry["seq"], "value": value})
+        fields = []
+        for widget_id, seen in observed.items():
+            words = field_words(widget_id, labels.get(widget_id, ""))
+            matched = [s for s in stems if s in words]
+            if not any(s in specific for s in matched):
+                continue
+            last = seen[-1]["value"]
+            fields.append({"widgetId": widget_id, "label": labels.get(widget_id) or item_label({"widgetId": widget_id}),
+                           "matched": matched, "values": seen, "changed": len(seen) > 1,
+                           "lastSeq": last_seen[widget_id], "java": f".assertEquals({jstr(last)})"})
+        at_note = note["seq"] or 0
+        fields.sort(key=lambda f: (-len(f["matched"]), not f["changed"], f["lastSeq"] < at_note, f["widgetId"]))
+        found.append({"seq": note["seq"], "text": note["text"], "words": specific,
+                      "fields": fields[:NOTE_FIELD_LIMIT], "more": max(0, len(fields) - NOTE_FIELD_LIMIT)})
+    return found
+
+
+WEAK_CHECKS = {"isVisible", "isNotEmpty"}
+
+
+def stronger_check(item: dict, check: dict, values: dict, entered: list) -> None:
+    """A visibility / not-empty check on a field that shows a value: propose a check on the value, contains
+    the longest value entered earlier that it shows (e.g. the address just added), else equals it."""
+    shown = values.get(item.get("widgetId") or "")
+    if check.get("assert") not in WEAK_CHECKS or check.get("flag") is False or not shown:
+        return
+    hits = [v for v in entered if len(v) >= 4 and v.lower() in shown.lower()]
+    soft = "Soft" if check.get("soft") else ""
+    if hits:
+        java = f".assertContains{soft}({jstr(max(hits, key=len))})"
+    else:
+        java = f".assertEquals{soft}({jstr(shown)})"
+    item["valueSuggested"] = {"java": java, "shown": shown}
+    warn(item, f"only checks that the field is there, which always passes; the screen shows {shown!r}: "
+               f"suggested {java}")
+
+
+NEXT = re.compile(r"^next\b", re.I)
+
+
+def navigation(steps: list) -> list:
+    """Runs of steps whose only action is the wizard's Next: screens passed without changing anything.
+    The project may move between wizard screens another way (e.g. the left-hand menu)."""
+    runs, run, before = [], [], None
+    for entry in steps + [None]:
+        if entry is not None and not entry["actions"]:
+            continue  # a note or check-only step changes nothing
+        nexts = entry is not None and len(entry["actions"]) == 1 and entry["actions"][0]["type"] == "click" \
+            and bool(NEXT.match(entry["actions"][0]["label"].strip()))
+        if nexts:
+            run.append(entry)
+            continue
+        if run:
+            for step_entry in run:
+                step_entry["actions"][0]["navigationOnly"] = True
+            runs.append({"seqs": [e["seq"] for e in run], "clicks": len(run),
+                         "from": before and before["waitTitle"], "to": run[-1]["waitTitle"]})
+            run = []
+        before = entry
+    return runs
+
+
+def base_methods(item: dict, bases: list) -> None:
+    """The transaction base's methods for a Quote / Issue click (wizardAction), found by the wizard page
+    the base holds (transactionBases.wizardFields) and the button its methods click (wizardActions)."""
+    action, page = item.get("wizardAction"), (item.get("page") or "") + "Page"
+    found = [f"{base['class']}.{method}" for base in bases
+             if any(field.split()[0] == page for field in base.get("wizardFields") or [])
+             for method in (base.get("wizardActions") or {}).get(action, [])]
+    if found:
+        item["baseMethods"] = found
+        warn(item, f"the transaction base handles {action} in {', '.join(found)}: call it instead of the click")
+
+
 def opens_menu(action: dict, following) -> bool:
     """A click that opens the menu whose item the next action clicks."""
     opener = action.get("widgetId") or ""
@@ -779,7 +1068,38 @@ def fold_menu_openers(items: list) -> list:
     return result
 
 
-BLOCKER_ID = re.compile(r"UWBlockProgress|RiskEvaluation|UWIssue|RiskApproval|SpecialApprove")
+PICKER_ITEMS = ("PickerMenuItemWidget", "MenuItemWidget")
+
+
+def fold_openers(steps_actions: list) -> None:
+    """Clicks that only open something for a later action, across step boundaries (a click can end a
+    step): a calendar icon whose field is set (the change replaces it; a picked date counts it in
+    calendarClicks), and a picker's menu icon right before its item (the item gets menuIcon and
+    menuOpener; WidgetMenuItem.get(icon).get(label) opens the menu itself). Edits the lists in place."""
+    flat = [(n, k, a) for n, actions in enumerate(steps_actions) for k, a in enumerate(actions)]
+    drop = set()
+    for i, (n, _, action) in enumerate(flat):
+        widget_id = action.get("widgetId") or ""
+        if action.get("type") != "click":
+            continue
+        if widget_id.endswith(CALENDAR_ICON):
+            field = widget_id[:-len(CALENDAR_ICON)]
+            sets = [a for _, _, a in flat[i + 1:] if a.get("type") == "change" and a.get("widgetId") == field]
+            sets = sets or [a for m, _, a in flat if m == n and a.get("type") == "change" and a.get("widgetId") == field]
+            if sets:
+                drop.add((n, flat[i][1]))
+                if sets[0].get("source") == "request":  # a dict with_picked_dates made, not the session's
+                    sets[0]["calendarClicks"] = sets[0].get("calendarClicks", 1) + 1
+        elif action.get("kind") == "MenuIconWidget" and i + 1 < len(flat):
+            m, k, item = flat[i + 1]
+            if item.get("type") == "click" and item.get("kind") in PICKER_ITEMS and (item.get("text") or item.get("label")):
+                steps_actions[m][k] = dict(item, menuIcon=widget_id, menuOpener=item_label(action))
+                drop.add((n, flat[i][1]))
+    for n, actions in enumerate(steps_actions):
+        actions[:] = [a for k, a in enumerate(actions) if (n, k) not in drop]
+
+
+BLOCKER_ID =re.compile(r"UWBlockProgress|RiskEvaluation|UWIssue|RiskApproval|SpecialApprove")
 BLOCKER_TEXT = re.compile(r"issues? that block|risk approval|uw issue|underwriter|approval required|"
                           r"facility|rsp pool", re.I)
 
@@ -906,18 +1226,21 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
                  "defects": meta.get("defectIds") or [], "tags": meta.get("tags") or [],
                  "recordedBy": meta.get("recorderName")},
         # recordings before 1.1 kept notes on the session; 1.1 keeps them on the steps only
-        "notes": [{"seq": None, "text": n.get("text", "")} for n in session.get("notes") or []],
-        "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "imports": [],
+        "notes": [note_entry(None, n.get("text", "")) for n in session.get("notes") or []],
+        "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "navigation": [], "noteChecks": [],
+        "imports": [],
     }
-    imports, uniques, previous_app = set(), {}, None
-    for recorded_step in session.get("steps") or []:
-        # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
-        recorded = with_picked_dates([a for a in recorded_step.get("actions") or [] if not a.get("removed")],
-                                     recorded_step)
+    recorded_steps = session.get("steps") or []
+    # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
+    steps_actions = [with_picked_dates([a for a in s.get("actions") or [] if not a.get("removed")], s)
+                     for s in recorded_steps]
+    fold_openers(steps_actions)
+    imports, uniques, previous_app, reviewed, kept_steps = set(), {}, None, [], []
+    for recorded_step, recorded in zip(recorded_steps, steps_actions):
         dom = recorded_step.get("dom")
         recorded = with_headers(recorded, read_file(dom) if dom and read_file else None)
         notes = [n.get("text", "") for n in recorded_step.get("notes") or []]
-        plan["notes"] += [{"seq": recorded_step.get("seq"), "text": text} for text in notes]
+        plan["notes"] += [note_entry(recorded_step.get("seq"), text) for text in notes]
         if not recorded and not notes:
             continue
         app = APPS.get(recorded_step.get("app"))
@@ -940,11 +1263,8 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         for action, translated in zip(recorded, translated_items):
             if id(translated) not in kept:
                 continue
-            imports |= imports_for((translated.get("getter") or "") + (translated.get("java") or ""),
-                                   translated.get("widget"))
-            if translated.get("rule") == "coverage":
-                imports.add(COVERAGE_UTIL)
             if action.get("type") == "check":
+                translated["recordedCheck"] = action
                 if translated.get("expected") in uniques:
                     translated["uniqueFrom"] = uniques[translated["expected"]]
                 entry["checks"].append(translated)
@@ -952,25 +1272,71 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
                 if "unique" in translated:
                     uniques[str(action.get("value"))] = {"seq": entry["seq"], "label": translated["label"]}
                 entry["actions"].append(translated)
-            if needs_review(translated):
-                plan["review"].append({
-                    "seq": entry["seq"], "label": translated["label"], "widgetId": translated.get("widgetId"),
-                    "resolution": translated["resolution"], "rule": translated.get("rule"),
-                    "reason": review_reason(translated)})
+            reviewed.append((entry["seq"], translated))
         if recorded:  # a step with only notes opens no application
             if app and app not in plan["apps"]:
                 plan["apps"].append(app)
             previous_app = app or previous_app
         plan["steps"].append(entry)
-    screen_helpers = ((project or {}).get("screenHelpers") or {}).get("value")
+        kept_steps.append(recorded_step)
+    analyse(plan, kept_steps, read_file, project or {})
+    for seq, translated in reviewed:
+        imports |= imports_for((translated.get("getter") or "") + (translated.get("java") or ""),
+                               translated.get("widget"))
+        if translated.get("rule") == "coverage":
+            imports.add(COVERAGE_UTIL)
+        if needs_review(translated):
+            plan["review"].append({
+                "seq": seq, "label": translated["label"], "widgetId": translated.get("widgetId"),
+                "resolution": translated["resolution"], "rule": translated.get("rule"),
+                "reason": review_reason(translated)})
+    plan["imports"] = sorted(imports)
+    return plan
+
+
+def note_entry(seq, text: str) -> dict:
+    """A note, flagged when it asks for a check (verify, confirm, ensure…) or states a condition
+    ("If there's an error…, override"): the gate lists the condition instead of doing it always."""
+    note = {"seq": seq, "text": text}
+    if ASKS_CHECK.search(text):
+        note["asksCheck"] = True
+    if CONDITIONAL.search(text):
+        note["conditional"] = True
+    return note
+
+
+def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
+    """What needs the whole plan: helpers and blockers per step, retries, navigation-only Next clicks,
+    the base's Quote / Issue methods, stronger checks and the values for notes that ask for a check."""
+    screen_helpers = (project.get("screenHelpers") or {}).get("value")
+    bases = (project.get("transactionBases") or {}).get("value") or []
     for entry in plan["steps"]:
         entry["pages"] = step_pages(entry)
         if screen_helpers:
             entry["helpers"] = helpers_for(entry, screen_helpers)
+        for item in entry["actions"]:
+            if item.get("wizardAction"):
+                base_methods(item, bases)
     plan["retries"] = retries(plan["steps"]) + refused(plan["steps"])
     plan["blockers"] = blockers(plan["steps"])
-    plan["imports"] = sorted(imports)
-    return plan
+    plan["navigation"] = navigation(plan["steps"])
+    cache = {}
+
+    def snapshot_of(index):
+        if index not in cache:
+            cache[index] = snapshot(recorded_steps[index], read_file)
+        return cache[index]
+
+    entered = []
+    for index, entry in enumerate(plan["steps"]):
+        entered += [str(a.get("value")) for a in entry["actions"]
+                    if a["type"] == "change" and isinstance(a.get("value"), str) and a.get("value") != REDACTED]
+        for item in entry["checks"]:
+            check = item.pop("recordedCheck")
+            if check.get("assert") in WEAK_CHECKS and item.get("widgetId"):
+                stronger_check(item, check, snapshot_of(index)[0], entered)
+    if any(n.get("asksCheck") for n in plan["notes"]):
+        plan["noteChecks"] = note_checks(plan, [snapshot_of(i) for i in range(len(plan["steps"]))])
 
 
 def main(argv=None) -> int:

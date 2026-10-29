@@ -235,6 +235,7 @@ public abstract class AbstractPolicyChange extends BaseScenarioPC {
     this.wizardPage = new PolicyChangeWizardPage(getContext());
   }
   protected boolean hasReformMode() { return misc != null && misc.isReform(); }
+  protected void quoteStep() { wizardPage.getWizardButtons().getQuote().click(); }
   protected void issueStep() {
     wizardPage.getIssue().click();
     if (getPageTitle().contains("Issues that block Issuance")) {
@@ -296,6 +297,10 @@ class ProjectKnowledgeTest(ProjectTestCase):
         self.assertEqual(base["constructors"], [{"params": "InvocationContext context, Misc misc",
                                                  "argUsedBy": {"Misc misc": ["hasReformMode"]}}])
         self.assertEqual(base["wizardFields"], ["PolicyChangeWizardPage wizardPage"])
+
+    def test_base_reports_its_quote_and_issue_methods(self):
+        base, = self.result["transactionBases"]["value"]
+        self.assertEqual(base["wizardActions"], {"quote": ["quoteStep"], "issue": ["issueStep"]})
 
     def test_screen_helpers_by_title_and_page(self):
         helpers = self.result["screenHelpers"]["value"]
