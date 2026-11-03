@@ -239,8 +239,9 @@ wizard does not decide them.
   from `--cases` or `CT_EVALS_DIR`), because client recordings and projects are private.
 - **Changelog guard:** `CHANGELOG.md`; a test fails when `PLAN_SCHEMA_VERSION` or
   `PROJECT_SCHEMA_VERSION` isn't named in the top entry after a change.
-- **Scrubber:** `scrub_recording.py` replaces hosts, names and typed values in a recording so it can
-  be shared as a fixture (still kept private unless reviewed).
+- **Scrubber:** `scrub_recording.py` replaces typed and posted values, `--also` words, hosts, long
+  numbers, issue keys, meta ids and dates in a recording, and writes its narration transcripts scrubbed;
+  displayed text it can't know to replace is flagged in `needsReview` (still kept private unless reviewed).
 
 ## 6. Decisions to confirm at review
 

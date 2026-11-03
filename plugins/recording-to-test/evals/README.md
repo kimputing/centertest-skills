@@ -5,16 +5,26 @@ folders, then checks expected values in the resulting plan and project JSON. Sta
 
 ```
 python3 plugins/recording-to-test/evals/run_evals.py --cases <dir>     # or: CT_EVALS_DIR=<dir>
+python3 plugins/recording-to-test/evals/run_evals.py --cases <dir> --ct <path/to/ct.py>
 ```
 
+`--ct` runs another `ct.py` (default: this plugin's `scripts/ct.py`), e.g. an installed plugin version.
+
 Prints `PASS|FAIL|SKIP <name>` per case and a total. Exit 0 when nothing failed (skips are not failures),
-1 when any case failed, 2 when no cases directory is given.
+1 when any case failed, and 2 when no cases directory is given (neither `--cases` nor `CT_EVALS_DIR`),
+the directory does not exist, or it holds no `<name>/case.json`. A `case.json` that is not valid JSON or not a
+valid case (e.g. a missing `project`) is a FAIL `invalid case: …`, and the run goes on with the next case.
 
 ## Where cases live
 
 Cases describe real client projects and recordings, so they are **never kept in this repository**. They live
 in a private Kimputing repository, cloned locally; point `--cases` or `CT_EVALS_DIR` at the clone. Do not
 commit a case, recording, host or client name here.
+
+Cases use the **raw recording**: the cases repository is private, so nothing needs scrubbing there.
+Scrubbed copies (`ct.py scrub`) are for parser fixtures and for sharing; in them typed values, names, ids
+and dates are replaced, so value-based expectations (`test.name`, dates, `dcColumns` /
+`dataRowCandidates` values) no longer hold.
 
 ## Case format
 
@@ -54,6 +64,7 @@ commit a case, recording, host or client name here.
 
 ## Skill-level evals
 
-Whether the skill drives the wizard well (questions, ordering, the generated test) is evaluated manually,
-per client, with the `skill-creator` skill's eval workflow. Keep those prompts and results in the same
-private repository, not here.
+This harness covers recordings (engine output). The "one plain request per client" eval asked for in
+R§11 is the manual, skill-level eval: whether the skill drives the wizard well (questions, ordering, the
+generated test) is evaluated per client with the `skill-creator` skill's eval workflow. Keep those prompts
+and results in the same private repository, not here.

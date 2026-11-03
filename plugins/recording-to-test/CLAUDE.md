@@ -57,8 +57,8 @@ marker. The suite must print nothing to stdout when run quietly
 1. Add an entry at the top of `CHANGELOG.md`. Its heading is `## <version> — <name>` and it names
    `plan schemaVersion N` and `project schemaVersion N` as in `scripts/schema.py`
    (`tests/test_changelog.py` fails otherwise).
-2. Bump the version whenever a schema version changes (a breaking change); additive changes bump
-   the minor or patch number.
+2. Bump the MAJOR version when a schema version changes; additive changes bump the minor or patch
+   number. A breaking plan/project change requires a `schemaVersion` bump (see the additive schema rule).
 3. After the PR merges, tag `main` as `recording-to-test-v<major>.<minor>.<patch>` (for example
    `recording-to-test-v2.0.0`) and push the tag. `plugin.json` keeps no `version`.
 

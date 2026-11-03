@@ -27,6 +27,9 @@ current `plan schemaVersion` and `project schemaVersion` from `scripts/schema.py
   the phase starts.
 - The wizard reads the project's `.claude/client-profile.md` and follows it within the hard rules.
 
-### CI
+### Quality
 
-- Test workflow `.github/workflows/tests.yml` runs the suite on Linux, macOS and Windows.
+- CI: test workflow `.github/workflows/tests.yml` runs the suite on Linux, macOS and Windows.
+- Eval harness `evals/run_evals.py`: checks plan and project values for cases kept outside this repository.
+- `ct.py scrub`: a copy of a recording with typed values, names, hosts, ids and dates replaced, for private
+  fixtures; narration transcripts are kept scrubbed.
