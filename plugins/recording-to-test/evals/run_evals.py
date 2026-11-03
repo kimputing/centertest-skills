@@ -63,8 +63,10 @@ def _expand(value, case_dir):
 
 
 def _run(args):
+    # the child writes UTF-8 whatever the console code page is (Windows), and we decode it as such
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     return subprocess.run([sys.executable] + args, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=TIMEOUT)
+                          encoding="utf-8", errors="replace", timeout=TIMEOUT, env=env)
 
 
 def _read_json(path):
@@ -159,6 +161,10 @@ def run_case(case_dir, ct):
 
 
 def main(argv=None):
+    # a redirected run on Windows writes cp1252: escape what it can't encode instead of crashing
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description="Run recording-to-test eval cases kept outside this repository.")
     parser.add_argument("--cases", help="directory of case folders, each with case.json (else CT_EVALS_DIR)")
     parser.add_argument("--ct", default=DEFAULT_CT, help="path to ct.py (default: this plugin's)")

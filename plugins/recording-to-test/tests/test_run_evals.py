@@ -214,6 +214,26 @@ class MainTest(CaseTestBase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL c1", out)
 
+    def test_main_survives_a_stdout_that_cannot_encode_a_name(self):
+        self.write_case(name="c名", project=os.path.join(self.tmp.name, "gone"))
+        raw = io.BytesIO()
+        narrow = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+        saved = sys.stdout, sys.stderr
+        try:
+            sys.stdout = sys.stderr = narrow
+            code = run_evals.main(["--cases", self.cases])
+            narrow.flush()
+        finally:
+            sys.stdout, sys.stderr = saved
+        self.assertEqual(code, 0)
+        self.assertIn(b"SKIP c\\u540d", raw.getvalue())
+
+    def test_child_processes_write_utf8(self):
+        from unittest import mock
+        with mock.patch.object(run_evals.subprocess, "run") as run:
+            run_evals._run(["x"])
+        self.assertEqual(run.call_args.kwargs["env"]["PYTHONIOENCODING"], "utf-8")
+
     def test_main_uses_env_dir_and_skip_is_not_failure(self):
         self.write_case(project=os.path.join(self.tmp.name, "gone"))
         code, out = run_main([], env={"CT_EVALS_DIR": self.cases})
