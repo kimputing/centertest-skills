@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(PLUGIN, "scripts"))
 sys.path.insert(0, HERE)
 import ct  # noqa: E402
 import schema  # noqa: E402
-from rule_markers import MARKERS  # noqa: E402
+from rule_markers import ANCHORS, MARKERS  # noqa: E402
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
@@ -169,6 +169,12 @@ class SkillTextTest(unittest.TestCase):
     def test_rule_markers_present(self):
         missing = [f"{name}: {phrase!r}" for name, phrase in MARKERS
                    if phrase not in self.files.get(name, "")]
+        self.assertEqual(missing, [])
+
+    def test_planned_anchors_exist(self):
+        """Every anchor the plan says a phase file produces is a heading or <a id> in that file."""
+        missing = [f"{name}#{anchor}" for name, wanted in ANCHORS.items()
+                   for anchor in wanted if anchor not in anchors(self.files.get(name, ""))]
         self.assertEqual(missing, [])
 
     def test_no_script_paths_into_other_plugins(self):
