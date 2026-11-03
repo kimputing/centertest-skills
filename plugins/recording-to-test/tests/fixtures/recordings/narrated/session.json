@@ -1,0 +1,17 @@
+{
+ "id": "2026-10-02_090000",
+ "name": "narrated",
+ "startedAt": "2026-10-02T09:00:00.123456789+02:00",
+ "endedAt": "2026-10-02T09:00:30+02:00",
+ "startUrl": "http://localhost:8180/pc/PolicyCenter.do",
+ "toolVersion": "1.1.0",
+ "audio": [{"f": "audio/0001.webm", "t": 4000}],
+ "steps": [
+  {"seq": 1, "kind": "start", "time": "2026-10-02T09:00:01.000000000+02:00", "title": "Login",
+   "screen": "Login-LoginScreen", "app": "PolicyCenter"},
+  {"seq": 2, "kind": "server", "time": "2026-10-02T09:00:08.500000000+02:00", "title": "My Summary",
+   "screen": "Underwriter_MySummary", "app": "PolicyCenter"},
+  {"seq": 3, "kind": "server", "time": "2026-10-02T09:00:20+02:00", "title": "Policy Info",
+   "screen": "SubmissionWizard_PolicyInfoScreen", "app": "PolicyCenter"}
+ ]
+}

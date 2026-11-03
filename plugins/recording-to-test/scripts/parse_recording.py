@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,6 +27,7 @@ import schema  # noqa: E402
 import flow_match  # noqa: E402
 import data_match  # noqa: E402
 import restart  # noqa: E402
+import narration  # noqa: E402
 import find_getter  # noqa: E402  vendored: byte-identical to plugins/cssid-finder/scripts/find_getter.py
 
 APPS = {"PolicyCenter": "pc", "BillingCenter": "bc", "ClaimCenter": "cc", "ContactManager": "ab"}
@@ -95,6 +97,40 @@ def file_reader(path: str):
             with zipfile.ZipFile(path) as z:
                 try:
                     return z.read(prefix + rel).decode("utf-8", errors="replace")
+                except KeyError:
+                    return None
+        return read_zip
+    return lambda rel: None
+
+
+def file_bytes(path: str):
+    """read(rel) -> bytes of another file in the recording (e.g. audio/0001.webm), or None.
+    Same lookup and path checks as file_reader."""
+    if os.path.isfile(path) and os.path.basename(path) == "session.json":
+        path = os.path.dirname(path)
+    if os.path.isdir(path):
+        base = path if os.path.isfile(os.path.join(path, "session.json")) else \
+            os.path.join(path, os.path.basename(os.path.normpath(path)))
+
+        def read_dir(rel):
+            target = os.path.normpath(os.path.join(base, rel))
+            if not target.startswith(os.path.normpath(base) + os.sep) or not os.path.isfile(target):
+                return None
+            with open(target, "rb") as f:
+                return f.read()
+        return read_dir
+    if os.path.isfile(path) and zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as z:
+            names = sorted(n for n in z.namelist()
+                           if n.split("/")[-1] == "session.json" and n.count("/") <= 1)
+        prefix = names[0][:-len("session.json")] if names else ""
+
+        def read_zip(rel):
+            if ".." in rel.split("/"):
+                return None
+            with zipfile.ZipFile(path) as z:
+                try:
+                    return z.read(prefix + rel)
                 except KeyError:
                     return None
         return read_zip
@@ -1697,7 +1733,7 @@ def retries(steps: list) -> list:
     return found
 
 
-def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> dict:
+def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, read_bytes=None, tools=None) -> dict:
     meta = session.get("meta") or {}
     plan = {
         "schemaVersion": schema.PLAN_SCHEMA_VERSION,
@@ -1714,6 +1750,14 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         "facadeSequence": [], "existingTests": [], "dcColumns": [], "dataRowCandidates": [],
         "restartCandidates": [], "seedPointCandidates": [],
     }
+    # spoken notes first, so noteChecks sees them like typed ones
+    with tempfile.TemporaryDirectory() as workdir:
+        found = tools if tools is not None or not session.get("audio") else narration.find_tools()
+        plan["narration"] = narration.narrate(session, read_bytes, found or {}, workdir)
+    for utterance in plan["narration"]["utterances"]:
+        note = note_entry(utterance["seq"], utterance["text"])
+        plan["notes"].append(dict(note, source="narration"))
+        utterance.update({k: note[k] for k in ("asksCheck", "conditional") if k in note})
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
     steps_actions = [with_picked_dates([a for a in s.get("actions") or [] if not a.get("removed")], s)
@@ -1932,7 +1976,7 @@ def main(argv=None) -> int:
     except (RecordingError, ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
-    plan = build_plan(session, args.cssids, file_reader(args.recording), project)
+    plan = build_plan(session, args.cssids, file_reader(args.recording), project, file_bytes(args.recording))
     # ASCII only (\u escapes): a reader that decodes the file as cp1252 on Windows still gets it right
     text = json.dumps(plan, indent=2, ensure_ascii=True)
     if args.out:
