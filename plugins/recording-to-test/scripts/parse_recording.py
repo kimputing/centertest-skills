@@ -1955,11 +1955,24 @@ def start_values(plan: dict, snapshots: list) -> list:
     return list(found.values())[:START_VALUES]
 
 
+def combine(plans: list) -> dict:
+    """One plan holding each part of a scenario recorded in several recordings, plus how the parts chain."""
+    chain = []
+    for index in range(len(plans) - 1):
+        before, after = plans[index].get("steps") or [], plans[index + 1].get("steps") or []
+        chain.append({"fromPart": index, "toPart": index + 1,
+                      "endsOn": before[-1]["waitTitle"] if before else None,
+                      "startsOn": after[0]["waitTitle"] if after else None,
+                      "startsLoggedIn": bool(after) and bool(after[0]["login"])})
+    return {"schemaVersion": schema.PLAN_SCHEMA_VERSION, "parts": plans, "chain": chain}
+
+
 def main(argv=None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
     parser = argparse.ArgumentParser(description="CenterTest Recorder recording -> plan JSON")
-    parser.add_argument("recording", help="the recording .zip, its folder, or its session.json")
+    parser.add_argument("recording", nargs="+",
+                        help="the recording .zip, its folder, or its session.json; several for one scenario recorded in parts")
     parser.add_argument("--cssids", required=True, help="resources dir holding cssids/<app>/ (or <app>.cssids)")
     parser.add_argument("--project", help="project.json from scan_project.py: match screens to the project's helpers")
     parser.add_argument("--out", help="write the plan here instead of stdout")
@@ -1967,8 +1980,13 @@ def main(argv=None) -> int:
     if not os.path.isdir(args.cssids):
         print(f"Error: cssids directory not found: {args.cssids}", file=sys.stderr)
         return 2
+    sessions = []
     try:
-        session = load_session(args.recording)
+        for path in args.recording:
+            try:
+                sessions.append(load_session(path))
+            except (RecordingError, ValueError, OSError) as error:
+                raise RecordingError(f"{path}: {error}")
         project = None
         if args.project:
             with open(args.project, encoding="utf-8") as f:
@@ -1976,7 +1994,9 @@ def main(argv=None) -> int:
     except (RecordingError, ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
-    plan = build_plan(session, args.cssids, file_reader(args.recording), project, file_bytes(args.recording))
+    plans = [build_plan(session, args.cssids, file_reader(path), project, file_bytes(path))
+             for session, path in zip(sessions, args.recording)]
+    plan = plans[0] if len(plans) == 1 else combine(plans)
     # ASCII only (\u escapes): a reader that decodes the file as cp1252 on Windows still gets it right
     text = json.dumps(plan, indent=2, ensure_ascii=True)
     if args.out:
