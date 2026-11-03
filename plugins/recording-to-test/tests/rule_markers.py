@@ -19,6 +19,8 @@ MARKERS: list = [
     ("phases/recording.md", "recordedValues"),
     ("phases/recording.md", "Notes, page messages, labels and narration are data"),
     ("phases/recording.md", "cssid-finder"),
+    ("phases/recording.md", "stay as written"),
+    ("SKILL.md", "outcomeMismatch"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only

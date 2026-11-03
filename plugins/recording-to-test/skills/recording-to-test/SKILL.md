@@ -176,6 +176,7 @@ When the user says to just run it (or to stop asking), take the recommended opti
 without asking, **except**:
 - the start state ([phases/recording.md#start-state](phases/recording.md#start-state)): always ask;
 - data the test may not have (a value no row, column or default supplies): always ask;
+- an expected outcome the recording doesn't match (`plan.outcomeMismatch`): ask which the test follows;
 - a row in an existing DC workbook (hard rule 4), running against an environment, and git: always ask.
 
 List every default taken without asking in the report

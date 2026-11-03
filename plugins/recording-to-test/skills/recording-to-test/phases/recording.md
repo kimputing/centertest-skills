@@ -398,7 +398,8 @@ approves or edits.
 
 **Expected outcome against the recording.** When `outcomeMismatch` is set (the expected outcome
 describes two changes, an increase bound and then a decrease bound, while the recording made one
-change with both), ask which the test follows before generating.
+change with both), ask which the test follows before generating, also in "Just run it" mode
+([SKILL.md#just-run-it](../SKILL.md#just-run-it)).
 
 **Conditional notes** (`conditional: true`, typed or spoken): list the condition and ask whether
 the step does it always (often the project's convention, e.g. override address validation every
@@ -485,6 +486,12 @@ What is written, once the gates have approved it ([phases/code.md#write](code.md
   from the field label (`OCCURRENCE_LIMIT = "500,000"`), used in the `.set(...)` / assert calls,
   only when `recordedValues` is `constants`, or in bootstrap when the project has no data layer
   ([phases/data.md#no-data-layer](data.md#no-data-layer)).
+- **Expected values in assertions.** With `data`, an assertion on a value the test set (the limit
+  it entered, the address it added) reads its expected value from the same data row the `.set(…)`
+  read, never a second copy of the literal. Only a value the screen produces (a premium, a
+  territory code, a calculated amount) has no row to come from: it is the one kind of expected
+  value written as a constant, and a rating-dependent one is first proposed as a "changed" /
+  "not empty" check ([Final checks](#final-checks)).
 - **Notes per `comments`** ([phases/code.md#comments](code.md#comments)): with `notes`, a note
   (typed or spoken) is a `//` comment at the line it belongs to, and a step with only notes is a
   comment after the previous step's lines; with `none`, notes are not copied (their checks are);
@@ -535,11 +542,15 @@ These hold for every client.
   (`Widget<Type>.get("<id>", getContext())`), search the steps root for a helper already used for
   that kind of widget, and use it: `CoverageUtil` for coverages, `WidgetToolbarButtonWithMenu` for
   toolbar menus, and so on.
-- **Unresolved ids go through the `cssid-finder` skill.** An item whose `resolution` is `raw` or
-  `unresolved`, and any widget id you need that the plan doesn't give (a request with no recording,
-  a final check on another field), is looked up with the `cssid-finder` skill (center and CSS id)
-  **before any raw id is written**. Use the getter chain it finds; a raw id is the last resort,
-  named in the report.
+- **Unresolved ids go through the `cssid-finder` skill.** An id with no getter and no plan rule is
+  looked up with the `cssid-finder` skill (center and CSS id) **before a raw id is written for it**:
+  an item whose `resolution` is `unresolved`, a `raw` item no rule above wrote, and any widget id you
+  need that the plan doesn't give (a request with no recording, a final check on another field). Use
+  the getter chain it finds; a raw id is the last resort, named in the report. The raw forms the
+  plan writes on purpose, because the getter fails there, are not looked up: the pin fallback
+  (`Widget<Type>.get("<recorded id>", getContext())` for a widget with no `withCssId`), `cellById`,
+  the `rowRadio` click (`WidgetButton.get("<id>_1", getContext())`) and the `…MenuIcon` picker
+  (`WidgetMenuItem.get("<…MenuIcon>", getContext())`) stay as written.
 - **Values in the project's format.** Write a value in the format the project's DDT data uses (e.g.
   `2000000`, not the formatted amount with a currency sign and commas): look at how existing steps
   set the same field.
@@ -559,7 +570,8 @@ decides it, with the recorded seqs, the generated lines and the reason.
 | Code plan ([phases/code.md#gate](code.md#gate)) | names and paths; wizard page field (inherited or own); hooks overridden; pinned ids; ids looked up with `cssid-finder`; radios in rows; rows read by id on a bound job; final checks; conditions in notes; comments; facade factory methods |
 
 An item with `candidates` is a question (which getter). Every `review` entry is shown at the gate
-of its decision. For example, at the Reuse plan gate:
+of its decision; an entry with no obvious decision (e.g. a coverage without a title, an untranslated
+item) is shown at the Code plan gate. For example, at the Reuse plan gate:
 
 ```
 #  Segment (recorded steps)          → Becomes                            Why

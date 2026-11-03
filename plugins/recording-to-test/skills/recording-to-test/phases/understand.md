@@ -58,8 +58,8 @@ Take from the plan:
 
 Ask only what the recording doesn't answer. **Where it starts** is always asked when the first step
 with actions is not a login ([phases/recording.md#start-state](recording.md#start-state)), also in
-"Just run it" mode. When `plan.outcomeMismatch` is set, ask which one the test follows
-([phases/recording.md#final-checks](recording.md#final-checks)).
+"Just run it" mode. When `plan.outcomeMismatch` is set, ask which one the test follows, also in
+"Just run it" mode ([phases/recording.md#final-checks](recording.md#final-checks)).
 
 ## Several recordings
 
@@ -82,8 +82,12 @@ the title the later part starts on, whether the later part logs in first).
   ([phases/recording.md#start-state](recording.md#start-state)).
 - Where `endsOn` and `startsOn` differ, the chain needs a step between them (a return helper or
   navigation). Show it in the start option.
-- `startsLoggedIn: true`: the later part logs in again. With the same role, propose dropping the
-  second login; with another role it is a role switch the test makes. Either way, show it at the gate.
+- `startsLoggedIn: true`: the later part logs in again. Judge "the same role" from each part's
+  login step (the user who logs in), not only the role label. With the same user, propose dropping
+  the second login; with another user it is a role switch the test makes. Keep the login when the
+  later part deliberately starts fresh (after time travel or a batch run). When it is dropped,
+  compare `endsOn` with the title the later part reaches after its login, not the login page.
+  Either way, show it at the gate.
 - Confirm the order at the gate if the recordings' names or times suggest another one.
 
 ## Narration
