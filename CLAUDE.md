@@ -38,7 +38,7 @@ plugins/<plugin-name>/
 | **cssid-finder** | Find getter chains for Guidewire CSS IDs | 1 script |
 | **ddt-analyzer** | DDT structure analysis, 28-sheet Excel report (17 without Data Studio) | 1 script |
 | **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + shared config |
-| **recording-to-test** | Recorder recording → CenterTest test in the project's structure | 2 scripts + vendored find_getter.py |
+| **recording-to-test** | Scenario wizard: recording, request, story or Jira issue → CenterTest test in the project's structure | `ct.py` engine + vendored find_getter.py + 8 phase files |
 
 ## Running scripts during development
 

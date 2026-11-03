@@ -117,6 +117,8 @@ start each command with the launcher line and write the `$WORK` path out in full
 3. **Scan** into a new `$WORK` ([Launcher](#launcher)):
 
    ```bash
+   PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
+   WORK=$(mktemp -d)
    "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" scan "<project root>" --out "$WORK/project.json"
    ```
 
@@ -189,7 +191,8 @@ List every default taken without asking in the report
 ## Session state and plan file
 
 - **State:** `~/.centertest/recording-to-test/sessions/<repo-dir-name>-<scenario>.json`, outside
-  git: phase reached, answers given, files written, the `$WORK` path. Write it after every gate
+  git: phase reached, answers given, files written, the `$WORK` path, the project root, the recording
+  path(s) and the `--cssids` directory (to rerun `scan` / `parse` when `$WORK` is gone). Write it after every gate
   and every file. `<scenario>` is the short name agreed at the Understand gate.
 - **Pause and resume:** offer to pause where the user works outside the chat (a DC regeneration in
   IntelliJ, an Excel edit). "Resume <scenario>" reloads the state file, re-reads the files it lists

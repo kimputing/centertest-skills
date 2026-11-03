@@ -2,8 +2,10 @@
 
 ## What It Does
 
-Recorder recording → CenterTest test in the target project's structure. Design:
-`docs/superpowers/specs/2026-10-06-recording-to-test-design.md` (repo root).
+Scenario wizard: Recorder recording, request, story, Jira issue or existing test → CenterTest
+scenario in the target project's structure, in six phases with a gate after each. Designs:
+`docs/superpowers/specs/2026-10-06-recording-to-test-design.md` and
+`docs/superpowers/specs/2026-11-03-scenario-wizard-design.md` (repo root).
 
 ## Architecture
 
@@ -15,14 +17,36 @@ Recorder recording → CenterTest test in the target project's structure. Design
   cssids source, build commands). Read-only.
 - `scripts/find_getter.py` — **vendored, byte-identical** copy of `plugins/cssid-finder/scripts/find_getter.py`.
   Never edit it here; change cssid-finder, then `cp` it over. `tests/test_vendored_sync.py` fails when they differ.
-- `skills/recording-to-test/SKILL.md` — the judgment steps (segments, facade matches, names,
-  confirmation gate, generation, compile).
+- `scripts/ct.py` — the single entry point the skill calls (`scan`, `parse`, `xlsx`, `narrate`,
+  `profile resolve|init`, `tools`, `gap-report`); modules load lazily.
+- `scripts/schema.py` — `PLAN_SCHEMA_VERSION` / `PROJECT_SCHEMA_VERSION` and `PLAN_FIELDS`.
+- `scripts/client_profile.py` + `profile/` (`defaults.md`, `template.md`) — flat front-matter
+  profile, switches, dated facts.
+- `scripts/narration.py` — transcript file, else local ffmpeg + whisper.cpp; raw utterances only.
+- `scripts/flow_match.py`, `data_match.py`, `restart.py`, `xlsx_read.py`, `gap_report.py` — flow and
+  data matching against the scan, restart candidates, workbook reading, gap reports.
+- `skills/recording-to-test/SKILL.md` (≤ 300 lines: inputs, hard rules, launcher, gates) and
+  `phases/{understand,recording,reuse,code,data,restart,verify,profile}.md` — the judgment steps,
+  read when their phase starts. Phase files cross-reference `phases/<file>.md#<anchor>` only.
+
+## Additive schema rule
+
+`project.json` and every plan carry `schemaVersion`. Change them **additively only**: new fields
+may appear, existing fields keep their name and meaning. A breaking change bumps the version in
+`schema.py`; the skill stops on a version higher than it knows and tells the user to update the
+plugin. Add a new plan field to `schema.PLAN_FIELDS`, because the tests check that the skill text
+only names plan fields that exist.
 
 ## Tests
 
     python3 -m unittest discover -s plugins/recording-to-test/tests -v
 
-There is no CI in this repo; run them before every commit.
+There is no CI in this repo; run them before every commit, and `claude plugin validate .` from the
+repo root. The instruction tests (`tests/test_skill_md.py`) check the skill text: every file,
+anchor, `ct.py` command and flag it names exists, SKILL.md stays under 300 lines, no `$` before a
+digit, and each phrase in `tests/rule_markers.py` is still there. When you move a rule, move its
+marker. The suite must print nothing to stdout when run quietly
+(`... 2>/dev/null | wc -l` is 0).
 
 ## Gotchas
 

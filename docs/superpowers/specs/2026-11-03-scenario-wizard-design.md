@@ -3,7 +3,7 @@
 - **Issue:** kimputing/centertest-skills#41
 - **Date:** 2026-11-03
 - **Requirements:** `2026-11-03-scenario-wizard-requirements.md` (cited as R§n)
-- **Status:** engine implemented (plan 2026-11-03-wizard-engine.md, tasks 1–12); skill and quality plans not started
+- **Status:** engine and skill implemented (plans 2026-11-03-wizard-engine.md and 2026-11-03-wizard-skill.md); quality plan not started
 
 ## 1. Shape
 

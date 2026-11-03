@@ -44,8 +44,9 @@ binding twice, cancelling or reinstating twice.
   it:** a restart point right after the commit, so a resume never repeats it. Otherwise
   `scenarioContext.restart(X, RestartPolicy.DISABLE_ON_FAILURE)` (`proposePolicy`) on the block
   containing the commit: a failure inside it reruns the test cleanly with new data instead of resuming
-  on a broken policy forever. Propose it for every cancellation, reversal, payment or other
-  back-end state change.
+  on a broken policy forever. For every cancellation, reversal, payment or other back-end state
+  change (`rerunRisk: notResumable`) propose one of the two, the restart point first when the
+  scenario allows it; never leave it without a remedy.
 - Alternative when the block should stay resumable: a back-end state check before redoing the
   commit (is the payment already there?), written as a condition inside the block. It is new logic,
   so it needs its own approval, and it is for new test classes only: not available when making an

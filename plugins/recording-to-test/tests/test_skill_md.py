@@ -160,6 +160,13 @@ class SkillTextTest(unittest.TestCase):
                             wrong.append(f"{name}: ct.py {' '.join(argv)} has no {flag}")
         self.assertEqual(wrong, [])
 
+    def test_checks_are_not_vacuous(self):
+        """SKILL.md has at least one ct.py call and one phases/ cross-reference for the checks to see."""
+        text = self.files["SKILL.md"]
+        calls = [c for seg in code_segments(text) for c in CT_CALL.findall(seg)]
+        self.assertGreaterEqual(len(calls), 1)
+        self.assertGreaterEqual(len([1 for _t, a in FILE_REF.findall(text) if a]), 1)
+
     def test_plan_fields_exist(self):
         unknown = [f"{name}: plan.{field}" for name, text in self.files.items()
                    for field in PLAN_FIELD.findall(text)

@@ -157,7 +157,7 @@ The user names a test class and asks for one of:
   `dataDriven`). **Never change an existing test class:** the new scenario is its own test class
   reusing the same components ([phases/reuse.md#ladder](reuse.md#ladder)).
 - **A data row:** read the test's DC workbook and the rows it runs; go to the Data phase
-  ([phases/data.md#existing-row](data.md#existing-row)).
+  ([phases/data.md#new-row](data.md#new-row)).
 - **Restart points** ("make this test resumable"): read the test and every component it calls; go
   to [phases/restart.md#candidates](restart.md#candidates).
 

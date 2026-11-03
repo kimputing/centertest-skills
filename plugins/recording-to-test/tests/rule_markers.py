@@ -49,6 +49,20 @@ MARKERS: list = [
     ("phases/verify.md", "ct.py gap-report"),
     ("phases/verify.md", "TestRecord"),
     ("phases/verify.md", "check the screen before the id"),
+    ("SKILL.md", "ask every time"),
+    ("SKILL.md", "upgradePages"),
+    ("SKILL.md", "Never invent a data value"),
+    ("SKILL.md", "CoverageUtil"),
+    ("SKILL.md", ".withCssId("),
+    ("SKILL.md", "the `--cssids` directory"),
+    ("SKILL.md", "WORK=$(mktemp -d)"),
+    ("SKILL.md", "PY=python3; \"$PY\" --version"),
+    ("phases/restart.md", "rerunRisk: notResumable"),
+    ("phases/profile.md", "the default is used"),
+    ("phases/profile.md", "only after approval"),
+    ("phases/profile.md", "Verify gate"),
+    ("phases/profile.md", "~/.centertest/recording-to-test.json"),
+    ("phases/profile.md", "90 days"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
