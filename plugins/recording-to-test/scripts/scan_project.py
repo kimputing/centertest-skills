@@ -17,14 +17,17 @@ import glob
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import sys
 import tempfile
 import zipfile
+import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import schema  # noqa: E402
+import xlsx_read  # noqa: E402
 
 SKIP_DIRS = {".git", ".gradle", ".idea", "build", "out", "target", "node_modules"}
 CENTERS = {"BaseScenarioPC": "pc", "BaseScenarioBC": "bc", "BaseScenarioCC": "cc", "BaseScenarioAB": "ab"}
@@ -367,6 +370,39 @@ def idioms(steps):
                 f"{sum(buttons.values())} wizard button calls; coverage amounts {plain} plain, {formatted} formatted")
 
 
+DATASOURCE = re.compile(r"@DataDriven\([^)]*?datasource\s*=\s*\"([^\"]+)\"")
+WORKBOOK_ERRORS = (xlsx_read.WorkbookError, zipfile.BadZipFile, zlib.error, NotImplementedError, OSError, ValueError)
+
+
+def data_workbooks(root, tests):
+    """Every .xlsx under testdata/: sheets (columns, Code values, row count) and the tests whose @DataDriven names it."""
+    used = collections.defaultdict(list)
+    for path, text in sorted(tests.items()):
+        for source in DATASOURCE.findall(text):
+            used[posixpath.normpath(source.replace("\\", "/"))].append(rel(root, path))
+    books, skipped = [], []
+    for current, dirs, files in os.walk(os.path.join(root, "testdata")):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(files):
+            if not name.lower().endswith(".xlsx") or name.startswith("~$"):
+                continue
+            path = rel(root, os.path.join(current, name))
+            full = os.path.join(current, name)
+            try:
+                columns = xlsx_read.headers(full)
+                rows = xlsx_read.read_workbook(full)
+            except WORKBOOK_ERRORS as error:
+                skipped.append({"path": path, "reason": f"unreadable workbook: {error}"})
+                continue
+            sheets = {sheet: {"columns": columns.get(sheet, []),
+                              "codes": [row["Code"] for row in data if row.get("Code")],
+                              "rows": len(data)} for sheet, data in rows.items()}
+            books.append({"path": path, "sheets": sheets, "usedBy": used.get(path, [])})
+    if not books and not skipped:
+        return missing("no .xlsx under testdata")
+    return fact({"workbooks": books, "skipped": skipped}, "testdata/**/*.xlsx, @DataDriven datasource in tests")
+
+
 GUIDANCE_FILES = {"CLAUDE.md", "AGENTS.md"}
 
 
@@ -527,6 +563,7 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
     m2_home = m2_home or os.path.expanduser("~/.m2")
     cache_root = cache_root or os.path.join(tempfile.gettempdir(), "recording-to-test-cssids")
     java, props = index(root)
+    tests = {}
     result = {"schemaVersion": schema.PROJECT_SCHEMA_VERSION, "root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
     package, source = result["clientPackage"]["value"], result["testsRoot"]["value"]
     if package and source:
@@ -545,7 +582,7 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
         for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
                     "screenHelpers", "idioms"):
             result[key] = missing("needs clientPackage and testsRoot")
-    result.update(guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
+    result.update(dataWorkbooks=data_workbooks(root, tests), guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
                   build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
     return result
 

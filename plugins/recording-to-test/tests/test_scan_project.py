@@ -10,6 +10,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 sys.path.insert(0, SCRIPTS)
 import scan_project as sp  # noqa: E402
+from xlsx_fixture import make_xlsx  # noqa: E402
 
 TEST_A = '''package com.acme.tests.pc.personalauto.submission;
 @CenterTest
@@ -472,3 +473,63 @@ class BuildAndCommandLineTest(ProjectTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DataWorkbooksTest(ProjectTestCase):
+    DC = "testdata/personalauto/PA_SubmissionDC.xlsx"
+
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+        self.dc = os.path.join(self.root, *self.DC.split("/"))
+        os.makedirs(os.path.dirname(self.dc), exist_ok=True)
+        make_xlsx(self.dc, {"DataCombination": [["Code", "Driver", "Vehicle"], ["DC1", "D1", "V1"], ["DC2", "D1", "V2"]]})
+
+    def workbooks(self):
+        return self.scan()["dataWorkbooks"]
+
+    def test_lists_columns_codes_and_rows(self):
+        book = {w["path"]: w for w in self.workbooks()["value"]["workbooks"]}[self.DC]
+        self.assertEqual(book["sheets"], {"DataCombination": {"columns": ["Code", "Driver", "Vehicle"],
+                                                              "codes": ["DC1", "DC2"], "rows": 2}})
+
+    def test_used_by_from_data_driven(self):
+        book = {w["path"]: w for w in self.workbooks()["value"]["workbooks"]}[self.DC]
+        self.assertEqual(book["usedBy"], ["src/main/java/com/acme/tests/pc/personalauto/submission/PA_SubmissionTest.java"])
+
+    def test_corrupt_workbook_is_skipped_with_reason(self):
+        with open(os.path.join(self.root, "testdata", "bad.xlsx"), "wb") as f:
+            f.write(b"not a zip")
+        value = self.workbooks()["value"]
+        self.assertTrue(value["skipped"][0]["path"].endswith("bad.xlsx"))
+        self.assertTrue(value["skipped"][0]["reason"])
+        self.assertEqual([w["path"] for w in value["workbooks"]], [self.DC])
+
+    def test_excel_lock_file_ignored(self):
+        with open(os.path.join(self.root, "testdata", "personalauto", "~$PA_SubmissionDC.xlsx"), "wb") as f:
+            f.write(b"lock")
+        value = self.workbooks()["value"]
+        self.assertEqual(value["skipped"], [])
+        self.assertEqual([w["path"] for w in value["workbooks"]], [self.DC])
+
+    def test_member_read_errors_are_skipped_not_fatal(self):
+        import unittest.mock
+        import zlib
+        bad = os.path.join(self.root, "testdata", "crc.xlsx")
+        make_xlsx(bad, {"S": [["Code"], ["X"]]})
+        real = sp.xlsx_read.read_workbook
+
+        def flaky(path, *args, **kwargs):
+            if path.endswith("crc.xlsx"):
+                raise zlib.error("bad data")
+            return real(path, *args, **kwargs)
+
+        with unittest.mock.patch.object(sp.xlsx_read, "read_workbook", flaky):
+            value = self.workbooks()["value"]
+        self.assertEqual([w["path"] for w in value["workbooks"]], [self.DC])
+        self.assertTrue(value["skipped"][0]["path"].endswith("crc.xlsx"))
+
+    def test_no_testdata_is_missing(self):
+        os.remove(self.dc)
+        self.assertIn("reason", self.workbooks())
+        self.assertIsNone(self.workbooks()["value"])
