@@ -40,6 +40,10 @@ MARKERS: list = [
     ("phases/data.md", "ct.py\" xlsx"),
     ("phases/data.md", "6.16"),
     ("phases/data.md", "post-write"),
+    ("phases/restart.md", "DISABLE_ON_FAILURE"),
+    ("phases/restart.md", "pays again"),
+    ("phases/restart.md", "re-verify the generated classes"),
+    ("SKILL.md", "restart points only"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only

@@ -38,6 +38,10 @@ defaults in the phase files, never these rules.
 2. **Never change an existing test class.** A scenario that needs an extra step (an `assertXYZ`
    after a submission) becomes its **own test class** (`…XYZTest`) reusing the same components.
    Existing tests are never extended in place.
+   The one exception: "make this test resumable" edits **restart points only** (the `RestartPoints`
+   enum, `restart()`/`restartComplete()` blocks and their `else` branches; no new steps, assertions
+   or data), shown as a diff, approved at the Code plan gate and followed by a regression run of all
+   its rows ([phases/restart.md#resume-state](phases/restart.md#resume-state)).
 3. **Base owns the flow.** A variant overrides `protected` step hooks; its `execute()` is
    `super.execute()` plus extras. Never re-list the base sequence
    ([phases/reuse.md#variants](phases/reuse.md#variants)).
