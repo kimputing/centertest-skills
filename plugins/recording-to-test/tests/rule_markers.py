@@ -44,6 +44,11 @@ MARKERS: list = [
     ("phases/restart.md", "pays again"),
     ("phases/restart.md", "re-verify the generated classes"),
     ("SKILL.md", "restart points only"),
+    ("phases/verify.md", "screen by screen"),
+    ("phases/verify.md", "asking before each"),
+    ("phases/verify.md", "ct.py gap-report"),
+    ("phases/verify.md", "TestRecord"),
+    ("phases/verify.md", "check the screen before the id"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
