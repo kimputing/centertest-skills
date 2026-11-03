@@ -51,7 +51,7 @@
   {
    "seq": 3,
    "kind": "server",
-   "title": "Account Summary: Duncan Test",
+   "title": "Account Summary: Pat Example",
    "screen": "AccountFile_Summary",
    "app": "PolicyCenter",
    "messages": [
@@ -101,7 +101,7 @@
   {
    "seq": 4,
    "kind": "stop",
-   "title": "Account Summary: Duncan Test",
+   "title": "Account Summary: Pat Example",
    "screen": "AccountFile_Summary",
    "app": "PolicyCenter",
    "messages": [

@@ -299,7 +299,7 @@ class HelpersTest(unittest.TestCase):
                                              {"text": "new style", "level": "error"}])
 
     def test_wait_title_keeps_the_part_before_the_colon(self):
-        self.assertEqual(pr.wait_title("Account Summary: Duncan Test"), "Account Summary")
+        self.assertEqual(pr.wait_title("Account Summary: Pat Example"), "Account Summary")
         self.assertEqual(pr.wait_title("Offerings"), "Offerings")
         self.assertEqual(pr.wait_title(None), "")
 
@@ -380,7 +380,7 @@ def messages(step: dict) -> list:
 
 
 def wait_title(title) -> str:
-    """The stable part of a page title ('Account Summary: Duncan Test' -> 'Account Summary').
+    """The stable part of a page title ('Account Summary: Pat Example' -> 'Account Summary').
     waitForPageTitle matches a substring, so the prefix before ':' is enough."""
     return (title or "").split(":")[0].strip()
 ```
