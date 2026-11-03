@@ -1751,9 +1751,7 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, rea
         "restartCandidates": [], "seedPointCandidates": [],
     }
     # spoken notes first, so noteChecks sees them like typed ones
-    with tempfile.TemporaryDirectory() as workdir:
-        found = tools if tools is not None or not session.get("audio") else narration.find_tools()
-        plan["narration"] = narration.narrate(session, read_bytes, found or {}, workdir)
+    plan["narration"] = narrate(session, read_bytes, tools)
     for utterance in plan["narration"]["utterances"]:
         note = note_entry(utterance["seq"], utterance["text"])
         plan["notes"].append(dict(note, source="narration"))
@@ -1827,6 +1825,18 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, rea
                 "reason": review_reason(translated)})
     plan["imports"] = sorted(imports)
     return plan
+
+
+def narrate(session: dict, read_bytes, tools) -> dict:
+    """narration.narrate, but never fatal: narration is optional, so whatever malformed audio metadata
+    still breaks it makes the narration "unavailable" instead of stopping the plan."""
+    try:
+        with tempfile.TemporaryDirectory() as workdir:
+            found = tools if tools is not None or not session.get("audio") else narration.find_tools()
+            return narration.narrate(session, read_bytes, found or {}, workdir)
+    except Exception as error:  # noqa: BLE001 - any failure here must not cost the plan
+        return {"source": "unavailable", "reason": f"narration failed ({type(error).__name__}: {error})",
+                "segments": [], "utterances": []}
 
 
 def note_entry(seq, text: str) -> dict:

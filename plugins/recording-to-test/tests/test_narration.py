@@ -109,6 +109,69 @@ class NarrateTest(unittest.TestCase):
         self.assertIn("audio/1.webm", result["reason"])
 
 
+TRANSCRIPT = b'{"segments": [{"start": 0, "end": 1000, "text": "Check the total."}]}'
+
+
+def reads_transcript(rel):
+    return TRANSCRIPT if rel.endswith(".transcript.json") else None
+
+
+def malformed(**changes):
+    session = pr.load_session(NARRATED)
+    session.update(changes)
+    return session
+
+
+class MalformedAudioTest(unittest.TestCase):
+    def test_entry_with_bad_time_is_skipped_with_reason(self):
+        session = malformed(audio=[{"f": "audio/0001.webm", "t": "4s"}, {"f": "audio/0002.webm", "t": 0}])
+        result = narration.narrate(session, reads_transcript, NO_TOOLS, ".")
+        self.assertEqual([s["file"] for s in result["segments"]], ["audio/0002.webm"])
+        self.assertIn("audio/0001.webm", result["reason"])
+
+    def test_plain_string_entry_is_skipped_with_reason(self):
+        session = malformed(audio=["audio/0001.webm", {"f": "audio/0002.webm", "t": 0}])
+        result = narration.narrate(session, reads_transcript, NO_TOOLS, ".")
+        self.assertEqual([s["file"] for s in result["segments"]], ["audio/0002.webm"])
+        self.assertIn("audio entry 1", result["reason"])
+
+    def test_audio_not_a_list_is_unavailable(self):
+        result = narration.narrate(malformed(audio={"f": "audio/0001.webm", "t": 0}), reads_transcript, NO_TOOLS, ".")
+        self.assertEqual((result["source"], result["utterances"]), ("unavailable", []))
+        self.assertIn("not a list", result["reason"])
+
+    def test_bad_started_at_keeps_segments_with_reason(self):
+        result = narration.narrate(malformed(startedAt="yesterday"), pr.file_bytes(NARRATED), NO_TOOLS, ".")
+        self.assertEqual((result["source"], len(result["segments"]), result["utterances"]), ("transcript", 2, []))
+        self.assertIn("startedAt", result["reason"])
+
+    def test_bad_step_time_maps_onto_the_other_steps(self):
+        session = malformed()
+        session["steps"][1]["time"] = "later"
+        result = narration.narrate(session, pr.file_bytes(NARRATED), NO_TOOLS, ".")
+        self.assertEqual([u["seq"] for u in result["utterances"]], [1, 1])
+        self.assertIn("step 2", result["reason"])
+
+    def test_metadata_problems_offer_no_install(self):
+        result = narration.narrate(malformed(audio=["x"]), reads_transcript, NO_TOOLS, ".")
+        self.assertNotIn("install", result)
+
+    def test_build_plan_survives_each_malformed_audio(self):
+        bad_step = malformed()
+        bad_step["steps"][0]["time"] = 7
+        for session in (malformed(audio=[{"f": "audio/0001.webm", "t": "4s"}]), malformed(startedAt="x"),
+                        malformed(audio={"f": "a"}), malformed(audio=["audio/0001.webm"]), bad_step):
+            plan = pr.build_plan(session, CSSIDS, pr.file_reader(NARRATED), None, pr.file_bytes(NARRATED), NO_TOOLS)
+            self.assertIn(plan["narration"]["source"], ("transcript", "unavailable"))
+
+    def test_build_plan_turns_a_narration_crash_into_unavailable(self):
+        from unittest import mock
+        with mock.patch.object(pr.narration, "narrate", side_effect=RuntimeError("boom")):
+            plan = narrated_plan()
+        self.assertEqual(plan["narration"], {"source": "unavailable", "reason": "narration failed (RuntimeError: boom)",
+                                             "segments": [], "utterances": []})
+
+
 class FindToolsTest(unittest.TestCase):
     def test_env_model_beats_config(self):
         with tempfile.TemporaryDirectory() as folder:

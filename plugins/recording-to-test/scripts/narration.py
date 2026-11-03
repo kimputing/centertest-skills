@@ -55,11 +55,20 @@ def find_tools(env=os.environ, config_path: str = DEFAULT_CONFIG) -> dict:
             "model": model if model and os.path.isfile(model) else None}
 
 
+def offset_ms(iso, origin: int):
+    """Milliseconds from origin to an RFC 3339 time, or None when it is not one."""
+    try:
+        return to_ms(iso) - origin
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def assign_steps(utterances: list, steps: list, started_at: str) -> list:
     """Each utterance gets the seq of the last step whose offset (ms since started_at) is <= its time;
-    the first step when it speaks before any."""
+    the first step when it speaks before any. A step whose time does not parse is left out."""
     origin = to_ms(started_at)
-    timed = sorted((to_ms(s["time"]) - origin, s.get("seq")) for s in steps if s.get("time"))
+    timed = sorted((offset, s.get("seq")) for s in steps if s.get("time")
+                   for offset in [offset_ms(s["time"], origin)] if offset is not None)
     result = []
     for utterance in sorted(utterances, key=lambda u: u["t"]):
         seq = timed[0][1] if timed else None
@@ -68,6 +77,33 @@ def assign_steps(utterances: list, steps: list, started_at: str) -> list:
                 seq = step_seq
         result.append(dict(utterance, seq=seq))
     return result
+
+
+def audio_entry(entry, number: int):
+    """(file, offset ms) of the session's audio entry `number` (counted from 1), or (None, problem)
+    when it is malformed."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("f"), str) or not entry["f"]:
+        return None, f"audio entry {number}: not an object with a file name (skipped)"
+    try:
+        return entry["f"], int(entry.get("t") or 0)
+    except (ValueError, TypeError):
+        return None, f"{entry['f']}: start time {entry.get('t')!r} is not a number of ms (skipped)"
+
+
+def utterances_of(segments: list, session: dict, problems: list) -> list:
+    """Utterances mapped onto the steps; none when startedAt does not parse (noted in problems)."""
+    started_at, steps = session.get("startedAt"), session.get("steps") or []
+    if not segments or not started_at:
+        return []
+    try:
+        origin = to_ms(started_at)
+    except (ValueError, TypeError, AttributeError):
+        problems.append(f"startedAt {started_at!r} is not an RFC 3339 time: utterances not mapped to steps")
+        return []
+    bad = [str(s.get("seq")) for s in steps if s.get("time") and offset_ms(s["time"], origin) is None]
+    if bad:
+        problems.append(f"step {', '.join(bad)}: time is not an RFC 3339 time (left out of the mapping)")
+    return assign_steps([{"t": s["start"], "text": s["text"]} for s in segments], steps, started_at)
 
 
 def stem_of(rel: str) -> str:
@@ -119,18 +155,25 @@ def narrate(session: dict, read_bytes, tools: dict, workdir: str) -> dict:
     audio = session.get("audio") or []
     if not audio:
         return {"source": "none", "segments": [], "utterances": []}
+    if not isinstance(audio, list):
+        return {"source": "unavailable", "segments": [], "utterances": [],
+                "reason": "the session's audio metadata is not a list"}
     if read_bytes is None:
         return {"source": "unavailable", "segments": [], "utterances": [], "reason": NOT_READABLE}
-    segments, sources, problems = [], set(), []
+    segments, sources, problems, needs_tools = [], set(), [], False
     can_whisper = all(tools.get(k) for k in ("ffmpeg", "whisper", "model"))
     for index, entry in enumerate(audio):
-        rel, offset = entry.get("f", ""), int(entry.get("t") or 0)
+        rel, offset = audio_entry(entry, index + 1)
+        if rel is None:
+            problems.append(offset)
+            continue
         found = transcript_segments(read_bytes, rel)
         source = "transcript"
         if found is None:
             source = "whisper"
             if not can_whisper:
                 problems.append(f"{rel}: no transcript file and ffmpeg / whisper-cli / model not all available")
+                needs_tools = True
                 continue
             data = read_bytes(rel)
             if data is None:
@@ -146,12 +189,10 @@ def narrate(session: dict, read_bytes, tools: dict, workdir: str) -> dict:
                      for s in found if s["text"]]
     result = {"source": "whisper" if "whisper" in sources else "transcript" if sources else "unavailable",
               "segments": segments, "utterances": []}
-    result["utterances"] = assign_steps([{"t": s["start"], "text": s["text"]} for s in segments],
-                                        session.get("steps") or [], session["startedAt"]) \
-        if segments and session.get("startedAt") else []
+    result["utterances"] = utterances_of(segments, session, problems)
     if problems:
         result["reason"] = "; ".join(problems)
-    if not tools_ready(tools) and (result["source"] == "unavailable" or problems):
+    if not tools_ready(tools) and needs_tools:  # bad metadata is not fixed by installing tools
         result["install"] = dict(INSTALL)
     return result
 
