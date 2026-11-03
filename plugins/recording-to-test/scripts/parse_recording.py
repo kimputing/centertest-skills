@@ -24,6 +24,7 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import schema  # noqa: E402
 import flow_match  # noqa: E402
+import data_match  # noqa: E402
 import find_getter  # noqa: E402  vendored: byte-identical to plugins/cssid-finder/scripts/find_getter.py
 
 APPS = {"PolicyCenter": "pc", "BillingCenter": "bc", "ClaimCenter": "cc", "ContactManager": "ab"}
@@ -1709,7 +1710,7 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         "notes": [note_entry(None, n.get("text", "")) for n in session.get("notes") or []],
         "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "navigation": [], "noteChecks": [],
         "transactionDates": [], "verifyOnly": [], "imports": [],
-        "facadeSequence": [], "existingTests": [],
+        "facadeSequence": [], "existingTests": [], "dcColumns": [], "dataRowCandidates": [],
     }
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
@@ -1806,6 +1807,10 @@ def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
         plan["facadeSequence"] = flow_match.facade_sequence(plan, facades)
         folders = ((project.get("folders") or {}).get("value") or {}).get("tests") or {}
         plan["existingTests"] = flow_match.existing_tests(plan["facadeSequence"], folders, None)
+    workbooks = ((project.get("dataWorkbooks") or {}).get("value") or {}).get("workbooks")
+    if workbooks:
+        plan["dcColumns"] = data_match.dc_columns(plan, workbooks)
+        plan["dataRowCandidates"] = data_match.data_row_candidates(plan["dcColumns"], project.get("root") or "")
     apply_idioms(plan, (project.get("idioms") or {}).get("value") or {})
     pages = {page for entry in plan["steps"] for page in entry["pages"]}
     plan_bases = {base["class"] for base in bases
