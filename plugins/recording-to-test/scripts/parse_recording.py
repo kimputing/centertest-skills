@@ -1756,6 +1756,7 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, rea
         note = note_entry(utterance["seq"], utterance["text"])
         plan["notes"].append(dict(note, source="narration"))
         utterance.update({k: note[k] for k in ("asksCheck", "conditional") if k in note})
+    spoken = {utterance["seq"] for utterance in plan["narration"]["utterances"]}
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
     steps_actions = [with_picked_dates([a for a in s.get("actions") or [] if not a.get("removed")], s)
@@ -1771,8 +1772,8 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, rea
         recorded = with_headers(recorded, read_file(dom) if dom and read_file else None)
         notes = [n.get("text", "") for n in recorded_step.get("notes") or []]
         plan["notes"] += [note_entry(recorded_step.get("seq"), text) for text in notes]
-        if not recorded and not notes:
-            continue
+        if not recorded and not notes and recorded_step.get("seq") not in spoken:
+            continue  # a step spoken about stays, like one with typed notes: its notes point at it
         app = APPS.get(recorded_step.get("app"))
         entry = {"seq": recorded_step.get("seq"), "app": app, "appName": recorded_step.get("app"),
                  "appSwitch": bool(recorded) and previous_app is not None and app is not None and app != previous_app,

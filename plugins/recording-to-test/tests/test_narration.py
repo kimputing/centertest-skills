@@ -204,6 +204,14 @@ class PlanIntegrationTest(unittest.TestCase):
         self.assertNotIn("asksCheck", spoken[0])
         self.assertTrue(plan["narration"]["utterances"][1]["asksCheck"])
 
+    def test_step_with_only_spoken_notes_is_kept(self):
+        plan = narrated_plan()
+        self.assertEqual([entry["seq"] for entry in plan["steps"]], [1, 2])
+
+    def test_spoken_step_kept_opens_no_application(self):
+        plan = narrated_plan()
+        self.assertEqual((plan["apps"], [e["appSwitch"] for e in plan["steps"]]), ([], [False, False]))
+
     def test_existing_fixtures_unchanged(self):
         path = os.path.join(RECORDINGS, "real-180418")
         session = pr.load_session(path)
