@@ -125,6 +125,38 @@ class ResolveTest(ProfileCase):
         self.assertEqual([{"line": "- old fact (verified 2026-07-01)", "verified": "2026-07-01"}],
                          self.resolve()["staleFacts"])
 
+    def test_malformed_profile_falls_back_to_defaults(self):
+        self.write_profile("---\ngate: plan\na:\n  b: 1\n---\n")
+        result = self.resolve(project(data_key=5))
+        self.assertTrue(result["exists"])
+        self.assertEqual("nested YAML is not supported: line 4", result["error"])
+        self.assertEqual({"value": "phases", "source": "defaults"}, result["switches"]["gate"])
+        self.assertEqual({"value": "dataKey", "source": "scan"}, result["switches"]["sharedValues"])
+
+    def test_bad_verified_date_is_listed_not_raised(self):
+        self.write_profile("---\ngate: plan\n---\n- x (verified 2026-13-99)\n- y (verified 2026-07-01)\n")
+        result = self.resolve()
+        self.assertEqual([{"key": "verified", "value": "2026-13-99", "allowed": "YYYY-MM-DD"}], result["invalid"])
+        self.assertEqual(["2026-07-01"], [f["verified"] for f in result["staleFacts"]])
+        self.assertNotIn("error", result)
+
+    def test_cli_resolve_malformed_profile_exits_zero(self):
+        self.write_profile("---\na:\n  b: 1\n---\n")
+        run = subprocess.run([sys.executable, os.path.join(SCRIPTS, "ct.py"), "profile", "resolve",
+                              "--root", self.root], capture_output=True, text=True)
+        self.assertEqual(0, run.returncode)
+        self.assertIn("nested YAML", json.loads(run.stdout)["error"])
+
+    def test_cli_project_not_an_object_exits_two(self):
+        proj = os.path.join(self.root, "project.json")
+        with open(proj, "w") as f:
+            f.write("[]")
+        run = subprocess.run([sys.executable, os.path.join(SCRIPTS, "ct.py"), "profile", "resolve",
+                              "--root", self.root, "--project", proj], capture_output=True, text=True)
+        self.assertEqual(2, run.returncode)
+        self.assertIn("Error:", run.stderr)
+        self.assertNotIn("Traceback", run.stderr)
+
     def test_defaults_body_is_universal(self):
         with open(DEFAULTS, encoding="utf-8") as f:
             text = f.read()

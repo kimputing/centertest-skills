@@ -81,19 +81,31 @@ def _scan_value(project, key):
 
 
 def stale_facts(body: str, today: datetime.date):
-    stale = []
+    """(stale facts, malformed verified dates as invalid entries)."""
+    stale, bad = [], []
     for line in body.split("\n"):
         match = VERIFIED.search(line)
-        if match and (today - datetime.date.fromisoformat(match.group(1))).days > STALE_DAYS:
+        if not match:
+            continue
+        try:
+            verified = datetime.date.fromisoformat(match.group(1))
+        except ValueError:
+            bad.append({"key": "verified", "value": match.group(1), "allowed": "YYYY-MM-DD"})
+            continue
+        if (today - verified).days > STALE_DAYS:
             stale.append({"line": line.strip(), "verified": match.group(1)})
-    return stale
+    return stale, bad
 
 
 def resolve(root, project, defaults_path, today):
     path = os.path.join(root, PROFILE_PATH)
     exists = os.path.isfile(path)
     defaults, _ = parse_front_matter(_read(defaults_path))
-    repo, body = parse_front_matter(_read(path)) if exists else ({}, "")
+    error = None
+    try:
+        repo, body = parse_front_matter(_read(path)) if exists else ({}, "")
+    except ProfileError as problem:  # a malformed repo profile falls back to the defaults
+        repo, body, error = {}, "", str(problem)
     switches, invalid = {}, []
     for key, allowed in SWITCHES.items():
         value, source = defaults.get(key, ""), "defaults"
@@ -107,9 +119,13 @@ def resolve(root, project, defaults_path, today):
             if found:
                 value, source = found, "scan"
         switches[key] = {"value": value, "source": source}
-    return {"path": path, "exists": exists, "switches": switches,
-            "unknownKeys": sorted(set(repo) - set(SWITCHES)), "invalid": invalid,
-            "staleFacts": stale_facts(body, today)}
+    stale, bad_dates = stale_facts(body, today)
+    result = {"path": path, "exists": exists, "switches": switches,
+              "unknownKeys": sorted(set(repo) - set(SWITCHES)), "invalid": invalid + bad_dates,
+              "staleFacts": stale}
+    if error:
+        result["error"] = error
+    return result
 
 
 def _bullets(items, stamp):
@@ -148,7 +164,10 @@ def init_profile(project, today, template_path):
 
 def _load_project(path):
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        project = json.load(f)
+    if not isinstance(project, dict):
+        raise ProfileError(f"{path} must hold a JSON object")
+    return project
 
 
 def main(argv=None) -> int:
