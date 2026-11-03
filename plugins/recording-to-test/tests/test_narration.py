@@ -208,6 +208,12 @@ class PlanIntegrationTest(unittest.TestCase):
         plan = narrated_plan()
         self.assertEqual([entry["seq"] for entry in plan["steps"]], [1, 2])
 
+    def test_unmapped_utterance_keeps_no_step_without_seq(self):
+        session = {"startedAt": "2026-10-02T09:00:00Z", "audio": [{"f": "audio/0001.webm", "t": 0}],
+                   "steps": [{"kind": "start", "title": "Login", "app": "PolicyCenter"}]}
+        plan = pr.build_plan(session, CSSIDS, None, None, pr.file_bytes(NARRATED), NO_TOOLS)
+        self.assertEqual(([u["seq"] for u in plan["narration"]["utterances"]], plan["steps"]), ([None, None], []))
+
     def test_spoken_step_kept_opens_no_application(self):
         plan = narrated_plan()
         self.assertEqual((plan["apps"], [e["appSwitch"] for e in plan["steps"]]), ([], [False, False]))

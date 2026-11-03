@@ -1756,7 +1756,7 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, rea
         note = note_entry(utterance["seq"], utterance["text"])
         plan["notes"].append(dict(note, source="narration"))
         utterance.update({k: note[k] for k in ("asksCheck", "conditional") if k in note})
-    spoken = {utterance["seq"] for utterance in plan["narration"]["utterances"]}
+    spoken = {u["seq"] for u in plan["narration"]["utterances"] if u.get("seq") is not None}
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
     steps_actions = [with_picked_dates([a for a in s.get("actions") or [] if not a.get("removed")], s)
