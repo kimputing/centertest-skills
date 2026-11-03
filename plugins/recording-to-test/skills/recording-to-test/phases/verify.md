@@ -2,6 +2,9 @@
 
 Compile, run, compare the run with the recording, review, report, and offer git.
 
+**One order, used everywhere:** compile, run, regression runs, healthcheck, standards, compare with
+recording, report, git. Fix rounds happen inside the run (and any regression run) until it passes.
+
 Be honest about verification: say what compiled, what ran, which rows passed and what was not run.
 Try the commands yourself first. If one fails for an environment reason (a build that cannot run
 from this shell, missing credentials), hand the user the exact command to run in their own
@@ -33,8 +36,8 @@ Never run against an environment without the user's yes. Ask:
    none: a plain run with the environment from the project's `customer.centertest.properties`,
    the usual case. Then offer each of `project.build.profiles`.
 
-Run only the new test (or the new rows of it): take `project.build.run` (or the profile's
-`runCommand` override) with `{profile}` and `{testClass}` filled in; with no profile, leave the
+Run only the new test (or the new rows of it): take `project.build.run` (or the command per
+`runCommand`) with `{profile}` and `{testClass}` filled in; with no profile, leave the
 profile argument (`-Pprofile={profile}`) out. When `project.build.run` is `null`, the project's
 `bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that selects a test:
 ask how this project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file); don't
@@ -51,8 +54,9 @@ in the CenterTest documentation (the `centertest-mcp` `search_documentation` or
 before debugging it. Say whether the failure is in the changed code's path (the stack trace passes
 through methods this run wrote or edited) or after it.
 
-When the run passes: [Compare with recording](#compare-with-recording) when the input was a
-recording. When it fails: [Fix rounds](#fix-rounds).
+When the run fails: [Fix rounds](#fix-rounds). When it passes: [Regression runs](#regression-runs),
+then [Healthcheck](#healthcheck), [Standards](#standards), [Compare with
+recording](#compare-with-recording), [Report](#report) and [Git](#git), in that order.
 
 ## Fix rounds
 
@@ -66,8 +70,8 @@ round; the report then says what still fails.
 - `logs/` has the runner log but no page detail; use it for the stack trace only.
 
 Then:
-1. **Check the screen before the id** (always check the screen before the id, never the reverse). When a widget is not found (`WI-005`) or a click times
-   out, look at the last screenshot and the page title the narrative shows first. If the page is
+1. **Screen first.** When a widget is not found (`WI-005`) or a click times out,
+   check the screen before the id: look at the last screenshot and the page title the narrative shows first. If the page is
    not where the step expected (still blocked by underwriting issues, a validation error, a
    warning to accept, another wizard step), the missing widget is a symptom: handle that screen
    (the project's blocker helper, the missing required field, the accepted warning) instead of
@@ -110,7 +114,7 @@ picks.
 
 ## Standards
 
-Always last before the comparison and report. Per `standardsSkill`:
+After the healthcheck, before the comparison and report. Per `standardsSkill`:
 - a skill is named: run it in its pre-PR mode over this run's diff;
 - none: the built-in checklist over the diff (SKILL.md hard rules and allowed edits,
   [SKILL.md#hard-rules](../SKILL.md#hard-rules)):
@@ -129,17 +133,23 @@ Always last before the comparison and report. Per `standardsSkill`:
 
 ## Compare with recording
 
-Only when the input was a recording and the run passed. Compare **screen by screen** (design:
+Only when the input was a recording and the run passed (otherwise n/a). Compare **screen by screen** (design:
 the run's screens against the recording's), per recorded step of the plan (`plan.steps`, skipping
 those the plan dropped as navigation, retries or verify-only):
 
 | Step (`seq`) | Recorded title | Run's page title (narrative) | Recorded screenshot | Run's screenshot |
 |---|---|---|---|---|
 
-- The recorded title is the step's `title`; the run's title is read from the `*_Narrative.html`
-  for the same step.
-- The screenshot columns are **paths** for the user to open: the recording's screenshot for that
-  step, next to the run's file in `Screenshots/`. Do not describe the images.
+- **Recorded title:** the plan step's `title` (and `waitTitle`) for that `seq`.
+- **Run's title:** the page title in the `*_Narrative.html`. Match a narrative entry to a `seq` by
+  the order of the screens in the narrative, and confirm each by its title; where the order and
+  the title disagree, that is a difference to list, not a match to force.
+- **Recorded screenshot:** read `steps[].screenshot` (`shots/NNNN.jpg`; also `before` / `full` when
+  useful) from the recording's `session.json`, matched by `seq`. The path is relative to the
+  recording folder; for a zip, extract it to the session's work folder (`$WORK`) first so the user
+  can open the file.
+- **Run's screenshot:** the matching file in the run's `Screenshots/`.
+- The screenshot columns are **paths** for the user to open. Do not describe the images.
 - List every difference: a different title, steps in another order, a recorded screen the run
   never showed, a run screen the recording never had. Mark steps that match as `same`.
 
@@ -181,8 +191,7 @@ run. Then:
 
 Personal data in the PR draft is masked, and recorded values do not appear in it.
 
-After a run in bootstrap mode or with a missing profile, offer the profile updates the run found,
-as a diff for approval ([phases/profile.md#updates](profile.md#updates)).
+The profile updates this run found are offered at the [Gate](#gate).
 
 ## Git
 
@@ -221,7 +230,8 @@ Show:
 - run: environment, scenarios scheduled vs rows selected, status per row, fix rounds taken;
 - regression runs: callers run and their results;
 - healthcheck findings in changed files (last commit only) and standards findings, to be picked;
-- run vs recording: the table and every difference, awaiting the user's decision;
+- run vs recording: the table and every difference, awaiting the user's decision (n/a when the
+  test was not run or did not pass);
 - the report and PR description draft;
 - the git options (branch, commit, PR) for the user to pick.
 
