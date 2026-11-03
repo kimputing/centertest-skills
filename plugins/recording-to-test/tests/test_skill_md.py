@@ -15,6 +15,7 @@ PHASES = ("understand", "recording", "reuse", "code", "data", "restart", "verify
 
 sys.path.insert(0, os.path.join(PLUGIN, "scripts"))
 sys.path.insert(0, HERE)
+import client_profile  # noqa: E402
 import ct  # noqa: E402
 import schema  # noqa: E402
 from rule_markers import ANCHORS, MARKERS  # noqa: E402
@@ -24,6 +25,7 @@ HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 HTML_ANCHOR = re.compile(r'<a\s+(?:id|name)="([^"]+)"')
 FILE_REF = re.compile(r"(phases/[\w-]+\.md|SKILL\.md)(?:#([\w-]+))?")
 LOCAL_LINK = re.compile(r"\]\(#([\w-]+)\)")
+HREF = re.compile(r"\]\(([^)\s]+)\)")
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 CT_CALL = re.compile(r'ct\.py"?\s+([\w-]+)(.*)')
 FLAG = re.compile(r"(?<![\w-])(--[A-Za-z][\w-]*)")
@@ -92,6 +94,36 @@ def code_segments(text):
     return segments
 
 
+def links(name, text):
+    """(target file relative to SKILL_DIR, anchor or None) for every relative markdown link outside
+    code fences, resolved against the directory of the file that holds it."""
+    found, fenced = [], False
+    for line in text.splitlines():
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        for href in HREF.findall(INLINE_CODE.sub("", line)):
+            if re.match(r"[a-z]+:", href):
+                continue
+            path, _, anchor = href.partition("#")
+            target = name if not path else os.path.normpath(
+                os.path.join(os.path.dirname(name), path)).replace(os.sep, "/")
+            found.append((target, anchor or None))
+    return found
+
+
+def profile_table(text):
+    """{switch: (backticked values, default cell)} from the `| Switch | Values | Default |` table."""
+    rows = {}
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 3 and re.fullmatch(r"`\w+`", cells[0]):
+            rows[cells[0].strip("`")] = (re.findall(r"`([^`]+)`", cells[1]), cells[2])
+    return rows
+
+
 def help_text(argv):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -135,6 +167,58 @@ class SkillTextTest(unittest.TestCase):
                     broken.append(f"{name}: #{anchor} has no such heading or anchor")
         self.assertEqual(broken, [])
 
+    def test_links_resolve_from_their_own_file(self):
+        """Each [text](href) is resolved against the file that holds it: `data.md#gate` in a phase file,
+        `../SKILL.md#start`, `#gate`. The display text alone proves nothing about the link."""
+        exposed = {name: anchors(text) for name, text in self.files.items()}
+        broken = []
+        for name, text in self.files.items():
+            for target, anchor in links(name, text):
+                if target not in exposed:
+                    broken.append(f"{name}: link to {target} (no such file)")
+                elif anchor and anchor not in exposed[target]:
+                    broken.append(f"{name}: link to {target}#{anchor} (no such heading or anchor)")
+        self.assertEqual(broken, [])
+
+    def test_every_file_links_somewhere(self):
+        """The link checks see at least one anchored link in every skill file."""
+        bare = [name for name, text in self.files.items()
+                if not [1 for _target, anchor in links(name, text) if anchor]]
+        self.assertEqual(bare, [])
+
+    def test_switches_match_the_engine(self):
+        """SKILL.md's switch list and profile.md's table name exactly client_profile.SWITCHES, with
+        their allowed values and the defaults of profile/defaults.md."""
+        skill = re.search(r"Where clients differ.*?\n\n", self.files["SKILL.md"], re.S)
+        self.assertIsNotNone(skill, "SKILL.md lists the switches after 'Where clients differ'")
+        named = {w for w in INLINE_CODE.findall(skill.group(0)) if w != "<switch>"}
+        self.assertEqual(named, set(client_profile.SWITCHES))
+        table = profile_table(self.files["phases/profile.md"])
+        self.assertEqual(set(table), set(client_profile.SWITCHES))
+        defaults, _body = client_profile.parse_front_matter(read(client_profile.DEFAULTS_PATH))
+        wrong = []
+        for key, allowed in client_profile.SWITCHES.items():
+            values, default_cell = table[key]
+            if allowed is not None and set(values) != set(allowed):
+                wrong.append(f"{key}: values {values} != {list(allowed)}")
+            written = re.findall(r"`([^`]*)`", default_cell)
+            shown = written[0] if written else ("" if default_cell == "empty" else default_cell)
+            if shown != defaults.get(key, ""):
+                wrong.append(f"{key}: default {default_cell!r} != {defaults.get(key, '')!r}")
+        self.assertEqual(wrong, [])
+
+    def test_schema_version_matches_the_engine(self):
+        text = self.files["SKILL.md"]
+        written = {int(n) for n in re.findall(r"(?:higher than|knows version) (\d+)", text)}
+        self.assertEqual(written, {schema.PLAN_SCHEMA_VERSION, schema.PROJECT_SCHEMA_VERSION})
+
+    def test_hard_rules_cited_by_anchor(self):
+        """A hard rule is linked by its <a id="rule-…">, never by its number."""
+        found = [f"{name}:{n}: {line.strip()}" for name, text in self.files.items()
+                 for n, line in enumerate(text.splitlines(), 1)
+                 if re.search(r"\bhard rule \d", line)]
+        self.assertEqual(found, [])
+
     def test_ct_commands_and_flags_exist(self):
         helps, wrong = {}, []
         for name, text in self.files.items():
@@ -161,7 +245,8 @@ class SkillTextTest(unittest.TestCase):
         self.assertEqual(wrong, [])
 
     def test_checks_are_not_vacuous(self):
-        """SKILL.md has at least one ct.py call and one phases/ cross-reference for the checks to see."""
+        """SKILL.md has at least one ct.py call and one phases/ cross-reference for the checks to see;
+        every file's links are checked by test_every_file_links_somewhere."""
         text = self.files["SKILL.md"]
         calls = [c for seg in code_segments(text) for c in CT_CALL.findall(seg)]
         self.assertGreaterEqual(len(calls), 1)

@@ -2,7 +2,7 @@
 
 Decide where every value the test needs comes from, and write or validate the data rows. Never
 invent a data value: `#` reference codes, coded values and relationship codes must exist in the
-workbooks ([SKILL.md](../SKILL.md) hard rule 6).
+workbooks ([SKILL.md#rule-no-invented-data](../SKILL.md#rule-no-invented-data)).
 
 ## Mechanisms
 
@@ -154,8 +154,8 @@ A value one step produces and a later step reads is shared per `sharedValues`
 ([phases/profile.md#switches](profile.md#switches)):
 
 - `dataKey`: typed, generated accessors on the data class.
-- `setCustom`: `Helper.getData(getContext()).setCustom(<KEY>, value)` and `getCustom(<KEY>)` later.
-  Allowed.
+- `setCustom` (allowed): `Helper.getData(getContext()).setCustom(<KEY>, value)` and
+  `getCustom(<KEY>)` later.
 
 The only prohibited keys are the **reserved built-in keys** the generator owns: `PolicyExpirationDate`,
 `UserName`, `Password`, `Premium`. With no profile, follow what the project uses most

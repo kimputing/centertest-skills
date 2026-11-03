@@ -24,7 +24,7 @@ Read the output for `BUILD SUCCESSFUL`, `BUILD FAILED`, `error:` and `cannot fin
 
 On errors, fix **only files this run created or edited**, show each change, and recompile. After 3
 rounds stop and report what is left. A compile error in a file the run did not touch is reported,
-not fixed (hard rule 7 in [SKILL.md#hard-rules](../SKILL.md#hard-rules)).
+not fixed ([SKILL.md#rule-unrelated-code](../SKILL.md#rule-unrelated-code)).
 
 After a DC regeneration, verify the generated classes first
 ([phases/data.md#regeneration](data.md#regeneration)).
@@ -226,8 +226,8 @@ engine:
   --expected "<what it should be>" --got "<what it is>" --out-dir ".claude/wizard/gaps"
 ```
 
-`--expected` and `--got` are copied verbatim into the report: **describe the gap without recorded
-values** (`a date field`, `a policy number`, not the value). Tell the user to send the printed
+`--expected` and `--got` are copied verbatim into the report: **describe the gap
+without recorded values** (`a date field`, `a policy number`, not the value). Tell the user to send the printed
 file to Kimputing, and list it in the report. See also [SKILL.md#engine-gaps](../SKILL.md#engine-gaps).
 
 ## Gate

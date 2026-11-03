@@ -63,6 +63,22 @@ MARKERS: list = [
     ("phases/profile.md", "Verify gate"),
     ("phases/profile.md", "~/.centertest/recording-to-test.json"),
     ("phases/profile.md", "90 days"),
+    # final review: rules that had no marker
+    ("phases/verify.md", "Asked at the end, never earlier"),
+    ("phases/data.md", "`setCustom` (allowed)"),
+    ("phases/verify.md", "in the files this run changed only"),
+    ("phases/code.md", "is **asked**, never decided on your own"),
+    ("SKILL.md", "without the user's yes"),
+    ("phases/verify.md", "without the user's yes"),
+    ("phases/code.md", "one file at a time"),
+    ("SKILL.md", "without recorded values"),
+    ("phases/verify.md", "without recorded values"),
+    ("SKILL.md", "never patch the engine"),
+    ("phases/verify.md", "never patch the engine"),
+    ("SKILL.md", "batches of up to 4"),
+    ("phases/understand.md", "batches of up to 4"),
+    ("phases/reuse.md", "Up to 4 questions per batch"),
+    ("phases/reuse.md", "Rank it against the folder"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
