@@ -48,6 +48,16 @@ digit, and each phrase in `tests/rule_markers.py` is still there. When you move 
 marker. The suite must print nothing to stdout when run quietly
 (`... 2>/dev/null | wc -l` is 0).
 
+## Releasing
+
+1. Add an entry at the top of `CHANGELOG.md`. Its heading is `## <version> — <name>` and it names
+   `plan schemaVersion N` and `project schemaVersion N` as in `scripts/schema.py`
+   (`tests/test_changelog.py` fails otherwise).
+2. Bump the version whenever a schema version changes (a breaking change); additive changes bump
+   the minor or patch number.
+3. After the PR merges, tag `main` as `recording-to-test-v<major>.<minor>.<patch>` (for example
+   `recording-to-test-v2.0.0`) and push the tag. `plugin.json` keeps no `version`.
+
 ## Gotchas
 
 - A step's `actions` led **to** that step's screen; its checks verify that screen. Segment by the
