@@ -670,6 +670,19 @@ class ComponentEffectsTest(ProjectTestCase):
         self.step("Login", "    page.getSubmit().click();\n    waitForPageTitle(\"My Summary\");")
         self.assertNotIn("Login", self.effects())
 
+    def test_constructor_declaration_is_not_a_commit(self):
+        write(self.root, f"{self.JAVA}/reusable/pc/shared/ReinstatePolicy.java",
+              "package com.acme.reusable.pc.shared;\npublic class ReinstatePolicy extends BaseScenarioPC {\n"
+              "  public ReinstatePolicy(InvocationContext ctx) { super(ctx); }\n"
+              "  public void execute() {\n    page.getReinstate().click();\n  }\n}\n")
+        entry = self.effects()["ReinstatePolicy"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["reinstate"], False))
+
+    def test_new_step_instantiation_is_a_commit(self):
+        self.step("PayThenCheck", "    new MakePayment(ctx).execute();\n    assertEquals(a, b);")
+        entry = self.effects()["PayThenCheck"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["payment"], True))
+
     def test_missing_without_package(self):
         os.remove(os.path.join(self.root, "src/main/resources/customer.centertest.properties"))
         self.assertIn("reason", self.scan()["componentEffects"])

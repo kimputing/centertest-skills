@@ -606,16 +606,16 @@ def suites(root):
                 SUITE_FILE)
 
 
-# Call-like tokens only (a getter call, or a click on a payment button): never a bare name, a field setter,
+# Call-like tokens only (a getter call, or `new Step(` - never the step's own constructor declaration, or a click on a payment button): never a bare name, a field setter,
 # a comment or a string literal. Kinds are back-end commits; plain "submit" is not one (login and search
 # steps click getSubmit() too).
 COMMIT_PATTERNS = {
     "issue": re.compile(r"\bgetIssuePolicy\w*\(\)|\bgetIssueNow\(\)"),
-    "bind": re.compile(r"\bgetBindOnly\(\)|\bgetBind\w*\(\)|\bBindPolicyChange\w*\s*\("),
-    "payment": re.compile(r"\bgetMakePayment\(\)|\bgetPay\w*\(\)\s*\.\s*click\s*\(|\bMakePayment\s*\("),
-    "cancel": re.compile(r"\bgetCancelNow\(\)|\bCancelPolicy\w*\s*\("),
-    "reinstate": re.compile(r"\bgetReinstate\w*\(\)|\bReinstatePolicy\w*\s*\("),
-    "rewrite": re.compile(r"\bgetRewrite\w*\(\)|\bRewritePolicy\w*\s*\("),
+    "bind": re.compile(r"\bgetBindOnly\(\)|\bgetBind\w*\(\)|\bnew\s+BindPolicyChange\w*\s*\("),
+    "payment": re.compile(r"\bgetMakePayment\(\)|\bgetPay\w*\(\)\s*\.\s*click\s*\(|\bnew\s+MakePayment\s*\("),
+    "cancel": re.compile(r"\bgetCancelNow\(\)|\bnew\s+CancelPolicy\w*\s*\("),
+    "reinstate": re.compile(r"\bgetReinstate\w*\(\)|\bnew\s+ReinstatePolicy\w*\s*\("),
+    "rewrite": re.compile(r"\bgetRewrite\w*\(\)|\bnew\s+RewritePolicy\w*\s*\("),
 }
 AFTER_COMMIT = re.compile(r"assert|waitForPageTitle|\.set\(")
 NON_CODE = re.compile(r"//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"", re.S)
