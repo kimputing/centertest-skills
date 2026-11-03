@@ -42,7 +42,8 @@ Never run against an environment without the user's yes. Ask:
 Run only the new test (or the new rows of it): the command is `project.build.run`, or the one per
 `runCommand` when the profile sets it; fill in `{profile}` and `{testClass}`; with no profile,
 leave the profile argument (`-Pprofile={profile}`) out. When `project.build.run` is `null`, the
-project's `bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that selects a test:
+project's `bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that
+selects a test:
 ask how this project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file); don't
 guess.
 
@@ -76,7 +77,8 @@ Then:
 1. **Screen first.** When a widget is not found (`WI-005`) or a click times out,
    check the screen before the id: look at the last screenshot and the page title the narrative
    shows first. If the page is not where the step expected (still blocked by underwriting
-   issues, a validation error, a warning to accept, another wizard step), the missing widget is a symptom: handle that
+   issues, a validation error, a warning to accept, another wizard step), the missing widget is
+   a symptom: handle that
    screen (the project's blocker helper, the missing required field, the accepted warning)
    instead of patching the id.
 2. Only when the right page is shown, fix the getter. If it ends in `.withCssId(…)` or is raw,
