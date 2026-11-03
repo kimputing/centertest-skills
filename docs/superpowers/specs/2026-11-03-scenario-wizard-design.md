@@ -91,32 +91,37 @@ the plugin. Fields are only added; a removal or rename needs a version bump and 
 
 | Fact | Value | Used for |
 |---|---|---|
-| `dataWorkbooks` | `[{path, sheets: {name: {columns, codes, rows}}, usedBy: [test paths]}]` for every `*.xlsx` under `testdata/` | `dcColumns`, row rule 6.1.4 ("which tests a new row widens") |
+| `dataWorkbooks` | `{workbooks: [{path, sheets: {name: {columns, codes, rows}}, usedBy: [test paths]}], skipped: [{path, reason}]}` for every `*.xlsx` under `testdata/`; an unreadable workbook goes to `skipped` | `dcColumns`, row rule 6.1.4 ("which tests a new row widens") |
 | `sharedValuesUsage` | `{setCustom: n, dataKey: n, reservedKeyMisuse: [{path, key}]}` | default for `sharedValues`; reserved keys `PolicyExpirationDate`, `UserName`, `Password`, `Premium` |
 | `negativeProtocol` | `{projectException: n, framework: n}` | default for `negativeProtocol` |
-| `suites` | `{path, suites: {name: [entries]}}` from `CenterTestSuiteList.json` | suite registration options |
+| `suites` | `{path, suites: {Name: {List?, Suites?, Packages?}}}` from `CenterTestSuiteList.json` (`CenterTestSuites[]`, only the keys present); an unknown shape is kept under `raw` | suite registration options |
 | `componentEffects` | `[{path, class, commits: [kind], afterCommit: bool}]` | re-run safety (R§7) |
+| `testFlows` | `[{path, folder, flow}]` for every test, no per-folder cut (`folders` keeps eight tests per folder for display) | `existingTests` |
 
-`commits` kinds: `issue`, `bind`, `payment`, `cancel`, `reinstate`, `rewrite`, `submit`, found by
-call/label patterns in the class. `afterCommit` is true when actions or checks follow the first
-commit in the file: the payment example (paid, then a later step fails, a resume pays again).
+`commits` kinds: `issue`, `bind`, `payment`, `cancel`, `reinstate`, `rewrite` (no `submit`: login and
+search steps click a submit button too, and a form submit is not a back-end commit), found by
+call-like tokens only (`get…()` calls, `new <Step>(` for class-style steps, a `.click()` on a
+payment button), with comments and string literals stripped. `afterCommit` is true when actions or
+checks follow the LAST commit call in the file: the payment example (paid, then a later step fails,
+a resume pays again).
 
 ### 3.3 Plan additions
 
 | Field | Shape | Notes |
 |---|---|---|
 | `schemaVersion` | `2` | |
-| `facadeSequence` | `[{seqs, pages, titles, candidates: [{facade, method, score, why}]}]` | segments by page (as the skill segments today); candidates only from `contextOnly` facades whose pages and titles overlap |
-| `existingTests` | `[{path, folder, coveredSeqs, missingSeqs, score}]` | tests whose `flow` calls the candidate facades in order |
-| `dcColumns` | `[{seq, label, value, workbook, sheet, column, why}]` | label tokens vs header tokens (camel split, `#`/`@` stripped, case-folded) |
-| `dataRowCandidates` | `[{workbook, sheet, code, matched, total}]` | rows whose mapped cells equal recorded values; top 3 per workbook |
-| `restartCandidates` | `[{afterSeq, kind, reason, rerunRisk, proposePolicy}]` | `kind`: `setup`, `centerSwitch`, `stateChanging`; `rerunRisk`: `safe` / `notResumable`; `proposePolicy`: `DISABLE_ON_FAILURE` or null |
-| `seedPointCandidates` | `[{seq, seed, why}]` | `NEW_ACCOUNT`, `PRE_QUOTE`, `QUOTED`, `ISSUED_POLICY`, `CLAIM` |
-| `narration` | `{source, segments, utterances: [{seq, t, text, asksCheck?, conditional?}], reason?, install?}` | `source`: `transcript` / `whisper` / `unavailable` / `none` |
+| `facadeSequence` | `[{seqs, pages, titles, candidates: [{facade, method, step, score, why}]}]` | segments by page (as the skill segments today); candidates only from `contextOnly` facades whose pages and titles overlap; `step` is the facade entry's step path |
+| `existingTests` | `[{path, folder, coveredSeqs, missingSeqs, score}]` | tests (from `testFlows`, else `folders`) whose `flow` calls the candidate facades in order; `score` = covered segments ÷ all segments; `missingSeqs` lists every uncovered segment's seqs, including segments with no candidate |
+| `dcColumns` | `[{seq, label, value, workbook, sheet, column, why}]` | label tokens vs header tokens (camel split, `#`/`@` stripped, case-folded); at most 3 workbooks per recorded value: most shared tokens, then workbooks with a non-empty `usedBy`, then path |
+| `dataRowCandidates` | `[{workbook, sheet, code, matched, total}]` | rows whose mapped cells equal recorded values; top 3 per workbook; only workbooks that survive the `dcColumns` cap are read |
+| `restartCandidates` | `[{afterSeq, kind, reason, rerunRisk, proposePolicy}]` | `kind`: `setup`, `centerSwitch`, `stateChanging`; `rerunRisk`: `safe` / `notResumable`; `proposePolicy`: `DISABLE_ON_FAILURE` or null; computed for every plan (`setup` and a facade's `componentEffects` need a scanned project; commit labels and `centerSwitch` need only the steps); a commit is `stateChanging` when any action or check follows it anywhere later, with `afterSeq` = the commit step's seq |
+| `seedPointCandidates` | `[{seq, seed, why}]` | `NEW_ACCOUNT`, `PRE_QUOTE`, `QUOTED`, `ISSUED_POLICY`, `CLAIM`; computed for every plan |
+| `narration` | `{source, segments, utterances: [{seq, t, text, asksCheck?, conditional?}], reason?, install?}` | `source`: `transcript` / `whisper` / `unavailable` / `none`; malformed audio metadata never stops the plan (see 3.4) |
 | `parts`, `chain` | only when several recordings are given | see 3.5 |
 
 Each utterance is also appended to `plan.notes` with `"source": "narration"`, so `noteChecks`
-works on spoken notes without a second pipeline.
+works on spoken notes without a second pipeline. A step with no actions that received an utterance
+is kept in `plan.steps`, like a step with typed notes, so every spoken note's `seq` is a plan step.
 
 ### 3.4 Narration (R§5.3)
 
@@ -134,6 +139,12 @@ works on spoken notes without a second pipeline.
    `apt install ffmpeg` + build). The wizard then asks for the key points (R§5.3).
 5. Utterance time = `seg.t + start`. Step time = `step.time − startedAt`. An utterance belongs to the
    last step whose time is ≤ the utterance's (the screen showing while it was said).
+6. Malformed metadata: an audio entry that is not `{f, t}` with a numeric `t` is skipped and named in
+   `reason`; `audio` that is not a list gives `source: "unavailable"`; a `startedAt` that does not
+   parse keeps the segments but maps no utterances, and a step time that does not parse leaves that
+   step out of the mapping (each noted in `reason`). Any other narration failure makes it
+   `{"source": "unavailable", "reason": "narration failed (…)", "segments": [], "utterances": []}`
+   instead of stopping the plan.
 
 Audio is read through a byte reader (`file_bytes`, same lookup as `file_reader`), extracted to a temp
 folder, and deleted afterwards. Nothing is uploaded.
@@ -151,9 +162,13 @@ like a recording that doesn't begin with a login, with "chain after part n" as t
   front-matter block (`key: value`, one per line, scalars only; stdlib has no YAML parser, so nested
   YAML is rejected with a message).
 - `ct.py profile resolve --root <repo>` → `{path, exists, switches: {key: {value, source}},
-  unknownKeys, staleFacts}`; `source` is `repo`, `defaults` or `scan` (a default of `auto` is filled
+  unknownKeys, staleFacts, error?, warnings?}`; `source` is `repo`, `defaults` or `scan` (a default of `auto` is filled
   from the scan: `sharedValues` from `sharedValuesUsage`, `negativeProtocol` from `negativeProtocol`,
   `comments` / `contextNaming` from the exemplar).
+- The profile is read as UTF-8 with or without a BOM (Windows editors write one). A repo profile that
+  is malformed, not UTF-8 (e.g. UTF-16) or not readable is reported in `error` and the defaults are
+  used; the command still exits 0. A repo profile without a front-matter block adds
+  `warnings: ["no front matter: switches use the defaults"]`.
 - `ct.py profile init --project project.json` → a draft `client-profile.md` (switches from the scan,
   body from `template.md` with the scan's layout, roles, build commands and guidance files, each fact
   dated today). The wizard shows it and writes it only after approval.
