@@ -1,4 +1,6 @@
+import contextlib
 import datetime
+import io
 import json
 import os
 import sys
@@ -61,20 +63,29 @@ class GapReportTest(unittest.TestCase):
         plan_path = os.path.join(self.tmp.name, "plan.json")
         with open(plan_path, "w", encoding="utf-8") as f:
             json.dump(sample_plan(), f)
-        code = gap_report.main(["--plan", plan_path, "--field", "f", "--expected", "e", "--got", "g",
-                                "--out-dir", self.out])
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            code = gap_report.main(["--plan", plan_path, "--field", "f", "--expected", "e", "--got", "g",
+                                    "--out-dir", self.out])
         self.assertEqual(code, 0)
-        self.assertEqual(len(os.listdir(self.out)), 1)
+        files = os.listdir(self.out)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(captured.getvalue().strip(), os.path.join(self.out, files[0]))
+
+    def test_path_like_field_stays_inside_out_dir(self):
+        path = gap_report.write(sample_plan(), "../../x", "e", "g", self.out, TODAY)
+        self.assertEqual(os.path.dirname(os.path.abspath(path)), os.path.abspath(self.out))
 
 
 class AllCommandsTest(unittest.TestCase):
     def test_every_command_imports_and_answers_help(self):
         for command in ct.COMMANDS:
             with self.subTest(command=command):
-                try:
-                    code = ct.main([command, "-h"])
-                except SystemExit as exit_:
-                    code = exit_.code
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    try:
+                        code = ct.main([command, "-h"])
+                    except SystemExit as exit_:
+                        code = exit_.code
                 self.assertEqual(code, 0)
 
 
