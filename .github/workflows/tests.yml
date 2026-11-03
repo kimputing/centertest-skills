@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
 
+# One group per branch: a newer run cancels a superseded one. A push and its pull request still get one
+# run each (head_ref vs ref differ); that duplicate is accepted on this public repository.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
