@@ -3,7 +3,7 @@
 - **Issue:** kimputing/centertest-skills#41
 - **Date:** 2026-11-03
 - **Requirements:** `2026-11-03-scenario-wizard-requirements.md` (cited as R§n)
-- **Status:** design and plans written (`docs/superpowers/plans/2026-11-03-wizard-{engine,skill,quality}.md`); implementation not started
+- **Status:** engine implemented (plan 2026-11-03-wizard-engine.md, tasks 1–12); skill and quality plans not started
 
 ## 1. Shape
 
@@ -39,7 +39,7 @@ plugins/recording-to-test/
 │   ├── data_match.py                  # dcColumns, dataRowCandidates
 │   ├── restart.py                     # restartCandidates, seedPointCandidates
 │   ├── narration.py                   # transcripts / whisper → utterances per step
-│   ├── profile.py                     # resolve / init client profiles
+│   ├── client_profile.py              # resolve / init client profiles
 │   ├── gap_report.py                  # engine gap report for Kimputing
 │   └── scrub_recording.py             # quality plan
 ├── skills/recording-to-test/
