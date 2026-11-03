@@ -22,6 +22,15 @@
 - Run `python3 -m unittest discover -s plugins/recording-to-test/tests -v` before each commit → `OK`.
 - Commits `feat(recording-to-test): … (#41)` ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
+## Carry-over from the engine plan (decided during its execution)
+
+- `ct.build_parser()` only renders help (commands take the rest of argv). Task 1's flag check must build each command's own parser (`<module>.main` parsers via the module, e.g. by calling `ct.main([cmd, "-h"])` with stdout captured and reading the usage), not `ct.build_parser()`.
+- The profile module is `scripts/client_profile.py` (stdlib `profile` name clash); the command is still `ct.py profile`.
+- Shapes as built (design §3.2–§3.6 updated): `project.suites` = `{path, suites: {Name: {List|Suites|Packages}}}`; `project.dataWorkbooks` = `{workbooks, skipped}`; `project.testFlows` = every test's flow (untruncated; `folders` stays capped at 8 for display); commit kinds issue/bind/payment/cancel/reinstate/rewrite (no submit); `plan.existingTests` score = covered ÷ all segments; `plan.restartCandidates` stateChanging when any work follows a commit anywhere, `afterSeq` = the commit's step; `plan.narration.source` may be `unavailable` with a `reason`; `profile resolve` may return `error` (defaults used) and `warnings`.
+- `existing_tests` accepts a folder hint but `analyse` passes none: `reuse.md` should rank `plan.existingTests` against the folder the user's scenario belongs to.
+- `ct.py parse` transcribes narration itself; don't also run `ct.py narrate` on the same recording.
+- `ct.py gap-report` copies `--expected` / `--got` verbatim: `verify.md` must tell the wizard to describe the gap without recorded values.
+
 ## Review Focus
 
 1. **Started outside a CenterTest project** (no `build.gradle` in the working directory, the user only gives a recording path): the wizard asks for the project root before scanning. Marker test in Task 2.
