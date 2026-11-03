@@ -25,6 +25,8 @@ MARKERS: list = [
     ("phases/reuse.md", "new test class"),
     ("phases/code.md", "plan.seedPointCandidates"),
     ("phases/code.md", "new values or categories"),
+    ("phases/code.md", "GwSeedPoint"),
+    ("phases/code.md", "centertest.runtime.seed"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only

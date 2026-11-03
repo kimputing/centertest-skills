@@ -147,7 +147,8 @@ what is added here is the shape later scenarios can override:
   - `waitForPageTitle` at the start of each step method or right after the navigation that opens the
     screen, and at the end when the step leaves you on another screen; several possible landings are
     `waitForPageTitle("A", "B")` and then a branch on the page title;
-  - seed points at logical step ends ([phases/code.md#seed-points](code.md#seed-points));
+  - seed points at logical step ends, `seed(GwSeedPoint.<value>)`
+    ([phases/code.md#seed-points](code.md#seed-points));
   - an unexpected business state is a small data-aware exception whose message names the data, not a
     bare assertion failure.
 
