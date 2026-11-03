@@ -60,7 +60,7 @@ def _sheets(path: str, pattern: str):
         rels = {r.get("Id"): r.get("Target") for r in _part(z, "xl/_rels/workbook.xml.rels")}
         sheets = _part(z, "xl/workbook.xml").find("m:sheets", NS)
         for sheet in (sheets if sheets is not None else []):
-            name = sheet.get("name")
+            name = sheet.get("name") or ""  # a <sheet> without a name must not stop the scan
             if not re.search(pattern, name):
                 continue
             target = rels.get(sheet.get(REL))

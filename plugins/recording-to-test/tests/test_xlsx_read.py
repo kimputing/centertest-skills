@@ -51,6 +51,24 @@ class XlsxReadTest(unittest.TestCase):
                 z.writestr(n, data)
         self.assertEqual(xlsx_read.read_workbook(path)["S"], [{"Code": "shared"}, {"Code": "inline"}])
 
+    def without_sheet_name(self, name):
+        """A copy of the workbook whose <sheet name="..."> attribute for `name` is dropped."""
+        nameless = os.path.join(self.tmp.name, "nameless.xlsx")
+        with zipfile.ZipFile(self.path) as src, zipfile.ZipFile(nameless, "w") as dst:
+            for item in src.infolist():
+                data = src.read(item)
+                if item.filename == "xl/workbook.xml":
+                    data = data.replace(f'name="{name}" '.encode(), b"")
+                dst.writestr(item, data)
+        return nameless
+
+    def test_sheet_without_name_is_read_as_empty_name(self):
+        result = xlsx_read.read_workbook(self.without_sheet_name("Person"))
+        self.assertEqual((sorted(result), result[""]), (["", "DC"], [{"Code": "Adult", "Age": "40"}]))
+
+    def test_sheet_without_name_skipped_by_a_sheet_filter(self):
+        self.assertEqual(list(xlsx_read.headers(self.without_sheet_name("Person"), "^Person$")), [])
+
     def test_not_a_zip_raises_workbook_error(self):
         bad = os.path.join(self.tmp.name, "bad.xlsx")
         with open(bad, "w") as f:
