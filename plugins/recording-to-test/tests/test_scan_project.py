@@ -578,15 +578,26 @@ class ConventionsTest(ProjectTestCase):
     def suite_file(self, data):
         write(self.root, "src/main/resources/CenterTestSuiteList.json", json.dumps(data))
 
+    REAL = {"CenterTestSuites": [{"Name": "Regression", "Suites": ["PolicyCenter", "ClaimCenter"]},
+                                 {"Name": "Submission", "List": ["PA_SubmissionTest", "WC_SubmissionTest run2"]},
+                                 {"Name": "Mixed", "Suites": ["Submission"], "List": ["X_Test"]}]}
+
     def test_suites_listed(self):
-        self.suite_file({"Smoke": {"List": ["a.A", "b.B"]}, "Regression": {"Packages": ["com.acme.tests.pc"]}})
+        self.suite_file(self.REAL)
         value = self.scan()["suites"]["value"]
         self.assertEqual(value["path"], "src/main/resources/CenterTestSuiteList.json")
-        self.assertEqual(value["suites"], {"Smoke": ["a.A", "b.B"], "Regression": ["com.acme.tests.pc"]})
+        self.assertEqual(value["suites"], {"Regression": {"Suites": ["PolicyCenter", "ClaimCenter"]},
+                                           "Submission": {"List": ["PA_SubmissionTest", "WC_SubmissionTest run2"]},
+                                           "Mixed": {"Suites": ["Submission"], "List": ["X_Test"]}})
 
-    def test_suites_plain_lists_and_unknown_shape_kept_raw(self):
-        self.suite_file({"Plain": ["x.X"], "Odd": {"Something": 1}})
-        self.assertEqual(self.scan()["suites"]["value"]["suites"], {"Plain": ["x.X"], "Odd": {"Something": 1}})
+    def test_suite_with_packages_keeps_only_present_keys(self):
+        self.suite_file({"CenterTestSuites": [{"Name": "All", "Packages": ["com.acme.tests"], "Other": 1}]})
+        self.assertEqual(self.scan()["suites"]["value"]["suites"], {"All": {"Packages": ["com.acme.tests"]}})
+
+    def test_unknown_shape_kept_raw(self):
+        self.suite_file({"Smoke": ["a.A"]})
+        value = self.scan()["suites"]["value"]
+        self.assertEqual((value["suites"], value["raw"]), ({}, {"Smoke": ["a.A"]}))
 
     def test_no_suite_file_is_missing(self):
         result = self.scan()["suites"]
@@ -636,7 +647,28 @@ class ComponentEffectsTest(ProjectTestCase):
         self.assertEqual(self.effects()["CancelAndReinstate"]["commits"], ["cancel", "reinstate"])
 
     def test_commit_patterns_kinds(self):
-        self.assertEqual(set(sp.COMMIT_PATTERNS), {"issue", "bind", "payment", "cancel", "reinstate", "rewrite", "submit"})
+        self.assertEqual(set(sp.COMMIT_PATTERNS), {"issue", "bind", "payment", "cancel", "reinstate", "rewrite"})
+
+    def test_payment_in_class_name_and_setter_is_not_a_commit(self):
+        self.step("CreatePaymentPlan", "    page.getPaymentAmount().set(\"5\");")
+        self.assertNotIn("CreatePaymentPlan", self.effects())
+
+    def test_payment_string_literal_and_comment_are_not_commits(self):
+        self.step("Note", "    // getMakePayment()\n    log(\"Payment getMakePayment()\");")
+        self.assertNotIn("Note", self.effects())
+
+    def test_setter_before_issue_and_nothing_after_is_not_after_commit(self):
+        self.step("SetThenIssue", "    page.getName().set(\"x\");\n    page.getIssuePolicy().click();")
+        self.assertFalse(self.effects()["SetThenIssue"]["afterCommit"])
+
+    def test_after_commit_uses_last_commit_not_earliest(self):
+        self.step("MixedOrder", "    page.getBindOnly().click();\n    waitForPageTitle(\"A\");\n    page.getIssuePolicy().click();")
+        entry = self.effects()["MixedOrder"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["issue", "bind"], False))
+
+    def test_login_submit_is_not_a_commit(self):
+        self.step("Login", "    page.getSubmit().click();\n    waitForPageTitle(\"My Summary\");")
+        self.assertNotIn("Login", self.effects())
 
     def test_missing_without_package(self):
         os.remove(os.path.join(self.root, "src/main/resources/customer.centertest.properties"))

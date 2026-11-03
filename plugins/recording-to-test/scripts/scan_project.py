@@ -586,17 +586,11 @@ def negative_protocol(java):
                 "NegativeTestException / passTestWhen in the tests")
 
 
-def suite_entries(value):
-    """Entries of one suite: a plain list, a {List: [...]} or {Packages: [...]}; anything else is kept raw."""
-    if isinstance(value, dict):
-        for key in ("List", "Packages"):
-            if isinstance(value.get(key), list):
-                return value[key]
-    return value
+SUITE_KEYS = ("List", "Suites", "Packages")
 
 
 def suites(root):
-    """Suites of CenterTestSuiteList.json as {name: [entries]}."""
+    """Suites of CenterTestSuiteList.json: {Name: {List, Suites, Packages}} (only the keys a suite has)."""
     path = os.path.join(root, *SUITE_FILE.split("/"))
     if not os.path.isfile(path):
         return missing(f"no {SUITE_FILE}")
@@ -605,36 +599,45 @@ def suites(root):
             data = json.load(f)
     except (OSError, ValueError) as error:
         return missing(f"{SUITE_FILE} is not readable JSON: {error}")
-    if isinstance(data, list):  # [{"name": ..., "List": [...]}]
-        named = {str(item.get("name", i)): item for i, item in enumerate(data) if isinstance(item, dict)}
-    else:
-        named = data if isinstance(data, dict) else {"suites": data}
-    return fact({"path": SUITE_FILE, "suites": {name: suite_entries(value) for name, value in named.items()}}, SUITE_FILE)
+    listed = data.get("CenterTestSuites") if isinstance(data, dict) else None
+    if not isinstance(listed, list) or not all(isinstance(item, dict) and isinstance(item.get("Name"), str) for item in listed):
+        return fact({"path": SUITE_FILE, "suites": {}, "raw": data}, SUITE_FILE + " (unrecognised shape)")
+    return fact({"path": SUITE_FILE, "suites": {item["Name"]: {k: item[k] for k in SUITE_KEYS if k in item} for item in listed}},
+                SUITE_FILE)
 
 
+# Call-like tokens only (a getter call, or a click on a payment button): never a bare name, a field setter,
+# a comment or a string literal. Kinds are back-end commits; plain "submit" is not one (login and search
+# steps click getSubmit() too).
 COMMIT_PATTERNS = {
-    "issue": re.compile(r"getIssuePolicy|getIssueNow"),
-    "bind": re.compile(r"getBindOnly|BindPolicyChange|getBind\w*"),
-    "payment": re.compile(r"Payment|getPay\w*|MakePayment"),
-    "cancel": re.compile(r"getCancelNow|CancelPolicy"),
-    "reinstate": re.compile(r"getReinstate\w*|ReinstatePolicy"),
-    "rewrite": re.compile(r"getRewrite\w*|RewritePolicy"),
-    "submit": re.compile(r"getSubmit\w*"),
+    "issue": re.compile(r"\bgetIssuePolicy\w*\(\)|\bgetIssueNow\(\)"),
+    "bind": re.compile(r"\bgetBindOnly\(\)|\bgetBind\w*\(\)|\bBindPolicyChange\w*\s*\("),
+    "payment": re.compile(r"\bgetMakePayment\(\)|\bgetPay\w*\(\)\s*\.\s*click\s*\(|\bMakePayment\s*\("),
+    "cancel": re.compile(r"\bgetCancelNow\(\)|\bCancelPolicy\w*\s*\("),
+    "reinstate": re.compile(r"\bgetReinstate\w*\(\)|\bReinstatePolicy\w*\s*\("),
+    "rewrite": re.compile(r"\bgetRewrite\w*\(\)|\bRewritePolicy\w*\s*\("),
 }
 AFTER_COMMIT = re.compile(r"assert|waitForPageTitle|\.set\(")
+NON_CODE = re.compile(r"//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"", re.S)
 IMPORT_LINE = re.compile(r"^\s*(?:import|package)\s.*$", re.M)
 
 
+def code_only(text: str) -> str:
+    """Java text without comments, string contents, imports and the package line."""
+    return IMPORT_LINE.sub("", NON_CODE.sub(lambda m: '""' if m.group().startswith('"') else " ", text))
+
+
 def component_effects(root, steps):
-    """Reusable steps that commit back-end state (issue, payment, ...) and whether they keep acting afterwards."""
+    """Reusable steps that commit back-end state and whether they act or check after the LAST commit."""
     found = []
     for path, text in steps.items():
-        body = IMPORT_LINE.sub("", text)
-        hits = {kind: m.start() for kind, pattern in COMMIT_PATTERNS.items() if (m := pattern.search(body))}
-        if hits:
-            found.append({"path": rel(root, path), "class": class_name(path), "commits": list(hits),
-                          "afterCommit": bool(AFTER_COMMIT.search(body, min(hits.values())))})
-    return fact(found, "commit calls (issue, bind, payment, cancel, reinstate, rewrite, submit) in reusable steps")
+        body = code_only(text)
+        last = {kind: [m.end() for m in pattern.finditer(body)] for kind, pattern in COMMIT_PATTERNS.items()}
+        last = {kind: ends[-1] for kind, ends in last.items() if ends}
+        if last:
+            found.append({"path": rel(root, path), "class": class_name(path), "commits": list(last),
+                          "afterCommit": bool(AFTER_COMMIT.search(body, max(last.values())))})
+    return fact(found, "commit calls (issue, bind, payment, cancel, reinstate, rewrite) in reusable steps")
 
 
 def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> dict:
