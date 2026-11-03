@@ -157,6 +157,51 @@ class ResolveTest(ProfileCase):
         self.assertIn("Error:", run.stderr)
         self.assertNotIn("Traceback", run.stderr)
 
+    def write_profile_bytes(self, data):
+        os.makedirs(os.path.join(self.root, ".claude"), exist_ok=True)
+        with open(os.path.join(self.root, ".claude", "client-profile.md"), "wb") as f:
+            f.write(data)
+
+    def test_utf8_bom_profile_keeps_its_front_matter(self):
+        self.write_profile_bytes(b"\xef\xbb\xbf---\r\ngate: plan\r\n---\r\nbody\r\n")
+        result = self.resolve()
+        self.assertEqual(({"value": "plan", "source": "repo"}, None, None),
+                         (result["switches"]["gate"], result.get("error"), result.get("warnings")))
+
+    def test_utf16_profile_reports_error_and_uses_defaults(self):
+        self.write_profile_bytes("---\ngate: plan\n---\n".encode("utf-16"))
+        result = self.resolve()
+        self.assertEqual((result["exists"], result["switches"]["gate"]["source"]), (True, "defaults"))
+        self.assertIn("UTF-8", result["error"])
+
+    def test_cli_resolve_utf16_profile_exits_zero(self):
+        self.write_profile_bytes("---\ngate: plan\n---\n".encode("utf-16"))
+        run = subprocess.run([sys.executable, os.path.join(SCRIPTS, "ct.py"), "profile", "resolve",
+                              "--root", self.root], capture_output=True, text=True)
+        self.assertEqual((run.returncode, "error" in json.loads(run.stdout)), (0, True))
+
+    def test_unreadable_profile_reports_error(self):
+        from unittest import mock
+        self.write_profile("---\ngate: plan\n---\n")
+        real = cp._read
+
+        def read(path):
+            if path.endswith("client-profile.md"):
+                raise PermissionError("denied")
+            return real(path)
+        with mock.patch.object(cp, "_read", side_effect=read):
+            result = self.resolve()
+        self.assertEqual((result["switches"]["gate"]["source"], "denied" in result["error"]), ("defaults", True))
+
+    def test_profile_without_front_matter_warns(self):
+        self.write_profile("Just notes about the client.\n")
+        self.assertEqual(["no front matter: switches use the defaults"], self.resolve()["warnings"])
+
+    def test_no_warnings_key_when_front_matter_or_no_file(self):
+        self.assertNotIn("warnings", self.resolve())
+        self.write_profile("---\n---\nbody\n")
+        self.assertNotIn("warnings", self.resolve())
+
     def test_defaults_body_is_universal(self):
         with open(DEFAULTS, encoding="utf-8") as f:
             text = f.read()

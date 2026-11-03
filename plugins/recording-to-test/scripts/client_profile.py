@@ -60,8 +60,16 @@ def parse_front_matter(text: str):
     raise ProfileError("front matter is not closed with ---")
 
 
+NO_FRONT_MATTER = "no front matter: switches use the defaults"
+
+
+def has_front_matter(text: str) -> bool:
+    return text.split("\n", 1)[0].strip() == "---"
+
+
 def _read(path: str) -> str:
-    with open(path, encoding="utf-8") as f:
+    """The file's text; utf-8-sig, because Windows editors save UTF-8 with a BOM."""
+    with open(path, encoding="utf-8-sig") as f:
         return f.read()
 
 
@@ -101,11 +109,20 @@ def resolve(root, project, defaults_path, today):
     path = os.path.join(root, PROFILE_PATH)
     exists = os.path.isfile(path)
     defaults, _ = parse_front_matter(_read(defaults_path))
-    error = None
+    error, warnings = None, []
     try:
-        repo, body = parse_front_matter(_read(path)) if exists else ({}, "")
+        repo, body = {}, ""
+        if exists:
+            text = _read(path)
+            repo, body = parse_front_matter(text)
+            if not has_front_matter(text):
+                warnings.append(NO_FRONT_MATTER)
     except ProfileError as problem:  # a malformed repo profile falls back to the defaults
         repo, body, error = {}, "", str(problem)
+    except UnicodeDecodeError as problem:
+        repo, body, error = {}, "", f"{PROFILE_PATH} is not UTF-8 text ({problem}): save it as UTF-8"
+    except OSError as problem:
+        repo, body, error = {}, "", f"{PROFILE_PATH} is not readable: {problem}"
     switches, invalid = {}, []
     for key, allowed in SWITCHES.items():
         value, source = defaults.get(key, ""), "defaults"
@@ -125,6 +142,8 @@ def resolve(root, project, defaults_path, today):
               "staleFacts": stale}
     if error:
         result["error"] = error
+    if warnings:
+        result["warnings"] = warnings
     return result
 
 
