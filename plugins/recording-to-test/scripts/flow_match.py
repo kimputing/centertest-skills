@@ -64,16 +64,19 @@ def facade_sequence(plan: dict, facades: list) -> list:
 
 def existing_tests(sequence: list, folders: dict, folder) -> list:
     """Tests whose flow runs the segments' top candidates in order; the folder's tests first, at most five."""
-    wanted = [(seg["seqs"], "%s.%s" % (seg["candidates"][0]["facade"], seg["candidates"][0]["method"]))
-              for seg in sequence if seg.get("candidates")]
-    if not wanted:
+    if not any(seg.get("candidates") for seg in sequence):
         return []
+    # every segment counts; one without a candidate (call None) can never be covered
+    wanted = [(seg["seqs"], "%s.%s" % (seg["candidates"][0]["facade"], seg["candidates"][0]["method"])
+               if seg.get("candidates") else None) for seg in sequence]
     found = []
     for name, tests in (folders or {}).items():
         for test in tests:
             flow, at, covered, missing = test.get("flow") or [], 0, [], []
             for seqs, call in wanted:
-                if call in flow[at:]:
+                # greedy, in order: a flow that runs the facades in another order can be understated;
+                # what it misses shows in missingSeqs
+                if call and call in flow[at:]:
                     at += flow[at:].index(call) + 1
                     covered += seqs
                 else:

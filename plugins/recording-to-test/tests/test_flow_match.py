@@ -83,6 +83,13 @@ class ExistingTestsTest(unittest.TestCase):
         self.assertEqual(found[0]["missingSeqs"], [])
         self.assertEqual(found[0]["folder"], "a")
 
+    def test_one_of_many_segments_is_not_a_full_cover(self):
+        seq = self.seq + [{"seqs": [4], "candidates": []}, {"seqs": [5], "candidates": []}]
+        found = fm.existing_tests(seq, {"a": [{"path": "a/One.java", "flow": ["PC.login"]}]}, "a")[0]
+        self.assertEqual(found["score"], 0.25)
+        self.assertEqual(found["coveredSeqs"], [1])
+        self.assertEqual(found["missingSeqs"], [2, 3, 4, 5])
+
     def test_partial_and_order(self):
         by_path = {t["path"]: t for t in fm.existing_tests(self.seq, self.folders(), "a")}
         self.assertEqual(by_path["a/Half.java"]["missingSeqs"], [2, 3])
@@ -107,12 +114,17 @@ class AnalyseTest(unittest.TestCase):
         self.assertEqual(plan["existingTests"], [])
 
     def test_project_with_facades_fills_both_lists(self):
-        session = {"id": "x", "name": "n", "steps": []}
-        project = {"facades": {"value": [facade("F", "m", ["SubmissionWizardPage"])]},
-                   "folders": {"value": {"tests": {}}}}
+        session = {"steps": [{"seq": 1, "app": "PolicyCenter", "title": "Policy Change", "actions": [
+            {"type": "click", "widgetId": "PolicyChangeWizard-Next", "kind": "WizardButtonWidget"}]}]}
+        project = {"facades": {"value": [facade("PC", "changePolicy", ["PolicyChangeWizardPage"])]},
+                   "folders": {"value": {"tests": {"changes": [
+                       {"path": "changes/ChangeTest.java", "flow": ["PC.loginToPC", "PC.changePolicy"],
+                        "restartPoints": [], "dataDriven": False}]}}}}
         plan = pr.build_plan(session, CSSIDS, project=project)
-        self.assertEqual(plan["facadeSequence"], [])
-        self.assertEqual(plan["existingTests"], [])
+        self.assertEqual(plan["steps"][0]["pages"], ["PolicyChangeWizard"])
+        top = plan["facadeSequence"][0]["candidates"][0]
+        self.assertEqual((top["facade"], top["method"], top["step"]), ("PC", "changePolicy", "com.acme.changePolicy"))
+        self.assertEqual([t["path"] for t in plan["existingTests"]], ["changes/ChangeTest.java"])
 
 
 if __name__ == "__main__":
