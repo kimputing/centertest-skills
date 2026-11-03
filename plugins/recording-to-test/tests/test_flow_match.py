@@ -126,6 +126,29 @@ class AnalyseTest(unittest.TestCase):
         self.assertEqual((top["facade"], top["method"], top["step"]), ("PC", "changePolicy", "com.acme.changePolicy"))
         self.assertEqual([t["path"] for t in plan["existingTests"]], ["changes/ChangeTest.java"])
 
+    def test_test_flows_beat_the_truncated_folders(self):
+        session = {"steps": [{"seq": 1, "app": "PolicyCenter", "title": "Policy Change", "actions": [
+            {"type": "click", "widgetId": "PolicyChangeWizard-Next", "kind": "WizardButtonWidget"}]}]}
+        flows = [{"path": "changes/T%d.java" % i, "folder": "changes", "flow": ["PC.changePolicy"] if i == 9 else []}
+                 for i in range(10)]
+        project = {"facades": {"value": [facade("PC", "changePolicy", ["PolicyChangeWizardPage"])]},
+                   "folders": {"value": {"tests": {"changes": [dict(f, restartPoints=False, dataDriven=None)
+                                                               for f in flows[:8]]}}},
+                   "testFlows": {"value": flows}}
+        plan = pr.build_plan(session, CSSIDS, project=project)
+        self.assertEqual([t["path"] for t in plan["existingTests"]], ["changes/T9.java"])
+
+
+class TestsByFolderTest(unittest.TestCase):
+    def test_groups_test_flows_by_folder(self):
+        project = {"testFlows": {"value": [{"path": "a/X.java", "folder": "a", "flow": ["PC.x"]}]},
+                   "folders": {"value": {"tests": {"b": [{"path": "b/Y.java", "flow": []}]}}}}
+        self.assertEqual(fm.tests_by_folder(project), {"a": [{"path": "a/X.java", "flow": ["PC.x"]}]})
+
+    def test_falls_back_to_folders(self):
+        project = {"testFlows": {"value": None}, "folders": {"value": {"tests": {"b": [{"path": "b/Y.java"}]}}}}
+        self.assertEqual(fm.tests_by_folder(project), {"b": [{"path": "b/Y.java"}]})
+
 
 if __name__ == "__main__":
     unittest.main()

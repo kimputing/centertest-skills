@@ -241,14 +241,30 @@ RECORDED = re.compile(r"/\*\*(?:(?!\*/).)*\bRecorded\b", re.S)
 FOLDER_LIMIT = 8
 
 
+def flow_reader(steps, facade_names):
+    """A function: test text -> the facade calls and `new <Step>` constructions it makes, in order."""
+    step_names = {class_name(p) for p, t in steps.items() if re.search(r"\bclass\s", t)}
+    calls = re.compile(r"\b(?:(" + "|".join(sorted(facade_names) or ["$^"]) + r")\.(\w+)|new\s+(\w+))\(")
+    return lambda text: [f"{f}.{m}" if f else f"new {n}" for f, m, n in calls.findall(text) if f or n in step_names]
+
+
+def test_flows(root, tests, steps, tests_dir, facade_names):
+    """Every test's flow, with no per-folder cut: existingTests must see all of them."""
+    flow_of = flow_reader(steps, facade_names)
+    found = [{"path": rel(root, path), "folder": rel(tests_dir, os.path.dirname(path)), "flow": flow_of(text)}
+             for path, text in sorted(tests.items())]
+    if not found:
+        return missing("no tests")
+    return fact(found, "facade calls and step constructions of every test, in order")
+
+
 def folders(root, tests, steps, tests_dir, reusable_dir, facade_names):
     """Per <center>/<lob>/<transaction> folder: its step classes, those generated from a recording
     first (Javadoc says "Recorded"), and its tests with the facade and step calls they make, in order."""
-    step_names = {class_name(p) for p, t in steps.items() if re.search(r"\bclass\s", t)}
-    calls = re.compile(r"\b(?:(" + "|".join(sorted(facade_names) or ["$^"]) + r")\.(\w+)|new\s+(\w+))\(")
+    flow_of = flow_reader(steps, facade_names)
     by_folder = {"tests": collections.defaultdict(list), "steps": collections.defaultdict(list)}
     for path, text in sorted(tests.items()):
-        flow = [f"{f}.{m}" if f else f"new {n}" for f, m, n in calls.findall(text) if f or n in step_names]
+        flow = flow_of(text)
         source = re.search(r"@DataDriven\([^)]*?datasource\s*=\s*\"([^\"]+)\"", text)
         by_folder["tests"][rel(tests_dir, os.path.dirname(path))].append(
             {"path": rel(root, path), "flow": flow, "restartPoints": "enum RestartPoints" in text,
@@ -660,11 +676,12 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
                       transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps),
                       idioms=idioms(steps), negativeProtocol=negative_protocol(tests),
                       componentEffects=component_effects(root, steps))
-        result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir,
-                                    {m["facade"] for m in result["facades"]["value"] or []})
+        facade_names = {m["facade"] for m in result["facades"]["value"] or []}
+        result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir, facade_names)
+        result["testFlows"] = test_flows(root, tests, steps, tests_dir, facade_names)
     else:
-        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
-                    "screenHelpers", "idioms", "negativeProtocol", "componentEffects"):
+        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "testFlows",
+                    "transactionBases", "screenHelpers", "idioms", "negativeProtocol", "componentEffects"):
             result[key] = missing("needs clientPackage and testsRoot")
     result.update(sharedValuesUsage=shared_values_usage(root, java), suites=suites(root),
                   dataWorkbooks=data_workbooks(root, tests), guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),

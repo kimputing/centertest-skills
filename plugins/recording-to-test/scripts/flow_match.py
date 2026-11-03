@@ -62,6 +62,18 @@ def facade_sequence(plan: dict, facades: list) -> list:
     return sequence
 
 
+def tests_by_folder(project: dict) -> dict:
+    """{folder: [{path, flow}]} for every test: the scan's testFlows when present, else folders.tests
+    (older scans; at most eight tests per folder there)."""
+    flows = (project.get("testFlows") or {}).get("value")
+    if flows:
+        grouped = {}
+        for test in flows:
+            grouped.setdefault(test["folder"], []).append({"path": test["path"], "flow": test["flow"]})
+        return grouped
+    return ((project.get("folders") or {}).get("value") or {}).get("tests") or {}
+
+
 def existing_tests(sequence: list, folders: dict, folder) -> list:
     """Tests whose flow runs the segments' top candidates in order; the folder's tests first, at most five."""
     if not any(seg.get("candidates") for seg in sequence):

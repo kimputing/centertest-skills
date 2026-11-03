@@ -1862,8 +1862,8 @@ def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
     facades = (project.get("facades") or {}).get("value")
     if facades:
         plan["facadeSequence"] = flow_match.facade_sequence(plan, facades)
-        folders = ((project.get("folders") or {}).get("value") or {}).get("tests") or {}
-        plan["existingTests"] = flow_match.existing_tests(plan["facadeSequence"], folders, None)
+        plan["existingTests"] = flow_match.existing_tests(plan["facadeSequence"], flow_match.tests_by_folder(project),
+                                                          None)
     effects = (project.get("componentEffects") or {}).get("value") or []
     plan["restartCandidates"] = restart.restart_candidates(plan, plan["facadeSequence"], effects)
     plan["seedPointCandidates"] = restart.seed_points(plan)

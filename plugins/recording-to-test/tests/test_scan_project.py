@@ -337,6 +337,21 @@ class ProjectKnowledgeTest(ProjectTestCase):
         self.assertEqual((flow["restartPoints"], flow["dataDriven"]),
                          (True, "testdata/personalauto/PA_SubmissionDC.xlsx"))
 
+    def test_test_flows_list_every_test_past_the_folder_cut(self):
+        java = "src/main/java/com/acme/tests/pc/personalauto/policychange"
+        for i in range(sp.FOLDER_LIMIT + 2):
+            write(self.root, f"{java}/Extra{i:02d}Test.java", TEST_FLOW.replace("PA_AddDriverTest", f"Extra{i:02d}Test"))
+        result = self.scan()
+        listed = [t for t in result["testFlows"]["value"] if t["folder"] == "pc/personalauto/policychange"]
+        self.assertEqual((len(listed), len(result["folders"]["value"]["tests"]["pc/personalauto/policychange"])),
+                         (sp.FOLDER_LIMIT + 4, sp.FOLDER_LIMIT))
+
+    def test_test_flow_entry_shape(self):
+        entry = next(t for t in self.result["testFlows"]["value"] if t["path"].endswith("PA_AddDriverTest.java"))
+        self.assertEqual(entry, {"path": "src/main/java/com/acme/tests/pc/personalauto/policychange/PA_AddDriverTest.java",
+                                 "folder": "pc/personalauto/policychange",
+                                 "flow": ["PC.loginToPC", "new AddVehiclePolicyChange", "PC.searchForPolicyPC"]})
+
     def test_project_without_guidance(self):
         os.remove(os.path.join(self.root, "src", "main", "java", "com", "acme", "reusable", "CLAUDE.md"))
         self.assertIsNone(self.scan()["guidance"]["value"])
