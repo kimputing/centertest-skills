@@ -194,13 +194,23 @@ class ScrubLeakTest(unittest.TestCase):
         self.assertIn("Account Summary: Pat Example", report["needsReview"]["titles"])
         self.assertNotIn("Account Jane Doe", report["needsReview"]["titles"])
 
-    def test_short_value_leaves_ids_and_labels_alone(self):
+    def test_short_value_leaves_ids_and_other_labels_alone(self):
         data = {"id": "x", "name": "n", "steps": [{"seq": 1, "title": "A", "actions": [
-            {"type": "change", "widgetId": "A-Panel-A", "label": "A", "kind": "text", "value": "A"}]}]}
-        out, _ = sr.scrub(data)
+            {"type": "change", "widgetId": "A-Panel-A", "label": "Panel", "kind": "text", "value": "A"}]}]}
+        out, report = sr.scrub(data)
         action = out["steps"][0]["actions"][0]
-        self.assertEqual((action["widgetId"], action["label"]), ("A-Panel-A", "A"))
+        self.assertEqual((action["widgetId"], action["label"]), ("A-Panel-A", "Panel"))
         self.assertEqual((action["value"], out["steps"][0]["title"]), ("V1", "V1"))
+        self.assertEqual(report["needsReview"]["leftovers"], ["A"])
+
+    def test_real_recording_lists_displayed_row_text(self):
+        data = pr.load_session(os.path.join(HERE, "fixtures", "recordings", "real-174907"))
+        business = next(k["text"] for s in data["steps"] for a in s.get("actions") or []
+                        for k in a.get("rowKey") or [] if k.get("header") == "Organization Name")
+        display = next(a["display"] for s in data["steps"] for a in s.get("actions") or [] if a.get("display"))
+        _, report = sr.scrub(data)
+        self.assertIn(business, report["needsReview"]["rowKeys"])
+        self.assertIn(display, report["needsReview"]["displayed"])
 
     def test_real_recording_scrubbed_with_also_has_no_name(self):
         data = pr.load_session(os.path.join(HERE, "fixtures", "recordings", "real-180418"))
@@ -210,6 +220,69 @@ class ScrubLeakTest(unittest.TestCase):
         self.assertNotIn(name, json.dumps(out))
         self.assertNotIn("7879422213", json.dumps(out))
         self.assertEqual(out["meta"]["featureIds"], ["F1"])
+
+
+class ScrubEveryKeyTest(unittest.TestCase):
+    NAME = "Jane Roe"
+
+    def data(self):
+        return {"id": "r", "name": "n", "startedAt": "2026-10-21T12:19:10.123456789+02:00",
+                "meta": {"version": 1, "tags": [f"customer {self.NAME}"],
+                         "links": ["https://tracker.client.net/browse/PROJ-77", "see PROJ-78"]},
+                "steps": [{"seq": 1, "time": "2026-10-21T12:19:11.000000000+02:00", "title": "Summary",
+                           "screen": "AccountFile_Summary", "app": "PolicyCenter", "actions": [
+                               {"type": "click", "widgetId": "Acct-Name", "kind": "text",
+                                "label": f"Contact {self.NAME}", "context": [f"Details of {self.NAME}", "Policy"]},
+                               {"type": "dialog", "kind": "dialog", "label": f"Delete {self.NAME}?"},
+                               {"type": "check", "widgetId": "Acct-Status", "kind": "text", "display": "Active",
+                                "rowKey": [{"header": "Status", "text": "Bound"}],
+                                "context": ["Policy"]},
+                               {"type": "dialog", "kind": "dialog", "label": "Are you sure?"}]}]}
+
+    def test_also_name_replaced_in_label_context_dialog_and_tags(self):
+        out, _ = sr.scrub(self.data(), also=[self.NAME])
+        first, dialog = out["steps"][0]["actions"][0], out["steps"][0]["actions"][1]
+        self.assertEqual(first["label"], "Contact V1")
+        self.assertEqual(first["context"], ["Details of V1", "Policy"])
+        self.assertEqual(dialog["label"], "Delete V1?")
+        self.assertEqual(out["meta"]["tags"], ["customer V1"])
+        self.assertNotIn(self.NAME, json.dumps(out))
+
+    def test_issue_keys_and_hosts_in_links_replaced(self):
+        out, _ = sr.scrub(self.data())
+        self.assertEqual(out["meta"]["links"], [f"https://{HOST}/browse/KEY-1", "see KEY-2"])
+
+    def test_structure_and_times_kept(self):
+        out, _ = sr.scrub(self.data(), also=["Summary", "Acct"])
+        step = out["steps"][0]
+        self.assertEqual((step["screen"], step["actions"][0]["widgetId"]), ("AccountFile_Summary", "Acct-Name"))
+        self.assertEqual(step["time"], "2027-01-29T12:19:11.000000000+02:00")
+        self.assertEqual(out["startedAt"], "2027-01-29T12:19:10.123456789+02:00")
+
+    def test_needs_review_lists_displayed_row_context_and_dialog_text(self):
+        _, report = sr.scrub(self.data(), also=[self.NAME])
+        review = report["needsReview"]
+        self.assertEqual(review["displayed"], ["Active"])
+        self.assertEqual(review["rowKeys"], ["Bound"])
+        self.assertEqual(review["context"], ["Policy"])
+        self.assertEqual(review["dialogs"], ["Are you sure?"])
+
+    def test_leftovers_found_in_structural_keys_and_other_case(self):
+        data = self.data()
+        data["steps"][0]["screen"] = "JaneRoe_Screen"
+        data["steps"][0]["title"] = self.NAME.upper()
+        _, report = sr.scrub(data, also=[self.NAME, "JaneRoe"])
+        self.assertEqual(report["needsReview"]["leftovers"], [self.NAME, "JaneRoe"])
+
+    def test_leftovers_find_original_host_outside_urls(self):
+        data = self.data()
+        data["steps"][0]["actions"][0]["text"] = "server tracker.client.net is down"
+        _, report = sr.scrub(data)
+        self.assertEqual(report["needsReview"]["leftovers"], ["tracker.client.net"])
+
+    def test_no_leftovers_when_everything_replaced(self):
+        _, report = sr.scrub(self.data(), also=[self.NAME])
+        self.assertEqual(report["needsReview"]["leftovers"], [])
 
 
 class ScrubCliTest(unittest.TestCase):
@@ -242,6 +315,27 @@ class ScrubCliTest(unittest.TestCase):
         self.assertIn("Warning", err)
         self.assertTrue(json.loads(out)["needsReview"]["titles"])
 
+    def test_leftovers_always_warn(self):
+        data = session()
+        data["steps"][1]["screen"] = "Jane Doe_Screen"
+        with open(os.path.join(self.src, "session.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        code, out, err = self.run_cli(self.src, "--out", self.out)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["needsReview"]["leftovers"], ["Jane Doe"])
+        self.assertIn("leftovers", err)
+
+    def test_writes_ascii_json(self):
+        data = session()
+        data["steps"][2]["title"] = "Fahrer übersicht ≈"
+        with open(os.path.join(self.src, "session.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        self.assertEqual(self.run_cli(self.src, "--out", self.out)[0], 0)
+        with open(os.path.join(self.out, "session.json"), "rb") as f:
+            raw = f.read()
+        self.assertTrue(raw.isascii())
+        self.assertEqual(json.loads(raw.decode("ascii"))["steps"][2]["title"], "Fahrer übersicht ≈")
+
     def test_refuses_to_overwrite(self):
         self.assertEqual(self.run_cli(self.src, "--out", self.out)[0], 0)
         code, out, err = self.run_cli(self.src, "--out", self.out)
@@ -253,6 +347,79 @@ class ScrubCliTest(unittest.TestCase):
         code, _, err = self.run_cli(os.path.join(self.tmp.name, "missing"), "--out", self.out)
         self.assertEqual(code, 2)
         self.assertIn("Error", err)
+
+
+class ScrubNarrationTest(unittest.TestCase):
+    """Scrubbed copies keep narration: transcripts are written scrubbed, audio files never copied."""
+    NARRATED = os.path.join(HERE, "fixtures", "recordings", "narrated")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out = os.path.join(self.tmp.name, "out")
+        with open(os.path.join(self.NARRATED, "audio", "0001.transcript.json"), encoding="utf-8") as f:
+            self.segments = json.load(f)["segments"]
+        self.word = self.segments[-1]["text"].split()[2]
+
+    def run_cli(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = ct.main(["scrub", *args])
+        return code, json.loads(out.getvalue()) if out.getvalue() else None
+
+    def narrate(self, folder):
+        return pr.narrate(pr.load_session(folder), pr.file_bytes(folder), {})
+
+    def test_scrubbed_copy_keeps_transcript_narration_without_audio(self):
+        code, report = self.run_cli(self.NARRATED, "--out", self.out)
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(os.listdir(os.path.join(self.out, "audio"))), ["0001.transcript.json"])
+        narration = self.narrate(self.out)
+        self.assertEqual(narration["source"], "transcript")
+        self.assertEqual([u["text"] for u in narration["utterances"]],
+                         [u["text"] for u in self.narrate(self.NARRATED)["utterances"]])
+        self.assertEqual(report["narration"], {"transcripts": ["audio/0001.transcript.json"], "dropped": []})
+
+    def test_utterances_are_scrubbed(self):
+        code, report = self.run_cli(self.NARRATED, "--out", self.out, "--also", self.word)
+        self.assertEqual(code, 0)
+        texts = [u["text"] for u in self.narrate(self.out)["utterances"]]
+        self.assertTrue(any("V1" in t for t in texts), texts)
+        self.assertFalse(any(self.word in t for t in texts), texts)
+        self.assertEqual(report["needsReview"]["leftovers"], [])
+
+    def test_leftovers_searched_in_transcripts(self):
+        _, out_transcripts, report = sr.scrub_all(
+            pr.load_session(self.NARRATED), {"audio/0001.webm": self.segments}, also=[self.word.upper()])
+        self.assertEqual(report["needsReview"]["leftovers"], [self.word.upper()])
+        self.assertEqual(len(out_transcripts["audio/0001.webm"]), len(self.segments))
+
+    def test_audio_without_transcript_dropped_and_reported(self):
+        src = os.path.join(self.tmp.name, "rec")
+        os.makedirs(src)
+        data = pr.load_session(self.NARRATED)
+        data["audio"].append({"f": "audio/0002.webm", "t": 9000})
+        with open(os.path.join(src, "session.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.makedirs(os.path.join(src, "audio"))
+        with open(os.path.join(src, "audio", "0001.transcript.json"), "w", encoding="utf-8") as f:
+            json.dump({"segments": self.segments}, f)
+        code, report = self.run_cli(src, "--out", self.out)
+        self.assertEqual(code, 0)
+        self.assertEqual(report["narration"]["dropped"], ["audio/0002.webm"])
+        self.assertEqual(pr.load_session(self.out)["audio"], [{"f": "audio/0001.webm", "t": 4000}])
+
+    def test_transcript_path_outside_out_is_not_written(self):
+        src = os.path.join(self.tmp.name, "rec")
+        os.makedirs(os.path.join(src, "audio"))
+        data = pr.load_session(self.NARRATED)
+        data["audio"] = [{"f": "../escape.webm", "t": 0}]
+        with open(os.path.join(src, "session.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        code, report = self.run_cli(src, "--out", self.out)
+        self.assertEqual(code, 0)
+        self.assertEqual(report["narration"]["dropped"], ["../escape.webm"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "escape.transcript.json")))
 
 
 if __name__ == "__main__":

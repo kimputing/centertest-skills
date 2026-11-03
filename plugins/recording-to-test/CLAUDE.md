@@ -26,7 +26,9 @@ scenario in the target project's structure, in six phases with a gate after each
 - `scripts/flow_match.py`, `data_match.py`, `restart.py`, `xlsx_read.py`, `gap_report.py` — flow and
   data matching against the scan, restart candidates, workbook reading, gap reports.
 - `scripts/scrub_recording.py` — `scrub`: replaces typed/posted values and `--also` strings (`V<n>`), hosts, 8+ digit
-  numbers, issue keys and dates; displayed text may remain, so review `needsReview` and keep fixtures private.
+  numbers, issue keys, meta ids and dates in every string but structural keys (`STRUCTURAL`; timestamps only
+  date-shift). Transcripts are written scrubbed next to kept audio entries; audio without one is dropped.
+  Displayed text may remain (`needsReview`), `needsReview.leftovers` lists originals still found; keep fixtures private.
 - `skills/recording-to-test/SKILL.md` (≤ 300 lines: inputs, hard rules, launcher, gates) and
   `phases/{understand,recording,reuse,code,data,restart,verify,profile}.md` — the judgment steps,
   read when their phase starts. Phase files cross-reference `phases/<file>.md#<anchor>` only.

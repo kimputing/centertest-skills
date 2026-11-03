@@ -69,7 +69,7 @@ The skill calls one script, `scripts/ct.py <command>`:
 | `tools` | whether ffmpeg and whisper are installed |
 | `profile resolve` / `profile init` | resolved switches / a draft client profile |
 | `gap-report` | a report of an engine gap, for Kimputing |
-| `scrub` | a `session.json`-only copy with typed and posted values, hosts, long numbers, issue keys and dates replaced (`scrub <recording> --out DIR [--day-shift N] [--also WORD]`); displayed text may remain, so review `needsReview` and the file before storing it, and keep fixtures in a private repo |
+| `scrub` | a `session.json` copy with typed and posted values, `--also` words, hosts, long numbers, issue keys, meta ids and dates replaced in every non-structural string (`scrub <recording> --out DIR [--day-shift N] [--also WORD]`); narration transcripts (`audio/<stem>.transcript.json`) are written scrubbed, audio files never copied, so a recording without a transcript loses its narration; displayed text may remain and anything original still found is listed in `needsReview.leftovers`, so review `needsReview` and the files before storing them, and keep fixtures in a private repo |
 
 ## Checks → assertions
 
