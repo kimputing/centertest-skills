@@ -152,6 +152,66 @@ class ScrubTest(unittest.TestCase):
             self.assertNotIn("Acme", text.replace("acme", ""))
 
 
+class ScrubLeakTest(unittest.TestCase):
+    def base(self):
+        data = session()
+        data["meta"].update({"testId": "tc123", "featureIds": ["AD-123"], "defectIds": ["JIRA-321"],
+                             "description": "see AD-123 for 7879422213"})
+        data["steps"][2]["title"] = "Account Summary: Pat Example"
+        data["steps"][2]["url"] = "https://h.test/acct/7879422213"
+        data["steps"][2]["actions"].append({"type": "check", "widgetId": "Acct-Number", "seen": "7879422213"})
+        data["steps"][2]["actions"].append({"type": "check", "widgetId": "Acct-Amount", "seen": "1250000"})
+        return data
+
+    def test_also_replaces_displayed_name(self):
+        out, _ = sr.scrub(self.base(), also=["Pat Example"])
+        self.assertEqual(out["steps"][2]["title"], "Account Summary: V1")
+        self.assertNotIn("Pat Example", json.dumps(out))
+
+    def test_long_numbers_become_n_placeholders_everywhere(self):
+        out, report = sr.scrub(self.base())
+        step = out["steps"][2]
+        self.assertEqual(step["actions"][1]["seen"], "N1")
+        self.assertTrue(step["url"].endswith("/acct/N1"))
+        self.assertIn("for N1", out["meta"]["description"])
+        self.assertNotIn("7879422213", json.dumps(out))
+        self.assertEqual(step["actions"][2]["seen"], "1250000")
+        self.assertEqual(report["needsReview"]["numbers"], ["1250000"])
+
+    def test_issue_keys_and_meta_ids_neutral(self):
+        out, _ = sr.scrub(self.base())
+        self.assertEqual(out["meta"]["testId"], "T1")
+        self.assertEqual(out["meta"]["featureIds"], ["F1"])
+        self.assertEqual(out["meta"]["defectIds"], ["D1"])
+        self.assertEqual(out["meta"]["description"], "see F1 for N1")
+        self.assertEqual((out["id"], out["name"]), ("rec-1", "recording"))
+        data = self.base()
+        data["steps"][2]["notes"] = [{"text": "see PROJ-42"}]
+        self.assertEqual(sr.scrub(data)[0]["steps"][2]["notes"][0]["text"], "see KEY-1")
+
+    def test_needs_review_lists_surviving_title(self):
+        _, report = sr.scrub(self.base())
+        self.assertIn("Account Summary: Pat Example", report["needsReview"]["titles"])
+        self.assertNotIn("Account Jane Doe", report["needsReview"]["titles"])
+
+    def test_short_value_leaves_ids_and_labels_alone(self):
+        data = {"id": "x", "name": "n", "steps": [{"seq": 1, "title": "A", "actions": [
+            {"type": "change", "widgetId": "A-Panel-A", "label": "A", "kind": "text", "value": "A"}]}]}
+        out, _ = sr.scrub(data)
+        action = out["steps"][0]["actions"][0]
+        self.assertEqual((action["widgetId"], action["label"]), ("A-Panel-A", "A"))
+        self.assertEqual((action["value"], out["steps"][0]["title"]), ("V1", "V1"))
+
+    def test_real_recording_scrubbed_with_also_has_no_name(self):
+        data = pr.load_session(os.path.join(HERE, "fixtures", "recordings", "real-180418"))
+        title = next(s["title"] for s in data["steps"] if ": " in (s.get("title") or ""))
+        name = title.split(": ", 1)[1]
+        out, report = sr.scrub(data, also=[name])
+        self.assertNotIn(name, json.dumps(out))
+        self.assertNotIn("7879422213", json.dumps(out))
+        self.assertEqual(out["meta"]["featureIds"], ["F1"])
+
+
 class ScrubCliTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -175,6 +235,12 @@ class ScrubCliTest(unittest.TestCase):
         self.assertEqual(json.loads(out)["values"], 2)
         with open(os.path.join(self.out, "session.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["steps"][1]["actions"][6]["value"], "10/02/2026")
+
+    def test_warns_on_stderr_when_review_needed(self):
+        code, out, err = self.run_cli(self.src, "--out", self.out, "--also", "Acme")
+        self.assertEqual(code, 0)
+        self.assertIn("Warning", err)
+        self.assertTrue(json.loads(out)["needsReview"]["titles"])
 
     def test_refuses_to_overwrite(self):
         self.assertEqual(self.run_cli(self.src, "--out", self.out)[0], 0)

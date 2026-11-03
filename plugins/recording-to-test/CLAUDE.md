@@ -25,8 +25,8 @@ scenario in the target project's structure, in six phases with a gate after each
 - `scripts/narration.py` — transcript file, else local ffmpeg + whisper.cpp; raw utterances only.
 - `scripts/flow_match.py`, `data_match.py`, `restart.py`, `xlsx_read.py`, `gap_report.py` — flow and
   data matching against the scan, restart candidates, workbook reading, gap reports.
-- `scripts/scrub_recording.py` — `scrub`: hosts → `gw.example.test`, typed/posted values → `V<n>`, dates shifted
-  by `--day-shift`, media/dom/net dropped; writes only `session.json` (refuses to overwrite).
+- `scripts/scrub_recording.py` — `scrub`: replaces typed/posted values and `--also` strings (`V<n>`), hosts, 8+ digit
+  numbers, issue keys and dates; displayed text may remain, so review `needsReview` and keep fixtures private.
 - `skills/recording-to-test/SKILL.md` (≤ 300 lines: inputs, hard rules, launcher, gates) and
   `phases/{understand,recording,reuse,code,data,restart,verify,profile}.md` — the judgment steps,
   read when their phase starts. Phase files cross-reference `phases/<file>.md#<anchor>` only.
