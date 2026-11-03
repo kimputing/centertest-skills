@@ -176,8 +176,8 @@ Show, then stop until the user answers ([SKILL.md#phases-and-gates](../SKILL.md#
 - **Narration:** `plan.narration.source`, the utterances (masked) with the step each belongs to;
   or the `reason`, the install steps and the question for the key points.
 - **Missing facts:** every scan fact whose `value` is `null`, with its `reason`; `plan.outcomeMismatch`.
-- **Profile problems:** the profile's `error`, `warnings`, `unknownKeys` and `staleFacts`, and that
-  the default is used for each invalid switch ([phases/profile.md#stale-facts](profile.md#stale-facts)).
+- **Profile problems:** the profile's `error`, `warnings`, `invalid`, `unknownKeys` and `staleFacts`,
+  and that the default is used for each invalid switch or unknown key ([phases/profile.md#stale-facts](profile.md#stale-facts)).
 - **Exemplars** chosen for a recording, and why ([phases/recording.md#exemplars](recording.md#exemplars)).
 
 Then write the session state and the plan file, and go to the Reuse plan

@@ -68,8 +68,10 @@ Whatever the switches say, the hard rules in [SKILL.md](../SKILL.md#hard-rules) 
 set to `plan` or `single`, the gates that "Just run it" never skips (start state, missing data, a
 row in an existing DC workbook, running against an environment, git) are still asked.
 
-The body of the profile holds dated facts about the project: test layout, roles, build and run,
-guidance files. Each fact ends `(verified YYYY-MM-DD)`. Kimputing-wide facts (reserved DataKey keys,
+The body of the profile holds dated facts about the project (test layout, roles, build and run,
+guidance files) and the client's own rules. Each fact ends `(verified YYYY-MM-DD)`. The body is
+read in full at Start and followed within the hard rules, like the project's guidance files
+([SKILL.md#start](../SKILL.md#start)). Kimputing-wide facts (reserved DataKey keys,
 no `upgradePages`, no hand-edited generated code) are in the plugin's defaults and are not repeated.
 
 ## Updates

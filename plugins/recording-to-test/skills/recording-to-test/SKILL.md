@@ -133,9 +133,12 @@ start each command with the launcher line and write the `$WORK` path out in full
    "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" profile resolve --root "<project root>" --project "$WORK/project.json"
    ```
 
-   Every switch comes with its `source` (`repo`, `defaults` or `scan`). An `error`, `warnings`,
-   `unknownKeys` or `staleFacts` go to the Understand gate; the defaults are used for anything
-   invalid. No `.claude/client-profile.md` yet:
+   Every switch comes with its `source` (`repo`, `defaults` or `scan`). When `exists`,
+   read `.claude/client-profile.md` in full and follow it within the hard rules, like the guidance
+   files; re-check a stale fact when the run uses it
+   ([phases/profile.md#stale-facts](phases/profile.md#stale-facts)). An `error`, `warnings`,
+   `invalid`, `unknownKeys` or `staleFacts` go to the Understand gate; the defaults are used for
+   anything invalid or unknown. No `.claude/client-profile.md` yet (`exists: false`):
    [phases/profile.md#first-use](phases/profile.md#first-use).
 5. **Understand:** read [phases/understand.md](phases/understand.md#inputs) for the input.
 

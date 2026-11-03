@@ -130,8 +130,9 @@ After the healthcheck, before the comparison and report. Per `standardsSkill`:
      plus extras, no re-listed sequence, no per-variant method names, no new static helper for
      logic a base could own;
   4. no copied code, no generated code edited, no value invented;
-  5. shared values come from generated data keys, not public string key constants; null and empty
-     guards sit in the base, not in empty subclass overrides;
+  5. shared values per `sharedValues` ([phases/data.md#shared-values](data.md#shared-values));
+     never a reserved built-in key (`PolicyExpirationDate`, `UserName`, `Password`, `Premium`); null
+     and empty guards sit in the base, not in empty subclass overrides;
   6. nothing unrelated touched.
 
 **Report only; fix nothing until the user picks** which findings to fix.

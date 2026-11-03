@@ -79,6 +79,10 @@ MARKERS: list = [
     ("phases/understand.md", "batches of up to 4"),
     ("phases/reuse.md", "Up to 4 questions per batch"),
     ("phases/reuse.md", "Rank it against the folder"),
+    ("SKILL.md", "read `.claude/client-profile.md` in full"),
+    ("phases/profile.md", "read in full at Start"),
+    ("phases/understand.md", "`error`, `warnings`, `invalid`, `unknownKeys` and `staleFacts`"),
+    ("phases/verify.md", "never a reserved built-in key"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
