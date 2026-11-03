@@ -160,9 +160,12 @@ def init_profile(project, today, template_path):
         return (project.get(name) or {}).get("value")
 
     layout, style, build = value("testLayout"), value("testStyle"), value("build")
+    usage = (project.get("sharedValuesUsage") or {}).get("value") or {}
+    set_custom, data_key = usage.get("setCustom", 0), usage.get("dataKey", 0)
+    mixed = bool(set_custom and data_key)
     lines = []
     for key in SWITCHES:
-        found = _scan_value(project, key)
+        found = "auto" if mixed and key == "sharedValues" else _scan_value(project, key)
         lines.append(f"{key}: {found or defaults.get(key, '')}".rstrip())
     prefixes = (layout or {}).get("lobPrefixes", {})
     layout_items = [f"{lob}: test class prefix {prefix}_" for lob, prefix in prefixes.items()]
@@ -178,6 +181,11 @@ def init_profile(project, today, template_path):
     for name, items in (("layout", layout_items), ("roles", roles), ("build", build_items),
                         ("guidance", value("guidance") or [])):
         template = template.replace("{" + name + "}", _bullets(items, stamp))
+    if mixed:
+        # a saved value would hide the mix from the wizard (resolve would report source "repo")
+        template = template.rstrip("\n") + "\n\n## Shared values\n" + _bullets(
+            [f"setCustom used {set_custom} times, generated DataKey {data_key} times: mixed, "
+             "the wizard asks per scenario"], stamp) + "\n"
     return "---\n" + "\n".join(lines) + "\n---\n" + template
 
 

@@ -221,6 +221,20 @@ class InitTest(ProfileCase):
         self.assertIn("CLAUDE.md (verified 2026-11-03)", body)
         self.assertNotIn("{", body)
 
+    def test_init_mixed_shared_values_writes_auto_and_the_counts(self):
+        text = cp.init_profile(project(set_custom=53, data_key=156), TODAY, TEMPLATE)
+        front, body = cp.parse_front_matter(text)
+        self.assertEqual("auto", front["sharedValues"])
+        self.assertIn("## Shared values", body)
+        self.assertIn("- setCustom used 53 times, generated DataKey 156 times: mixed, "
+                      "the wizard asks per scenario (verified 2026-11-03)", body)
+
+    def test_init_only_one_shared_values_style_keeps_that_value(self):
+        text = cp.init_profile(project(data_key=156), TODAY, TEMPLATE)
+        front, body = cp.parse_front_matter(text)
+        self.assertEqual("dataKey", front["sharedValues"])
+        self.assertNotIn("mixed", body)
+
     def test_init_with_missing_facts(self):
         text = cp.init_profile({"testLayout": {"value": None, "reason": "x"}}, TODAY, TEMPLATE)
         self.assertIn("none found (verified 2026-11-03)", text)
