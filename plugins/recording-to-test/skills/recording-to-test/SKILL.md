@@ -44,7 +44,7 @@ defaults in the phase files, never these rules.
 4. **Adding a row to an existing DC workbook: ask every time.** A new row widens every test that
    reads that workbook. The Data gate shows both options (row in the existing workbook vs. a new
    workbook for a new test) and which tests a new row would widen
-   ([phases/data.md#existing-row](phases/data.md#existing-row)).
+   ([phases/data.md#new-row](phases/data.md#new-row)).
 5. Never hand-edit generated code; never run `upgradePages` / `rebuildCode`.
 6. Never invent a data value (`#` codes, coded values and relationship codes must exist).
 7. Don't touch unrelated code: smells found on the way are reported, not fixed.

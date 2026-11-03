@@ -15,9 +15,9 @@ Per value, pick the cheapest mechanism that fits, in this order:
 5. [Constants](#no-data-layer), only when the project has no data layer yet.
 
 Per `recordedValues` ([phases/profile.md#switches](profile.md#switches)): `data` sends recorded
-values through this order; `constants` keeps them as constants in the step
-([phases/recording.md#generate](recording.md#generate)) and this phase handles only the values
-the profile says belong in data.
+values through this order (a new row also carries the values the test later asserts on, read back
+from the same row: [phases/recording.md#generate](recording.md#generate)); `constants` keeps them as
+constants in the step.
 
 What the engine gives you:
 
@@ -64,15 +64,23 @@ A variation of an existing reference (a different city, a different effective da
 - In code, only for a true one-off: `dataDC.withX("code")`, `replaceReference(...)`, or a field
   `setValue(...)` in the test's `initializeData(...)`. Show it at the gate as an exception.
 
-Add the override column to a row through [Writing rows](#writing-rows). A column the workbook does
-not have yet is a [generation-level change](#new-workbook).
+**Which row carries the overrides.** By default a **new row**, so the [New row](#new-row)
+checkpoints apply (ask every time, `usedBy`, full preview). Writing override values into an
+**existing** row silently changes every test that uses it, so do that only when the user picks that
+row at the gate after seeing its `usedBy` tests.
+
+**A header not in the workbook yet** (e.g. `#Address.City`) is a new column: say so at the gate and
+follow [New workbook](#new-workbook), regeneration and its verification included, unless the
+CenterTest docs ("Data overrides") say override columns need no regeneration. Check the docs or
+ask; never assume. Then write through [Writing rows](#writing-rows).
 
 ## New row
 
 A new row in an existing workbook: **ask every time. Never assume.** It widens every test that
-reads the workbook without a row filter. Two checkpoints:
+reads the workbook without a row filter. (An existing row needs no such question:
+[Existing row](#existing-row); the question is asked only here.) Two checkpoints:
 
-1. **Target and alternative.** Show the workbook and its DC, the tests in its `usedBy` that the row
+1. **Checkpoint 1: target and alternative.** Show the workbook and its DC, the tests in its `usedBy` that the row
    widens (each is one more scenario on every run), and the alternative: a new workbook for a new
    test ([new workbook](#new-workbook)). Wait for the choice.
 2. Read headers and existing `Code`s with `ct.py` `xlsx`; confirm no existing row already fits.
@@ -80,7 +88,7 @@ reads the workbook without a row filter. Two checkpoints:
    already present in that column, relationship codes that exist in the target DC, a new `Code`
    unique and following the file's pattern. Recorded dates follow
    [phases/recording.md#dates](recording.md#dates).
-4. **Preview**: every column, its value and where it came from. Wait for an explicit yes on the
+4. **Checkpoint 2: preview.** Every column, its value and where it came from. Wait for an explicit yes on the
    whole row.
 
 Adding rows needs no regeneration; adding columns or files does ([Regeneration](#regeneration)).
@@ -96,14 +104,14 @@ and the generated class it should produce. Then [Regeneration](#regeneration).
 
 When the project has no DC workbooks and no `@DataDriven` tests, offer:
 
-1. **Constants first**: recorded values as `private static final` constants in the new step, named
-   from the field label. Fastest; flag it as a data-layer TODO in the report.
+1. **Constants** (the default when there is no data layer): recorded values as
+   `private static final` constants in the new step, named from the field label. Fastest; flag it as a data-layer TODO in the report.
 2. **First DC workbook**: one workbook for this transaction with the recorded values as its first
    row, plus the hierarchy and generator setup the framework needs (a [new workbook](#new-workbook)
    with [Regeneration](#regeneration)). Slower now, reusable later.
 
-Recommend 2 when the user expects more scenarios of this transaction, 1 for a one-off. Ask; the
-profile's `recordedValues` is the default ([phases/profile.md#switches](profile.md#switches)).
+Offer both with a recommendation: 2 when the user expects more scenarios of this transaction, 1 for
+a one-off. Ask ([phases/recording.md#generate](recording.md#generate)).
 
 ## Writing rows
 
@@ -131,7 +139,10 @@ says it is done, verify before writing any code that calls the new getters:
 
 ## Generated values
 
-For names and contact data that must be fresh on every run, put tokens in the cell of a **new** row:
+Tokens need **framework 6.16 and later**. Confirm the project's CenterTest version first
+(`project.build`, or `centertest.version` in `gradle.properties`); on an older version use the
+project's own generator instead. For names and contact data that must be fresh on every run, put
+tokens in the cell of a **new** row:
 `{firstname}`, `{lastname}`, `{companyname}`, `{email}`, `{phone}`, `Adult-{testcode}`, rather than
 writing name-randomising code. They are restored after a restart, so an account created before the
 restart still matches. A project value generator can add its own keys: check the project's
@@ -163,8 +174,13 @@ Report any broken reference before going on; do not edit around it silently.
 
 ## Gate
 
-Show per value: the mechanism and its source (row `Code`, override column, new row, new workbook);
-for a new row, the full preview and the widened tests (`usedBy`) beside the new-workbook alternative,
-asked every time; the override columns with their markers; generated-value tokens; shared values and
-their `sharedValues` mode; what the user must do (regeneration, manual cells); and what
-[validation](#validate) found. Wait for approval before anything is written.
+**Pre-write gate.** Show per value: the mechanism and its source (row `Code`, override column, new
+row, new workbook); the existing-state reference check (every `#` code, coded value and
+relationship code found in the workbooks); for a new row, the full preview and the widened tests
+(`usedBy`) beside the new-workbook alternative, asked every time; override columns with their
+markers and the row that carries them; generated-value tokens; shared values and their
+`sharedValues` mode; what the user must do (regeneration, manual cells). Wait for approval before
+anything is written.
+
+**Report after writing (the post-write report):** the cells written, the re-read result, and the `ddt-tools`
+validation and diff ([Validate](#validate)).

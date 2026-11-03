@@ -38,6 +38,8 @@ MARKERS: list = [
     ("phases/data.md", "git status"),
     ("phases/data.md", "ddt-tools"),
     ("phases/data.md", "ct.py\" xlsx"),
+    ("phases/data.md", "6.16"),
+    ("phases/data.md", "post-write"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
