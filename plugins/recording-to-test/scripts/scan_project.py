@@ -557,6 +557,61 @@ def guidewire_version(root, props):
     return fact(value, rel(root, path)) if value else missing("no gw.version property")
 
 
+RESERVED_KEYS = ("PolicyExpirationDate", "UserName", "Password", "Premium")
+SET_CUSTOM = re.compile(r"\bsetCustom\(")
+SET_CUSTOM_KEY = re.compile(r"\bsetCustom\(\s*\"([^\"]*)\"")
+DATA_KEY = re.compile(r"\bDataKey\.")
+SUITE_FILE = "src/main/resources/CenterTestSuiteList.json"
+
+
+def shared_values_usage(root, java):
+    """setCustom( calls, DataKey. references, and setCustom calls that reuse a framework-reserved key."""
+    set_custom = data_key = 0
+    misuse = []
+    for path, text in java.items():
+        set_custom += len(SET_CUSTOM.findall(text))
+        data_key += len(DATA_KEY.findall(text))
+        for key in SET_CUSTOM_KEY.findall(text):
+            if key in RESERVED_KEYS:
+                misuse.append({"path": rel(root, path), "key": key})
+    return fact({"setCustom": set_custom, "dataKey": data_key, "reservedKeyMisuse": misuse},
+                "setCustom( / DataKey. in the project's Java sources")
+
+
+def negative_protocol(java):
+    """How negative tests end: a project exception class, or the framework's passTestWhen."""
+    texts = list(java.values())
+    return fact({"projectException": sum(len(re.findall(r"\bNegativeTestException\b", t)) for t in texts),
+                 "framework": sum(len(re.findall(r"\bpassTestWhen\b", t)) for t in texts)},
+                "NegativeTestException / passTestWhen in the tests")
+
+
+def suite_entries(value):
+    """Entries of one suite: a plain list, a {List: [...]} or {Packages: [...]}; anything else is kept raw."""
+    if isinstance(value, dict):
+        for key in ("List", "Packages"):
+            if isinstance(value.get(key), list):
+                return value[key]
+    return value
+
+
+def suites(root):
+    """Suites of CenterTestSuiteList.json as {name: [entries]}."""
+    path = os.path.join(root, *SUITE_FILE.split("/"))
+    if not os.path.isfile(path):
+        return missing(f"no {SUITE_FILE}")
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as error:
+        return missing(f"{SUITE_FILE} is not readable JSON: {error}")
+    if isinstance(data, list):  # [{"name": ..., "List": [...]}]
+        named = {str(item.get("name", i)): item for i, item in enumerate(data) if isinstance(item, dict)}
+    else:
+        named = data if isinstance(data, dict) else {"suites": data}
+    return fact({"path": SUITE_FILE, "suites": {name: suite_entries(value) for name, value in named.items()}}, SUITE_FILE)
+
+
 def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> dict:
     root = os.path.abspath(root)
     gradle_home = gradle_home or os.environ.get("GRADLE_USER_HOME") or os.path.expanduser("~/.gradle")
@@ -575,14 +630,15 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
                       steps=step_conventions(root, steps, reusable_dir), facades=facades(root, java, steps),
                       exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir),
                       transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps),
-                      idioms=idioms(steps))
+                      idioms=idioms(steps), negativeProtocol=negative_protocol(tests))
         result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir,
                                     {m["facade"] for m in result["facades"]["value"] or []})
     else:
         for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
-                    "screenHelpers", "idioms"):
+                    "screenHelpers", "idioms", "negativeProtocol"):
             result[key] = missing("needs clientPackage and testsRoot")
-    result.update(dataWorkbooks=data_workbooks(root, tests), guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
+    result.update(sharedValuesUsage=shared_values_usage(root, java), suites=suites(root),
+                  dataWorkbooks=data_workbooks(root, tests), guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
                   build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
     return result
 

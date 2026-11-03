@@ -471,10 +471,6 @@ class BuildAndCommandLineTest(ProjectTestCase):
         self.assertIn("project root not found", result.stderr)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class DataWorkbooksTest(ProjectTestCase):
     DC = "testdata/personalauto/PA_SubmissionDC.xlsx"
 
@@ -533,3 +529,74 @@ class DataWorkbooksTest(ProjectTestCase):
         os.remove(self.dc)
         self.assertIn("reason", self.workbooks())
         self.assertIsNone(self.workbooks()["value"])
+
+
+class ConventionsTest(ProjectTestCase):
+    JAVA = "src/main/java/com/acme"
+
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+
+    def add_step(self, name, body):
+        write(self.root, f"{self.JAVA}/reusable/pc/shared/{name}.java", body)
+
+    def add_test(self, name, body):
+        write(self.root, f"{self.JAVA}/tests/pc/personalauto/submission/{name}.java",
+              "@CenterTest\npublic final class %s {\n%s\n}\n" % (name, body))
+
+    def usage(self):
+        return self.scan()["sharedValuesUsage"]["value"]
+
+    def test_counts_setcustom_and_datakey(self):
+        self.add_step("Shared", 'class Shared { void f() { data.setCustom("A", 1); data.setCustom("B", 2); x(DataKey.ONE, DataKey.TWO); } }')
+        usage = self.usage()
+        self.assertEqual((usage["setCustom"], usage["dataKey"]), (2, 2))
+
+    def test_reserved_key_with_setcustom_is_flagged(self):
+        self.add_step("Shared", 'class Shared { void f() { data.setCustom("Premium", x); } }')
+        misuse = self.usage()["reservedKeyMisuse"]
+        self.assertEqual([m["key"] for m in misuse], ["Premium"])
+        self.assertTrue(misuse[0]["path"].endswith("reusable/pc/shared/Shared.java"))
+
+    def test_other_setcustom_keys_not_flagged(self):
+        self.add_step("Shared", 'class Shared { void f() { data.setCustom("Premiums", x); data.setCustom("Other", x); } }')
+        self.assertEqual(self.usage()["reservedKeyMisuse"], [])
+
+    def test_reserved_keys_constant(self):
+        self.assertEqual(sp.RESERVED_KEYS, ("PolicyExpirationDate", "UserName", "Password", "Premium"))
+
+    def test_negative_protocol_counts(self):
+        self.add_test("PA_NegTest", 'void run() { throw new NegativeTestException("x"); }\n'
+                      'void other() { passTestWhen(a); passTestWhen(b); }')
+        self.assertEqual(self.scan()["negativeProtocol"]["value"], {"projectException": 1, "framework": 2})
+
+    def test_negative_protocol_missing_without_package(self):
+        os.remove(os.path.join(self.root, "src/main/resources/customer.centertest.properties"))
+        self.assertIn("reason", self.scan()["negativeProtocol"])
+
+    def suite_file(self, data):
+        write(self.root, "src/main/resources/CenterTestSuiteList.json", json.dumps(data))
+
+    def test_suites_listed(self):
+        self.suite_file({"Smoke": {"List": ["a.A", "b.B"]}, "Regression": {"Packages": ["com.acme.tests.pc"]}})
+        value = self.scan()["suites"]["value"]
+        self.assertEqual(value["path"], "src/main/resources/CenterTestSuiteList.json")
+        self.assertEqual(value["suites"], {"Smoke": ["a.A", "b.B"], "Regression": ["com.acme.tests.pc"]})
+
+    def test_suites_plain_lists_and_unknown_shape_kept_raw(self):
+        self.suite_file({"Plain": ["x.X"], "Odd": {"Something": 1}})
+        self.assertEqual(self.scan()["suites"]["value"]["suites"], {"Plain": ["x.X"], "Odd": {"Something": 1}})
+
+    def test_no_suite_file_is_missing(self):
+        result = self.scan()["suites"]
+        self.assertIsNone(result["value"])
+        self.assertIn("reason", result)
+
+    def test_invalid_suite_file_is_missing(self):
+        write(self.root, "src/main/resources/CenterTestSuiteList.json", "{not json")
+        self.assertIn("reason", self.scan()["suites"])
+
+
+if __name__ == "__main__":
+    unittest.main()
