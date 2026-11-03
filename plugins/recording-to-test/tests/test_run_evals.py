@@ -128,6 +128,73 @@ class RunCaseTest(CaseTestBase):
         self.assertEqual(run_evals.run_case(folder, CT)["status"], "PASS")
 
 
+R1 = os.path.join(HERE, "fixtures", "recordings", "real-180418")
+R2 = os.path.join(HERE, "fixtures", "recordings", "real-174907")
+
+
+class BrokenCaseTest(CaseTestBase):
+    def raw_case(self, name, text):
+        folder = os.path.join(self.cases, name)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "case.json"), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_missing_project_field_is_invalid_not_skip(self):
+        folder = self.write_case()
+        path = os.path.join(folder, "case.json")
+        with open(path, encoding="utf-8") as f:
+            case = json.load(f)
+        del case["project"]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(case, f)
+        code, out = run_main(["--cases", self.cases])
+        self.assertEqual(code, 1)
+        self.assertIn("invalid case: missing project", out)
+
+    def test_non_object_and_string_recordings_fail(self):
+        self.raw_case("a_list", "[1, 2]")
+        self.write_case("b_str", recordings=SYNTHETIC)
+        code, out = run_main(["--cases", self.cases])
+        self.assertEqual(code, 1)
+        self.assertIn("invalid case: case.json must be a JSON object", out)
+        self.assertIn("invalid case: recordings must be", out)
+
+    def test_invalid_json_fails_and_run_continues(self):
+        self.raw_case("a_bad", "{not json")
+        self.write_case("b_good")
+        code, out = run_main(["--cases", self.cases])
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL a_bad", out)
+        self.assertIn("PASS b_good", out)
+
+    def test_absent_on_missing_intermediate_key_passes(self):
+        folder = self.write_case(expect=[{"path": "plan.nope.deeper[0].x", "op": "absent"}])
+        self.assertEqual(run_evals.run_case(folder, CT)["status"], "PASS")
+
+    def test_two_recordings_give_parts(self):
+        folder = self.write_case(recordings=[R1, R2],
+                                 expect=[{"path": "plan.parts[1]", "op": "exists"},
+                                         {"path": "plan.parts[2]", "op": "absent"}])
+        result = run_evals.run_case(folder, CT)
+        self.assertEqual(result["status"], "PASS", result)
+
+    def test_timeout_is_fail(self):
+        import subprocess
+        from unittest import mock
+        folder = self.write_case()
+        with mock.patch.object(run_evals.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("x", 1)):
+            result = run_evals.run_case(folder, CT)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("timed out", result["failures"][0])
+
+    def test_empty_cases_dir_exits_2(self):
+        os.makedirs(self.cases)
+        code, out = run_main(["--cases", self.cases])
+        self.assertEqual(code, 2)
+        self.assertIn("case.json", out)
+
+
 class MainTest(CaseTestBase):
     def test_no_cases_dir_exits_2(self):
         code, out = run_main([], env={"CT_EVALS_DIR": None})

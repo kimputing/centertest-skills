@@ -38,11 +38,25 @@ def get_path(doc, path):
     return current
 
 
+class UnsetVar(Exception):
+    """A ${VAR} in a case field is not set in the environment."""
+
+
+class InvalidCase(Exception):
+    pass
+
+
+TIMEOUT = 600
+
+
 def _expand(value, case_dir):
-    """Expand ${VAR}; relative paths resolve against the case folder. Raises KeyError for an unset variable."""
+    """Expand ${VAR}; relative paths resolve against the case folder. Raises UnsetVar for an unset variable."""
+    if not isinstance(value, str):
+        raise InvalidCase(f"expected a string path, got {value!r}")
+
     def sub(m):
         if m.group(1) not in os.environ:
-            raise KeyError(m.group(1))
+            raise UnsetVar(m.group(1))
         return os.environ[m.group(1)]
     value = re.sub(r"\$\{([^}]+)\}", sub, value)
     return value if os.path.isabs(value) else os.path.normpath(os.path.join(case_dir, value))
@@ -50,7 +64,7 @@ def _expand(value, case_dir):
 
 def _run(args):
     return subprocess.run([sys.executable] + args, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace", timeout=TIMEOUT)
 
 
 def _read_json(path):
@@ -84,6 +98,8 @@ def _check(doc, expectation):
 
 def run_case(case_dir, ct):
     case = _read_json(os.path.join(case_dir, "case.json"))
+    if not isinstance(case, dict):
+        raise InvalidCase("case.json must be a JSON object")
     name = case.get("name") or os.path.basename(case_dir)
 
     def result(status, failures=(), reason=None):
@@ -92,11 +108,21 @@ def run_case(case_dir, ct):
             r["reason"] = reason
         return r
 
+    for field in ("project", "recordings"):
+        if field not in case:
+            raise InvalidCase(f"missing {field}")
+    if not isinstance(case["recordings"], list) or not case["recordings"]:
+        raise InvalidCase("recordings must be a non-empty list")
+    if not isinstance(case.get("expect", []), list):
+        raise InvalidCase("expect must be a list")
+    for e in case.get("expect", []):
+        if not isinstance(e, dict) or "path" not in e or "op" not in e:
+            raise InvalidCase(f"bad expect entry: {e!r}")
     try:
         project = _expand(case["project"], case_dir)
         recordings = [_expand(r, case_dir) for r in case["recordings"]]
         cssids_field = _expand(case["cssids"], case_dir) if case.get("cssids") else None
-    except KeyError as unset:
+    except UnsetVar as unset:
         return result("SKIP", reason=f"environment variable {unset.args[0]} is not set")
     if not os.path.isdir(project):
         return result("SKIP", reason=f"project not found: {project}")
@@ -110,14 +136,20 @@ def run_case(case_dir, ct):
         scan_args = [ct, "scan", project, "--out", project_json]
         if cssids_field:
             scan_args += ["--cssids", cssids_field]
-        done = _run(scan_args)
+        try:
+            done = _run(scan_args)
+        except subprocess.TimeoutExpired:
+            return result("FAIL", [f"scan timed out after {TIMEOUT} s"])
         if done.returncode != 0:
             return result("FAIL", [f"scan exited {done.returncode}: {done.stderr.strip()[-300:]}"])
         project_doc = _read_json(project_json)
         cssids = (project_doc.get("cssids") or {}).get("value") or cssids_field
         if not cssids:
             return result("SKIP", reason="no cssids: the scan found none and the case has no \"cssids\" field")
-        done = _run([ct, "parse", *recordings, "--cssids", cssids, "--project", project_json, "--out", plan_json])
+        try:
+            done = _run([ct, "parse", *recordings, "--cssids", cssids, "--project", project_json, "--out", plan_json])
+        except subprocess.TimeoutExpired:
+            return result("FAIL", [f"parse timed out after {TIMEOUT} s"])
         if done.returncode != 0:
             return result("FAIL", [f"parse exited {done.returncode}: {done.stderr.strip()[-300:]}"])
         doc = {"plan": _read_json(plan_json), "project": project_doc}
@@ -139,13 +171,15 @@ def main(argv=None):
         print(f"Error: cases directory not found: {cases_dir}", file=sys.stderr)
         return 2
     counts = {"PASS": 0, "FAIL": 0, "SKIP": 0}
-    for entry in sorted(os.listdir(cases_dir)):
+    folders = [e for e in sorted(os.listdir(cases_dir)) if os.path.isfile(os.path.join(cases_dir, e, "case.json"))]
+    if not folders:
+        print(f"Error: no <name>/case.json found under {cases_dir}", file=sys.stderr)
+        return 2
+    for entry in folders:
         folder = os.path.join(cases_dir, entry)
-        if not os.path.isfile(os.path.join(folder, "case.json")):
-            continue
         try:
             res = run_case(folder, args.ct)
-        except (OSError, ValueError, KeyError) as error:
+        except (OSError, ValueError, InvalidCase) as error:
             res = {"name": entry, "status": "FAIL", "failures": [f"invalid case: {error}"]}
         counts[res["status"]] += 1
         line = f"{res['status']} {res['name']}"
