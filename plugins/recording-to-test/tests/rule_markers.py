@@ -21,6 +21,10 @@ MARKERS: list = [
     ("phases/recording.md", "cssid-finder"),
     ("phases/recording.md", "stay as written"),
     ("SKILL.md", "outcomeMismatch"),
+    ("phases/reuse.md", "super.execute()"),
+    ("phases/reuse.md", "new test class"),
+    ("phases/code.md", "plan.seedPointCandidates"),
+    ("phases/code.md", "new values or categories"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
