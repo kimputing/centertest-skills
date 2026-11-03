@@ -23,7 +23,7 @@ current `plan schemaVersion` and `project schemaVersion` from `scripts/schema.py
 
 ### Skill
 
-- Six-phase wizard with one phase file each under `skills/recording-to-test/phases/`, read when
+- Six-phase wizard with phase files under `skills/recording-to-test/phases/`, read when
   the phase starts.
 - The wizard reads the project's `.claude/client-profile.md` and follows it within the hard rules.
 

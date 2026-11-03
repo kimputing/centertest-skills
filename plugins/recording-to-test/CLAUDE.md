@@ -41,7 +41,7 @@ only names plan fields that exist.
 
     python3 -m unittest discover -s plugins/recording-to-test/tests -v
 
-There is no CI in this repo; run them before every commit, and `claude plugin validate .` from the
+CI runs them on Linux, macOS and Windows (`.github/workflows/tests.yml`); still run them before every commit, and `claude plugin validate .` from the
 repo root. The instruction tests (`tests/test_skill_md.py`) check the skill text: every file,
 anchor, `ct.py` command and flag it names exists, SKILL.md stays under 300 lines, no `$` before a
 digit, and each phrase in `tests/rule_markers.py` is still there. When you move a rule, move its
