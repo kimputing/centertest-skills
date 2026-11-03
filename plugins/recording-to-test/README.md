@@ -69,6 +69,7 @@ The skill calls one script, `scripts/ct.py <command>`:
 | `tools` | whether ffmpeg and whisper are installed |
 | `profile resolve` / `profile init` | resolved switches / a draft client profile |
 | `gap-report` | a report of an engine gap, for Kimputing |
+| `scrub` | a `session.json`-only copy of a recording with hosts, typed values and dates replaced, for private test fixtures (`scrub <recording> --out DIR [--day-shift N]`) |
 
 ## Checks → assertions
 

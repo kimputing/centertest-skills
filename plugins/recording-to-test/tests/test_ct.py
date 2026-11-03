@@ -66,7 +66,7 @@ def quiet_main(argv):
 
 class DispatcherTest(unittest.TestCase):
     def test_commands_are_module_function_strings(self):
-        self.assertEqual(set(ct.COMMANDS), {"scan", "parse", "xlsx", "narrate", "profile", "tools", "gap-report"})
+        self.assertEqual(set(ct.COMMANDS), {"scan", "parse", "xlsx", "narrate", "profile", "tools", "gap-report", "scrub"})
         self.assertEqual(ct.COMMANDS["scan"], "scan_project:main")
         self.assertEqual(ct.COMMANDS["profile"], "client_profile:main")
         for value in ct.COMMANDS.values():

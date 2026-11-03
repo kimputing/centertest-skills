@@ -18,13 +18,15 @@ scenario in the target project's structure, in six phases with a gate after each
 - `scripts/find_getter.py` — **vendored, byte-identical** copy of `plugins/cssid-finder/scripts/find_getter.py`.
   Never edit it here; change cssid-finder, then `cp` it over. `tests/test_vendored_sync.py` fails when they differ.
 - `scripts/ct.py` — the single entry point the skill calls (`scan`, `parse`, `xlsx`, `narrate`,
-  `profile resolve|init`, `tools`, `gap-report`); modules load lazily.
+  `profile resolve|init`, `tools`, `gap-report`, `scrub`); modules load lazily.
 - `scripts/schema.py` — `PLAN_SCHEMA_VERSION` / `PROJECT_SCHEMA_VERSION` and `PLAN_FIELDS`.
 - `scripts/client_profile.py` + `profile/` (`defaults.md`, `template.md`) — flat front-matter
   profile, switches, dated facts.
 - `scripts/narration.py` — transcript file, else local ffmpeg + whisper.cpp; raw utterances only.
 - `scripts/flow_match.py`, `data_match.py`, `restart.py`, `xlsx_read.py`, `gap_report.py` — flow and
   data matching against the scan, restart candidates, workbook reading, gap reports.
+- `scripts/scrub_recording.py` — `scrub`: hosts → `gw.example.test`, typed/posted values → `V<n>`, dates shifted
+  by `--day-shift`, media/dom/net dropped; writes only `session.json` (refuses to overwrite).
 - `skills/recording-to-test/SKILL.md` (≤ 300 lines: inputs, hard rules, launcher, gates) and
   `phases/{understand,recording,reuse,code,data,restart,verify,profile}.md` — the judgment steps,
   read when their phase starts. Phase files cross-reference `phases/<file>.md#<anchor>` only.

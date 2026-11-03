@@ -17,6 +17,7 @@ COMMANDS = {
     "profile": "client_profile:main",
     "tools": "narration:main_tools",
     "gap-report": "gap_report:main",
+    "scrub": "scrub_recording:main",
 }
 
 
