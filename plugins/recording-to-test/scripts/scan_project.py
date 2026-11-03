@@ -612,6 +612,31 @@ def suites(root):
     return fact({"path": SUITE_FILE, "suites": {name: suite_entries(value) for name, value in named.items()}}, SUITE_FILE)
 
 
+COMMIT_PATTERNS = {
+    "issue": re.compile(r"getIssuePolicy|getIssueNow"),
+    "bind": re.compile(r"getBindOnly|BindPolicyChange|getBind\w*"),
+    "payment": re.compile(r"Payment|getPay\w*|MakePayment"),
+    "cancel": re.compile(r"getCancelNow|CancelPolicy"),
+    "reinstate": re.compile(r"getReinstate\w*|ReinstatePolicy"),
+    "rewrite": re.compile(r"getRewrite\w*|RewritePolicy"),
+    "submit": re.compile(r"getSubmit\w*"),
+}
+AFTER_COMMIT = re.compile(r"assert|waitForPageTitle|\.set\(")
+IMPORT_LINE = re.compile(r"^\s*(?:import|package)\s.*$", re.M)
+
+
+def component_effects(root, steps):
+    """Reusable steps that commit back-end state (issue, payment, ...) and whether they keep acting afterwards."""
+    found = []
+    for path, text in steps.items():
+        body = IMPORT_LINE.sub("", text)
+        hits = {kind: m.start() for kind, pattern in COMMIT_PATTERNS.items() if (m := pattern.search(body))}
+        if hits:
+            found.append({"path": rel(root, path), "class": class_name(path), "commits": list(hits),
+                          "afterCommit": bool(AFTER_COMMIT.search(body, min(hits.values())))})
+    return fact(found, "commit calls (issue, bind, payment, cancel, reinstate, rewrite, submit) in reusable steps")
+
+
 def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> dict:
     root = os.path.abspath(root)
     gradle_home = gradle_home or os.environ.get("GRADLE_USER_HOME") or os.path.expanduser("~/.gradle")
@@ -630,12 +655,13 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
                       steps=step_conventions(root, steps, reusable_dir), facades=facades(root, java, steps),
                       exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir),
                       transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps),
-                      idioms=idioms(steps), negativeProtocol=negative_protocol(tests))
+                      idioms=idioms(steps), negativeProtocol=negative_protocol(tests),
+                      componentEffects=component_effects(root, steps))
         result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir,
                                     {m["facade"] for m in result["facades"]["value"] or []})
     else:
         for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
-                    "screenHelpers", "idioms", "negativeProtocol"):
+                    "screenHelpers", "idioms", "negativeProtocol", "componentEffects"):
             result[key] = missing("needs clientPackage and testsRoot")
     result.update(sharedValuesUsage=shared_values_usage(root, java), suites=suites(root),
                   dataWorkbooks=data_workbooks(root, tests), guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),

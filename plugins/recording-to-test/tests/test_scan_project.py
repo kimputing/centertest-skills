@@ -598,5 +598,50 @@ class ConventionsTest(ProjectTestCase):
         self.assertIn("reason", self.scan()["suites"])
 
 
+class ComponentEffectsTest(ProjectTestCase):
+    JAVA = "src/main/java/com/acme"
+
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+
+    def step(self, name, body):
+        write(self.root, f"{self.JAVA}/reusable/pc/shared/{name}.java",
+              "package com.acme.reusable.pc.shared;\npublic class %s extends BaseScenarioPC {\n  public void execute() {\n%s\n  }\n}\n" % (name, body))
+
+    def effects(self):
+        return {e["class"]: e for e in self.scan()["componentEffects"]["value"]}
+
+    def test_payment_then_assert_is_after_commit(self):
+        self.step("PayInvoice", "    page.getMakePayment().click();\n    assertEquals(a, b);")
+        entry = self.effects()["PayInvoice"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["payment"], True))
+        self.assertEqual(entry["path"], f"{self.JAVA}/reusable/pc/shared/PayInvoice.java")
+
+    def test_issue_last_is_not_after_commit(self):
+        self.step("IssueIt", "    waitForPageTitle(\"Quote\");\n    page.getIssuePolicy().click();")
+        entry = self.effects()["IssueIt"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["issue"], False))
+
+    def test_class_without_commit_absent(self):
+        self.assertNotIn("SearchForPolicyPC", self.effects())
+
+    def test_set_after_commit_counts(self):
+        self.step("BindAndSet", "    page.getBindOnly().click();\n    page.getName().set(\"x\");")
+        entry = self.effects()["BindAndSet"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["bind"], True))
+
+    def test_multiple_kinds_listed(self):
+        self.step("CancelAndReinstate", "    page.getCancelNow().click();\n    page.getReinstate().click();")
+        self.assertEqual(self.effects()["CancelAndReinstate"]["commits"], ["cancel", "reinstate"])
+
+    def test_commit_patterns_kinds(self):
+        self.assertEqual(set(sp.COMMIT_PATTERNS), {"issue", "bind", "payment", "cancel", "reinstate", "rewrite", "submit"})
+
+    def test_missing_without_package(self):
+        os.remove(os.path.join(self.root, "src/main/resources/customer.centertest.properties"))
+        self.assertIn("reason", self.scan()["componentEffects"])
+
+
 if __name__ == "__main__":
     unittest.main()
