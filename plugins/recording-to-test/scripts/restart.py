@@ -23,21 +23,22 @@ def _commit_kind(action: dict):
     return kind
 
 
-def _risk_in_actions(steps: list):
-    """(kind, commit seq, later seqs) of the first commit action followed by further actions or checks in
-    the segment's steps; later = actions or checks of later steps, or checks of the commit step itself
-    (checks run after the step's actions)."""
+def _commits_with_later_work(steps: list) -> list:
+    """(kind, commit seq, later seqs) for every step holding a commit action that any action or check follows
+    anywhere later in the recording (later steps, or checks of the commit step itself, which run after
+    its actions)."""
+    found = []
     for index, entry in enumerate(steps):
-        for position, action in enumerate(entry.get("actions") or []):
-            kind = _commit_kind(action)
-            if not kind:
-                continue
-            later = [e["seq"] for e in steps[index + 1:] if e.get("actions") or e.get("checks")]
-            if entry.get("checks"):
-                later.insert(0, entry["seq"])
-            if later:
-                return kind, entry["seq"], later
-    return None
+        kinds = [_commit_kind(a) for a in entry.get("actions") or []]
+        kinds = [k for k in kinds if k]
+        if not kinds:
+            continue
+        later = [e["seq"] for e in steps[index + 1:] if e.get("actions") or e.get("checks")]
+        if entry.get("checks"):
+            later.insert(0, entry["seq"])
+        if later:
+            found.append((kinds[0], entry["seq"], later))
+    return found
 
 
 def _seqs_text(seqs: list) -> str:
@@ -47,7 +48,6 @@ def _seqs_text(seqs: list) -> str:
 def restart_candidates(plan: dict, sequence: list, effects: list) -> list:
     """Restart points at segment boundaries, one per boundary: stateChanging > centerSwitch > setup."""
     steps = plan.get("steps") or []
-    by_seq = {entry["seq"]: entry for entry in steps}
     segs = flow_match.segments(plan)
     sequence = sequence if len(sequence) == len(segs) else []
     effect_by_path = {e.get("path"): e for e in effects or [] if e.get("path")}
@@ -57,17 +57,15 @@ def restart_candidates(plan: dict, sequence: list, effects: list) -> list:
         found.setdefault(after, {})[kind] = {"afterSeq": after, "kind": kind, "reason": reason,
                                              "rerunRisk": risk, "proposePolicy": policy}
 
+    for kind, at, later in _commits_with_later_work(steps):
+        add(at, "stateChanging", "%s at seq %d is followed by more work (%s): put a restart point right after "
+            "seq %d, or run the block that contains it with DISABLE_ON_FAILURE so a resume never repeats the %s"
+            % (kind, at, _seqs_text(later), at, kind), "notResumable", "DISABLE_ON_FAILURE")
     last_setup = None
     for index, segment in enumerate(segs):
         end = segment["seqs"][-1]
-        members = [by_seq[s] for s in segment["seqs"] if s in by_seq]
         top = (sequence[index].get("candidates") or [None])[0] if sequence else None
-        risk = _risk_in_actions(members)
-        if risk:
-            kind, at, later = risk
-            add(end, "stateChanging", "%s at seq %d is followed by %s in the same block; a resumed run "
-                "would commit it again" % (kind, at, _seqs_text(later)), "notResumable", "DISABLE_ON_FAILURE")
-        elif top and effect_by_path.get(top.get("step"), {}).get("afterCommit"):
+        if top and effect_by_path.get(top.get("step"), {}).get("afterCommit"):
             effect = effect_by_path[top["step"]]
             kinds = ", ".join(effect.get("commits") or []) or "a commit"
             add(end, "stateChanging", "%s.%s commits (%s) and then keeps working; a resumed run would commit "

@@ -87,9 +87,22 @@ class RestartCandidatesTest(unittest.TestCase):
         plan = {"steps": [step(1, "A", actions=[click("Issue")]), step(2, "A", checks=[{"label": "x"}]),
                           step(3, "B", app="bc", app_switch=True)]}
         found = restart.restart_candidates(plan, [], [])
-        self.assertEqual(len(found), 1)
-        self.assertEqual(found[0]["kind"], "stateChanging")
+        self.assertEqual([(c["kind"], c["afterSeq"]) for c in found], [("stateChanging", 1), ("centerSwitch", 2)])
+
+    def test_state_changing_wins_when_boundaries_coincide(self):
+        plan = {"steps": [step(1, "A", actions=[click("Issue")], checks=[{"label": "x"}]),
+                          step(2, "B", app="bc", app_switch=True)]}
+        found = restart.restart_candidates(plan, [], [])
+        self.assertEqual([(c["kind"], c["afterSeq"]) for c in found], [("stateChanging", 1)])
         self.assertIn("centerSwitch", found[0]["reason"])
+
+    def test_payment_followed_by_check_on_later_screen_is_not_resumable(self):
+        plan = {"steps": [step(1, "Payment", actions=[click("Make Payment")]),
+                          step(2, "Summary", checks=[{"label": "Amount"}])]}
+        found = restart.restart_candidates(plan, [], [])
+        self.assertEqual([(c["kind"], c["afterSeq"], c["rerunRisk"], c["proposePolicy"]) for c in found],
+                         [("stateChanging", 1, "notResumable", "DISABLE_ON_FAILURE")])
+        self.assertIn("payment at seq 1 is followed by more work", found[0]["reason"])
 
     def test_no_project_has_no_setup(self):
         plan = {"steps": [step(1, "A"), step(2, "B")]}
