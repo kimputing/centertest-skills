@@ -103,6 +103,10 @@ class RowsTest(unittest.TestCase):
                               ("Eff", "10/01/2026"))
         self.assertEqual([r["code"] for r in found], ["A", "B"])
 
+    def test_huge_serial_is_not_a_date_and_does_not_raise(self):
+        for cell in ("5000000", "2958466", "0", "9" * 40):
+            self.assertFalse(dm.same_value("10/01/2026", cell))
+
     def test_numbers_compare_without_separators_or_currency(self):
         found = self.run_rows([["Code", "Limit"], ["A", "500000"], ["B", "1000.0"], ["C", "7"]], ("Limit", "500,000"))
         self.assertEqual([r["code"] for r in found], ["A"])
@@ -136,6 +140,16 @@ class PlanIntegrationTest(unittest.TestCase):
             plan = pr.build_plan(self.SESSION, self.CSSIDS, project=project)
         self.assertEqual([c["column"] for c in plan["dcColumns"]], ["FirstName"])
         self.assertEqual([r["code"] for r in plan["dataRowCandidates"]], ["A"])
+
+    def test_plan_builds_when_mapped_column_holds_a_huge_number(self):
+        session = {"steps": [{"seq": 1, "app": "PolicyCenter", "title": "T", "actions": [
+            {"type": "change", "widgetId": "X-EffDate", "kind": "TextInputWidget", "text": "Eff date",
+             "value": "10/01/2026"}]}]}
+        with tempfile.TemporaryDirectory() as root:
+            make_xlsx(os.path.join(root, "DC.xlsx"), {"DC": [["Code", "EffDate"], ["A", "5000000"]]})
+            project = {"root": root, "dataWorkbooks": {"value": {"workbooks": [book("DC.xlsx", DC=["Code", "EffDate"])]}}}
+            plan = pr.build_plan(session, self.CSSIDS, project=project)
+        self.assertEqual(plan["dataRowCandidates"], [])
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ US_DATE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 SERIAL = re.compile(r"^\d+(\.\d+)?$")
 EXCEL_EPOCH = datetime.date(1899, 12, 30)
+MAX_SERIAL = 2958465  # 9999-12-31
 READ_ERRORS = (xlsx_read.WorkbookError, zipfile.BadZipFile, zlib.error, NotImplementedError, OSError, ValueError)
 
 
@@ -95,8 +96,9 @@ def same_value(recorded: str, cell: str) -> bool:
         other = _date(b)
         if other is not None:
             return day == other
-        if SERIAL.match(b):
-            return EXCEL_EPOCH + datetime.timedelta(days=int(float(b))) == day
+        if SERIAL.match(b) and len(b) <= 12:
+            serial = int(float(b))
+            return 0 < serial <= MAX_SERIAL and EXCEL_EPOCH + datetime.timedelta(days=serial) == day
         return False
     na, nb = _number(a), _number(b)
     return na is not None and na == nb
