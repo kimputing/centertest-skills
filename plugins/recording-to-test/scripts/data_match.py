@@ -14,6 +14,7 @@ REDACTED = "[redacted]"
 STOPWORDS = {"the", "of", "a"}
 GENERIC = {"name", "code", "type", "date", "number"}
 MAX_ROWS = 3
+MAX_WORKBOOKS = 3  # per recorded value
 WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 US_DATE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
@@ -45,7 +46,8 @@ def _best_column(label_tokens: set, label_is_single: bool, columns: list):
 
 def dc_columns(plan: dict, workbooks: list) -> list:
     """For every recorded (non-redacted) value, the best column per workbook whose header tokens contain
-    the label's tokens or the reverse."""
+    the label's tokens or the reverse; at most three workbooks per value: most shared tokens first, then
+    workbooks a test uses (usedBy), then by path."""
     found = []
     for step in plan.get("steps") or []:
         for action in step.get("actions") or []:
@@ -54,6 +56,7 @@ def dc_columns(plan: dict, workbooks: list) -> list:
                 continue
             label = action.get("label") or ""
             label_tokens = tokens(label)
+            picks = []
             for book in workbooks:
                 best = None
                 for sheet, info in (book.get("sheets") or {}).items():
@@ -61,9 +64,12 @@ def dc_columns(plan: dict, workbooks: list) -> list:
                     if pick and (best is None or pick[0] > best[0]):
                         best = (pick[0], sheet, pick[1])
                 if best:
-                    found.append({"seq": step.get("seq"), "label": label, "value": value,
-                                  "workbook": book["path"], "sheet": best[1], "column": best[2],
-                                  "why": "label '%s' shares %d token(s) with header '%s'" % (label, best[0], best[2])})
+                    picks.append((best, book))
+            picks.sort(key=lambda p: (-p[0][0], not p[1].get("usedBy"), p[1]["path"]))
+            for (shared, sheet, column), book in picks[:MAX_WORKBOOKS]:
+                found.append({"seq": step.get("seq"), "label": label, "value": value,
+                              "workbook": book["path"], "sheet": sheet, "column": column,
+                              "why": "label '%s' shares %d token(s) with header '%s'" % (label, shared, column)})
     return found
 
 

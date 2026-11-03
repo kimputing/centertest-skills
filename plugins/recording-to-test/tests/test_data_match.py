@@ -60,6 +60,30 @@ class ColumnsTest(unittest.TestCase):
                               [book("a.xlsx", DC=["ZipCode"]), book("b.xlsx", Other=["ZipCode"])])
         self.assertEqual([c["workbook"] for c in found], ["a.xlsx", "b.xlsx"])
 
+    def test_at_most_three_workbooks_per_value_by_path(self):
+        books = [book("%s.xlsx" % name, DC=["FirstName"]) for name in "edcba"]
+        found = dm.dc_columns(plan_with(("First name", "Ann")), books)
+        self.assertEqual([c["workbook"] for c in found], ["a.xlsx", "b.xlsx", "c.xlsx"])
+
+    def test_used_workbooks_beat_unused_on_equal_score(self):
+        books = [book("%s.xlsx" % name, DC=["FirstName"]) for name in "abcd"]
+        books[3]["usedBy"] = ["src/test/X.java"]
+        found = dm.dc_columns(plan_with(("First name", "Ann")), books)
+        self.assertEqual([c["workbook"] for c in found], ["d.xlsx", "a.xlsx", "b.xlsx"])
+
+    def test_higher_overlap_beats_used_workbook(self):
+        books = [book("a.xlsx", DC=["Street"]), book("b.xlsx", DC=["Street"]), book("c.xlsx", DC=["Street"]),
+                 book("z.xlsx", DC=["MailingAddressStreet"])]
+        books[0]["usedBy"] = ["src/test/X.java"]
+        found = dm.dc_columns(plan_with(("Mailing address street", "1 Main")), books)
+        self.assertEqual([c["workbook"] for c in found], ["z.xlsx", "a.xlsx", "b.xlsx"])
+
+    def test_cap_applies_per_recorded_value(self):
+        books = [book("%s.xlsx" % name, DC=["FirstName", "LastName"]) for name in "abcd"]
+        found = dm.dc_columns(plan_with(("First name", "Ann"), ("Last name", "Poe")), books)
+        self.assertEqual([(c["seq"], c["workbook"]) for c in found],
+                         [(1, "a.xlsx"), (1, "b.xlsx"), (1, "c.xlsx"), (2, "a.xlsx"), (2, "b.xlsx"), (2, "c.xlsx")])
+
     def test_no_workbooks_gives_empty_lists(self):
         self.assertEqual(dm.dc_columns(plan_with(("First name", "Ann")), []), [])
         self.assertEqual(dm.data_row_candidates([], "/nowhere"), [])
@@ -140,6 +164,16 @@ class PlanIntegrationTest(unittest.TestCase):
             plan = pr.build_plan(self.SESSION, self.CSSIDS, project=project)
         self.assertEqual([c["column"] for c in plan["dcColumns"]], ["FirstName"])
         self.assertEqual([r["code"] for r in plan["dataRowCandidates"]], ["A"])
+
+    def test_rows_only_from_workbooks_that_survive_the_cap(self):
+        with tempfile.TemporaryDirectory() as root:
+            books = []
+            for name in "abcde":
+                make_xlsx(os.path.join(root, name + ".xlsx"), {"DC": [["Code", "FirstName"], [name.upper(), "Ann"]]})
+                books.append(book(name + ".xlsx", DC=["Code", "FirstName"]))
+            project = {"root": root, "dataWorkbooks": {"value": {"workbooks": books}}}
+            plan = pr.build_plan(self.SESSION, self.CSSIDS, project=project)
+        self.assertEqual([r["workbook"] for r in plan["dataRowCandidates"]], ["a.xlsx", "b.xlsx", "c.xlsx"])
 
     def test_plan_builds_when_mapped_column_holds_a_huge_number(self):
         session = {"steps": [{"seq": 1, "app": "PolicyCenter", "title": "T", "actions": [
