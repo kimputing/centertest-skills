@@ -145,7 +145,7 @@ def messages(step: dict) -> list:
 
 
 def wait_title(title) -> str:
-    """The stable part of a page title ('Account Summary: Duncan Test' -> 'Account Summary').
+    """The stable part of a page title ('Account Summary: A000123' -> 'Account Summary').
     waitForPageTitle matches a substring, so the prefix before ':' is enough."""
     return (title or "").split(":")[0].strip()
 

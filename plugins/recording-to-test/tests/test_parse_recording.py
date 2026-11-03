@@ -72,7 +72,7 @@ class HelpersTest(unittest.TestCase):
                                              {"text": "new style", "level": "error"}])
 
     def test_wait_title_keeps_the_part_before_the_colon(self):
-        self.assertEqual(pr.wait_title("Account Summary: Duncan Test"), "Account Summary")
+        self.assertEqual(pr.wait_title("Account Summary: A000123"), "Account Summary")
         self.assertEqual(pr.wait_title("Offerings"), "Offerings")
         self.assertEqual(pr.wait_title(None), "")
 
