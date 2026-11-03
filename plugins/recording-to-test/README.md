@@ -116,7 +116,7 @@ A step creates its wizard page once, in a field set in its constructor, or uses 
 reusable base step that already holds the wizard. It never writes `new SubmissionWizardPage(getContext())`
 in each method. `coverageUtil` is held the same way.
 
-## What it proposes at the confirmation table
+## What it proposes at the gates
 
 - **Where the test starts**, when the recording doesn't begin with a login: the setup the other
   tests in the same `tests/<center>/<lob>/<txn>/` folder use (login, account, submission, policy
@@ -181,7 +181,8 @@ quote and issue methods.
 
 If the project has `CLAUDE.md` / `AGENTS.md` files, the skill follows them. When they ask for an
 edit to an existing file (for example a facade factory method for every new step), it makes that
-edit and lists it. Otherwise it only creates new files.
+edit and lists it. Otherwise it creates new files, and edits existing code only in the few ways the
+skill allows (`SKILL.md`, "Edits to existing code"), each shown as a diff and approved first.
 
 ## What it does not do (yet)
 

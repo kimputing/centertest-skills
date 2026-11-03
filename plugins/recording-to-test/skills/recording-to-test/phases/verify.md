@@ -35,12 +35,12 @@ Never run against an environment without the user's yes. Ask:
 
 1. **Run now?** If not, the report says the test was compiled but not run.
 2. **Which environment?** Per `defaultEnvironment`, the profile's default comes first as the
-   recommended option. Offer **"no profile (default environment)"** first when the profile names
+   recommended option. Offer **"no run profile (default environment)"** first when the profile names
    none: a plain run with the environment from the project's `customer.centertest.properties`,
    the usual case. Then offer each of `project.build.profiles`.
 
 Run only the new test (or the new rows of it): the command is `project.build.run`, or the one per
-`runCommand` when the profile sets it; fill in `{profile}` and `{testClass}`; with no profile,
+`runCommand` when the profile sets it; fill in `{profile}` and `{testClass}`; with no run profile,
 leave the profile argument (`-Pprofile={profile}`) out. When `project.build.run` is `null`, the
 project's `bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that
 selects a test:
@@ -89,7 +89,9 @@ Then:
    [phases/data.md#validate](data.md#validate); never invent a value.
 
 **Fix only files this run created or edited**, plus the edits the project's guidance asked for.
-A cause in code the run did not touch is reported to the user, who decides. Show each change and
+For a test made resumable, fixes stay within its restart points
+([SKILL.md#rule-existing-tests](../SKILL.md#rule-existing-tests)). A cause in code the run did not
+touch is reported to the user, who decides. Show each change and
 rerun only after the user's yes.
 
 When the cause is the engine (the plan said one thing, the recording shows another), do not work
@@ -102,6 +104,9 @@ passes, each with the same environment answer:
 - every other caller of a base that was edited: the variants and the tests that use it;
 - every row of an existing test made resumable
   ([phases/restart.md#resume-state](restart.md#resume-state)).
+
+Also offer runs of the tests a new row widened (its workbook's `usedBy`, shown at the Data gate:
+[phases/data.md#new-row](data.md#new-row)): each now runs that row too.
 
 Ask once for the list ("these N callers, this environment"), then run them. A regression that
 fails is reported with its evidence; whether the changed base or the test is at fault is the
@@ -121,7 +126,7 @@ picks.
 ## Standards
 
 After the healthcheck, before the comparison and report. Per `standardsSkill`:
-- a skill is named: run it in its pre-PR mode over this run's diff;
+- a skill is named: run it over this run's diff (its pre-PR mode, if it has one);
 - none: the built-in checklist over the diff (SKILL.md hard rules and allowed edits,
   [SKILL.md#hard-rules](../SKILL.md#hard-rules)):
   1. reuse first: nothing rebuilt that a test, row, override column or step already gives;
@@ -203,7 +208,8 @@ run. Then:
 Personal data in the PR draft is masked, and recorded values do not appear in it.
 
 Offer the profile updates this run found here, before Git, as a diff for approval
-([phases/profile.md#updates](profile.md#updates)).
+([phases/profile.md#updates](profile.md#updates)); with no profile yet, the first-use draft
+([phases/profile.md#first-use](profile.md#first-use)).
 
 ## Git
 
@@ -228,8 +234,9 @@ scan fact that is false), work around it with the user and write a gap report wi
 engine:
 
 ```bash
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" gap-report --plan "$WORK/plan.json" --field "<plan field>" \
-  --expected "<what it should be>" --got "<what it is>" --out-dir ".claude/wizard/gaps"
+  --expected "<what it should be>" --got "<what it is>" --out-dir "<project root>/.claude/wizard/gaps"
 ```
 
 `--expected` and `--got` are copied verbatim into the report: **describe the gap

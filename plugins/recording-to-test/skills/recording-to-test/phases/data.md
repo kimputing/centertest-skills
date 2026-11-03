@@ -32,6 +32,7 @@ What the engine gives you:
 Read a workbook before proposing a value (no Excel needed):
 
 ```bash
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" xlsx <workbook>.xlsx --max-rows 30 [--sheet '^Cancellation$']
 ```
 
@@ -116,7 +117,9 @@ a one-off. Ask ([phases/recording.md#generate](recording.md#generate)).
 
 ## Writing rows
 
-Per `workbookWriter` ([phases/profile.md#switches](profile.md#switches)):
+Rows are written after the Data gate is approved (with `gate` `plan` or `single`, after the plan
+gate: [SKILL.md#gate-modes](../SKILL.md#gate-modes)), before any code that reads them. Per
+`workbookWriter` ([phases/profile.md#switches](profile.md#switches)):
 
 - `openpyxl`: write with the library, on any OS (`python3 -c "import openpyxl"` to check it).
 - `excel`: Excel automation, on Windows.
@@ -141,9 +144,9 @@ says it is done, verify before writing any code that calls the new getters:
 ## Generated values
 
 Tokens need **framework 6.16 and later**. Confirm the project's CenterTest version first
-(`project.build`, or `centertest.version` in `gradle.properties`); on an older version use the
-project's own generator instead. For names and contact data that must be fresh on every run, put
-tokens in the cell of a **new** row:
+(`centertest.version` in `gradle.properties`, or the CenterTest dependency in the build file;
+the scan does not report it); on an older version use the project's own generator instead. For
+names and contact data that must be fresh on every run, put tokens in the cell of a **new** row:
 `{firstname}`, `{lastname}`, `{companyname}`, `{email}`, `{phone}`, `Adult-{testcode}`, rather than
 writing name-randomising code. They are restored after a restart, so an account created before the
 restart still matches. A project value generator can add its own keys: check the project's

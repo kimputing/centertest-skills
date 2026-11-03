@@ -219,6 +219,22 @@ class SkillTextTest(unittest.TestCase):
                  if re.search(r"\bhard rule \d", line)]
         self.assertEqual(found, [])
 
+    def test_every_ct_block_starts_with_the_launcher(self):
+        """Shell variables may not survive between commands, so each fenced block that calls ct.py
+        sets PY itself."""
+        bare = []
+        for name, text in self.files.items():
+            block, fenced = [], False
+            for n, line in enumerate(text.splitlines(), 1):
+                if FENCE.match(line):
+                    if fenced and any("ct.py" in b for _n, b in block) and not any(
+                            b.strip().startswith("PY=python3;") for _n, b in block):
+                        bare.append(f"{name}:{block[0][0]}")
+                    fenced, block = not fenced, []
+                elif fenced:
+                    block.append((n, line))
+        self.assertEqual(bare, [])
+
     def test_ct_commands_and_flags_exist(self):
         helps, wrong = {}, []
         for name, text in self.files.items():

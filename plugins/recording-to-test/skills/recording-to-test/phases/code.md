@@ -92,8 +92,10 @@ in `.execute()`.
 
 ## Write
 
-After the Code plan gate is approved, in this order, **one file at a time**: data (the Data phase),
-component and facade, test class, suite registration.
+After the Code plan gate is approved, in this order, **one file at a time**: data rows (written
+after the Data gate: [phases/data.md#writing-rows](data.md#writing-rows), with any
+[regeneration](data.md#regeneration) verified), component and facade, test class, suite
+registration.
 
 - After each file show the diff, or the full content for a new file, and wait for a go before the
   next (no wait in `single` gate mode or "Just run it":

@@ -108,6 +108,18 @@ MARKERS: list = [
     ("SKILL.md", "up to 3 rounds without asking"),
     ("SKILL.md", "creating the client profile"),
     ("phases/data.md", "both counts non-zero"),
+    # minor fixes of the final review
+    ("phases/data.md", "Rows are written after the Data gate"),
+    ("phases/code.md", "data.md#writing-rows"),
+    ("SKILL.md", '--out-dir "<project root>/.claude/wizard/gaps"'),
+    ("phases/verify.md", '--out-dir "<project root>/.claude/wizard/gaps"'),
+    ("phases/data.md", "the scan does not report it"),
+    ("phases/verify.md", "fixes stay within its restart points"),
+    ("phases/verify.md", "the tests a new row widened"),
+    ("phases/profile.md", "offered once more at the Verify gate"),
+    ("phases/verify.md", "no run profile (default environment)"),
+    ("phases/verify.md", "(its pre-PR mode, if it has one)"),
+    ("SKILL.md", "the edited files named in the state"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only

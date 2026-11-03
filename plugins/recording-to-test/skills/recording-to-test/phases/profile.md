@@ -32,6 +32,7 @@ and sometimes `error` or `warnings`.
 No `.claude/client-profile.md` in the repo: offer to create one. Do not create it silently.
 
 ```bash
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" profile init --project "$WORK/project.json" --out "$WORK/client-profile.draft.md"
 ```
 
@@ -42,8 +43,9 @@ No `.claude/client-profile.md` in the repo: offer to create one. Do not create i
 3. Write `.claude/client-profile.md` **only after approval**, as a new file shown in full. `init`
    never overwrites a file; an existing profile is changed through [Updates](#updates).
 
-Without approval the run continues on the defaults, and the question is not asked again in the
-same run.
+Without approval the run continues on the defaults. The draft is
+offered once more at the Verify gate, with what this run learned ([Updates](#updates)), and not
+asked again after that.
 
 ## Switches
 
@@ -79,6 +81,7 @@ Verify gate before the Git step ([phases/verify.md#report](verify.md#report)): a
 value the user chose, a fact that was wrong or stale, a new fact (a run command that worked, an
 environment name, a standards skill the user named).
 
+- With no profile yet, the items go into the first-use draft instead ([First use](#first-use)).
 - Show the diff, one item per change with its reason. Write only the items the user approves; a
   rejected item is dropped, not asked again.
 - A changed fact gets today's date. A fact the user re-confirmed keeps its text with a new date.

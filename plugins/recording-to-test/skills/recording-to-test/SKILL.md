@@ -133,6 +133,7 @@ start each command with the launcher line and write the `$WORK` path out in full
 4. **Profile:**
 
    ```bash
+   PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
    "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" profile resolve --root "<project root>" --project "$WORK/project.json"
    ```
 
@@ -219,9 +220,10 @@ List every default taken without asking in the report
   path(s) and the `--cssids` directory (to rerun `scan` / `parse` when `$WORK` is gone). Write it after every gate
   and every file. `<scenario>` is the short name agreed at the Understand gate.
 - **Pause and resume:** offer to pause where the user works outside the chat (a DC regeneration in
-  IntelliJ, an Excel edit). "Resume <scenario>" reloads the state file, re-reads the files it lists
-  and continues at the phase reached; after a regeneration, verify the generated classes first
-  ([phases/data.md#regeneration](phases/data.md#regeneration)).
+  IntelliJ, an Excel edit). "Resume <scenario>" reloads the state file, re-reads the files it lists,
+  re-verifies the generated classes and the edited files named in the state (a regeneration or an
+  edit outside the chat may have changed them), whichever phase it lands in
+  ([phases/data.md#regeneration](phases/data.md#regeneration)), and continues at the phase reached.
 - **Plan file:** `.claude/wizard/<scenario>.plan.md` in the repo, the same plan as in chat, with
   personal data masked. On first use propose adding `.claude/wizard/` to `.gitignore` (an
   [allowed edit](#allowed-edits)).
@@ -232,8 +234,9 @@ When a plan field is wrong or missing (the recording shows one thing, the plan s
 **never patch the engine locally**. Work around it with the user, and write a gap report:
 
 ```bash
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" gap-report --plan "$WORK/plan.json" --field "<plan field>" \
-  --expected "<what it should be>" --got "<what it is>" --out-dir ".claude/wizard/gaps"
+  --expected "<what it should be>" --got "<what it is>" --out-dir "<project root>/.claude/wizard/gaps"
 ```
 
 `--expected` and `--got` are copied verbatim: describe the gap without recorded values
