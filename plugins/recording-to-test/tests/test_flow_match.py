@@ -1,0 +1,170 @@
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+
+import flow_match as fm  # noqa: E402
+import parse_recording as pr  # noqa: E402
+
+
+def step(seq, pages, title=None, login=False):
+    return {"seq": seq, "pages": pages, "waitTitle": title, "login": login}
+
+
+def facade(name, method, pages=(), titles=(), context_only=True, path=None):
+    return {"facade": name, "method": method, "params": [], "returns": "void", "contextOnly": context_only,
+            "step": path or "com.acme.%s" % method, "pages": list(pages), "titles": list(titles)}
+
+
+CSSIDS = os.path.join(os.path.dirname(__file__), "fixtures", "cssids")
+
+
+class SegmentsTest(unittest.TestCase):
+    def test_consecutive_steps_sharing_a_page_form_one_segment(self):
+        plan = {"steps": [step(1, ["A"]), step(2, ["A", "B"]), step(3, ["C"])]}
+        self.assertEqual([s["seqs"] for s in fm.segments(plan)], [[1, 2], [3]])
+
+    def test_popup_joins_segment(self):
+        plan = {"steps": [step(1, ["A"]), step(2, ["ConfirmPopup"]), step(3, ["B"])]}
+        segs = fm.segments(plan)
+        self.assertEqual([s["seqs"] for s in segs], [[1, 2], [3]])
+        self.assertIn("ConfirmPopup", segs[0]["pages"])
+
+    def test_login_alone(self):
+        plan = {"steps": [step(1, ["Login"], login=True), step(2, ["Login"])]}
+        self.assertEqual([s["seqs"] for s in fm.segments(plan)], [[1], [2]])
+
+    def test_titles_collected(self):
+        plan = {"steps": [step(1, ["A"], "Wizard"), step(2, ["A"], "Wizard")]}
+        self.assertEqual(fm.segments(plan)[0]["titles"], ["Wizard"])
+
+
+class FacadeSequenceTest(unittest.TestCase):
+    plan = {"steps": [step(1, ["SubmissionWizard"], "Submission")]}
+
+    def candidates(self, facades):
+        return fm.facade_sequence(self.plan, facades)[0]["candidates"]
+
+    def test_candidate_needs_context_only(self):
+        facades = [facade("F", "a", ["SubmissionWizardPage"], context_only=False),
+                   facade("F", "b", ["SubmissionWizardPage"])]
+        self.assertEqual([c["method"] for c in self.candidates(facades)], ["b"])
+
+    def test_candidates_ranked_by_overlap(self):
+        facades = [facade("F", "weak", ["OtherPage"], ["Submission"]),
+                   facade("F", "strong", ["SubmissionWizardPage"], ["Submission"]),
+                   facade("F", "none", ["ZPage"])]
+        found = self.candidates(facades)
+        self.assertEqual([c["method"] for c in found], ["strong", "weak"])
+        self.assertEqual(found[0]["score"], 1.0)
+        self.assertEqual(found[0]["step"], "com.acme.strong")
+        self.assertEqual(set(found[0]), {"facade", "method", "score", "why", "step"})
+
+    def test_weak_candidate_is_dropped_and_the_threshold_kept(self):
+        plan = {"steps": [step(1, ["P%d" % i for i in range(4)])]}
+        found = fm.facade_sequence(plan, [facade("F", "kept", ["P0Page"])])[0]["candidates"]
+        self.assertEqual([(c["method"], c["score"]) for c in found], [("kept", 0.25)])
+        plan = {"steps": [step(1, ["P%d" % i for i in range(17)])]}
+        weak = fm.facade_sequence(plan, [facade("F", "weak", ["P0Page"])])[0]
+        self.assertEqual(weak["candidates"], [])  # 1/17 = 0.06
+
+    def test_segment_with_only_weak_matches_counts_as_missing(self):
+        plan = {"steps": [step(1, ["A"]), step(2, ["B%d" % i for i in range(10)])]}
+        seq = fm.facade_sequence(plan, [facade("PC", "login", ["A"]), facade("F", "noise", ["B0Page"])])
+        self.assertEqual(seq[1]["candidates"], [])
+        found = fm.existing_tests(seq, {"a": [{"path": "a/T.java", "flow": ["PC.login", "F.noise"]}]}, "a")[0]
+        self.assertEqual(found["coveredSeqs"], [1])
+        self.assertEqual(found["missingSeqs"], [2])
+
+    def test_max_three(self):
+        facades = [facade("F", "m%d" % i, ["SubmissionWizardPage"]) for i in range(5)]
+        self.assertEqual(len(self.candidates(facades)), 3)
+
+
+class ExistingTestsTest(unittest.TestCase):
+    seq = [{"seqs": [1], "candidates": [{"facade": "PC", "method": "login"}]},
+           {"seqs": [2, 3], "candidates": [{"facade": "F", "method": "quote"}]}]
+
+    def folders(self):
+        return {"a": [{"path": "a/Full.java", "flow": ["PC.login", "F.quote"]},
+                      {"path": "a/Half.java", "flow": ["PC.login"]}],
+                "b": [{"path": "b/Other.java", "flow": ["F.quote", "PC.login"]}]}
+
+    def test_existing_test_covering_all_segments_scores_1(self):
+        found = fm.existing_tests(self.seq, self.folders(), "a")
+        self.assertEqual(found[0]["path"], "a/Full.java")
+        self.assertEqual(found[0]["score"], 1.0)
+        self.assertEqual(found[0]["coveredSeqs"], [1, 2, 3])
+        self.assertEqual(found[0]["missingSeqs"], [])
+        self.assertEqual(found[0]["folder"], "a")
+
+    def test_one_of_many_segments_is_not_a_full_cover(self):
+        seq = self.seq + [{"seqs": [4], "candidates": []}, {"seqs": [5], "candidates": []}]
+        found = fm.existing_tests(seq, {"a": [{"path": "a/One.java", "flow": ["PC.login"]}]}, "a")[0]
+        self.assertEqual(found["score"], 0.25)
+        self.assertEqual(found["coveredSeqs"], [1])
+        self.assertEqual(found["missingSeqs"], [2, 3, 4, 5])
+
+    def test_partial_and_order(self):
+        by_path = {t["path"]: t for t in fm.existing_tests(self.seq, self.folders(), "a")}
+        self.assertEqual(by_path["a/Half.java"]["missingSeqs"], [2, 3])
+        self.assertEqual(by_path["a/Half.java"]["score"], 0.5)
+        self.assertEqual(by_path["b/Other.java"]["coveredSeqs"], [1])  # quote precedes login: order matters
+
+    def test_folder_tests_first(self):
+        paths = [t["path"] for t in fm.existing_tests(self.seq, self.folders(), "b")]
+        self.assertEqual(paths[0], "b/Other.java")
+
+    def test_max_five_and_empty(self):
+        many = {"a": [{"path": "t%d" % i, "flow": ["PC.login"]} for i in range(8)]}
+        self.assertEqual(len(fm.existing_tests(self.seq, many, "a")), 5)
+        self.assertEqual(fm.existing_tests([], many, None), [])
+
+
+class AnalyseTest(unittest.TestCase):
+    def test_no_project_gives_empty_lists(self):
+        session = {"id": "x", "name": "n", "steps": []}
+        plan = pr.build_plan(session, CSSIDS, project=None)
+        self.assertEqual(plan["facadeSequence"], [])
+        self.assertEqual(plan["existingTests"], [])
+
+    def test_project_with_facades_fills_both_lists(self):
+        session = {"steps": [{"seq": 1, "app": "PolicyCenter", "title": "Policy Change", "actions": [
+            {"type": "click", "widgetId": "PolicyChangeWizard-Next", "kind": "WizardButtonWidget"}]}]}
+        project = {"facades": {"value": [facade("PC", "changePolicy", ["PolicyChangeWizardPage"])]},
+                   "folders": {"value": {"tests": {"changes": [
+                       {"path": "changes/ChangeTest.java", "flow": ["PC.loginToPC", "PC.changePolicy"],
+                        "restartPoints": [], "dataDriven": False}]}}}}
+        plan = pr.build_plan(session, CSSIDS, project=project)
+        self.assertEqual(plan["steps"][0]["pages"], ["PolicyChangeWizard"])
+        top = plan["facadeSequence"][0]["candidates"][0]
+        self.assertEqual((top["facade"], top["method"], top["step"]), ("PC", "changePolicy", "com.acme.changePolicy"))
+        self.assertEqual([t["path"] for t in plan["existingTests"]], ["changes/ChangeTest.java"])
+
+    def test_test_flows_beat_the_truncated_folders(self):
+        session = {"steps": [{"seq": 1, "app": "PolicyCenter", "title": "Policy Change", "actions": [
+            {"type": "click", "widgetId": "PolicyChangeWizard-Next", "kind": "WizardButtonWidget"}]}]}
+        flows = [{"path": "changes/T%d.java" % i, "folder": "changes", "flow": ["PC.changePolicy"] if i == 9 else []}
+                 for i in range(10)]
+        project = {"facades": {"value": [facade("PC", "changePolicy", ["PolicyChangeWizardPage"])]},
+                   "folders": {"value": {"tests": {"changes": [dict(f, restartPoints=False, dataDriven=None)
+                                                               for f in flows[:8]]}}},
+                   "testFlows": {"value": flows}}
+        plan = pr.build_plan(session, CSSIDS, project=project)
+        self.assertEqual([t["path"] for t in plan["existingTests"]], ["changes/T9.java"])
+
+
+class TestsByFolderTest(unittest.TestCase):
+    def test_groups_test_flows_by_folder(self):
+        project = {"testFlows": {"value": [{"path": "a/X.java", "folder": "a", "flow": ["PC.x"]}]},
+                   "folders": {"value": {"tests": {"b": [{"path": "b/Y.java", "flow": []}]}}}}
+        self.assertEqual(fm.tests_by_folder(project), {"a": [{"path": "a/X.java", "flow": ["PC.x"]}]})
+
+    def test_falls_back_to_folders(self):
+        project = {"testFlows": {"value": None}, "folders": {"value": {"tests": {"b": [{"path": "b/Y.java"}]}}}}
+        self.assertEqual(fm.tests_by_folder(project), {"b": [{"path": "b/Y.java"}]})
+
+
+if __name__ == "__main__":
+    unittest.main()

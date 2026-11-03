@@ -17,11 +17,17 @@ import glob
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import sys
 import tempfile
 import zipfile
+import zlib
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import schema  # noqa: E402
+import xlsx_read  # noqa: E402
 
 SKIP_DIRS = {".git", ".gradle", ".idea", "build", "out", "target", "node_modules"}
 CENTERS = {"BaseScenarioPC": "pc", "BaseScenarioBC": "bc", "BaseScenarioCC": "cc", "BaseScenarioAB": "ab"}
@@ -235,14 +241,30 @@ RECORDED = re.compile(r"/\*\*(?:(?!\*/).)*\bRecorded\b", re.S)
 FOLDER_LIMIT = 8
 
 
+def flow_reader(steps, facade_names):
+    """A function: test text -> the facade calls and `new <Step>` constructions it makes, in order."""
+    step_names = {class_name(p) for p, t in steps.items() if re.search(r"\bclass\s", t)}
+    calls = re.compile(r"\b(?:(" + "|".join(sorted(facade_names) or ["$^"]) + r")\.(\w+)|new\s+(\w+))\(")
+    return lambda text: [f"{f}.{m}" if f else f"new {n}" for f, m, n in calls.findall(text) if f or n in step_names]
+
+
+def test_flows(root, tests, steps, tests_dir, facade_names):
+    """Every test's flow, with no per-folder cut: existingTests must see all of them."""
+    flow_of = flow_reader(steps, facade_names)
+    found = [{"path": rel(root, path), "folder": rel(tests_dir, os.path.dirname(path)), "flow": flow_of(text)}
+             for path, text in sorted(tests.items())]
+    if not found:
+        return missing("no tests")
+    return fact(found, "facade calls and step constructions of every test, in order")
+
+
 def folders(root, tests, steps, tests_dir, reusable_dir, facade_names):
     """Per <center>/<lob>/<transaction> folder: its step classes, those generated from a recording
     first (Javadoc says "Recorded"), and its tests with the facade and step calls they make, in order."""
-    step_names = {class_name(p) for p, t in steps.items() if re.search(r"\bclass\s", t)}
-    calls = re.compile(r"\b(?:(" + "|".join(sorted(facade_names) or ["$^"]) + r")\.(\w+)|new\s+(\w+))\(")
+    flow_of = flow_reader(steps, facade_names)
     by_folder = {"tests": collections.defaultdict(list), "steps": collections.defaultdict(list)}
     for path, text in sorted(tests.items()):
-        flow = [f"{f}.{m}" if f else f"new {n}" for f, m, n in calls.findall(text) if f or n in step_names]
+        flow = flow_of(text)
         source = re.search(r"@DataDriven\([^)]*?datasource\s*=\s*\"([^\"]+)\"", text)
         by_folder["tests"][rel(tests_dir, os.path.dirname(path))].append(
             {"path": rel(root, path), "flow": flow, "restartPoints": "enum RestartPoints" in text,
@@ -362,6 +384,39 @@ def idioms(steps):
     style = "plain" if plain > formatted else "formatted" if formatted > plain else None
     return fact({"wizardButtons": dict(buttons.most_common()), "coverageAmounts": style},
                 f"{sum(buttons.values())} wizard button calls; coverage amounts {plain} plain, {formatted} formatted")
+
+
+DATASOURCE = re.compile(r"@DataDriven\([^)]*?datasource\s*=\s*\"([^\"]+)\"")
+WORKBOOK_ERRORS = (xlsx_read.WorkbookError, zipfile.BadZipFile, zlib.error, NotImplementedError, OSError, ValueError)
+
+
+def data_workbooks(root, tests):
+    """Every .xlsx under testdata/: sheets (columns, Code values, row count) and the tests whose @DataDriven names it."""
+    used = collections.defaultdict(list)
+    for path, text in sorted(tests.items()):
+        for source in DATASOURCE.findall(text):
+            used[posixpath.normpath(source.replace("\\", "/"))].append(rel(root, path))
+    books, skipped = [], []
+    for current, dirs, files in os.walk(os.path.join(root, "testdata")):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(files):
+            if not name.lower().endswith(".xlsx") or name.startswith("~$"):
+                continue
+            path = rel(root, os.path.join(current, name))
+            full = os.path.join(current, name)
+            try:
+                columns = xlsx_read.headers(full)
+                rows = xlsx_read.read_workbook(full)
+            except WORKBOOK_ERRORS as error:
+                skipped.append({"path": path, "reason": f"unreadable workbook: {error}"})
+                continue
+            sheets = {sheet: {"columns": columns.get(sheet, []),
+                              "codes": [row["Code"] for row in data if row.get("Code")],
+                              "rows": len(data)} for sheet, data in rows.items()}
+            books.append({"path": path, "sheets": sheets, "usedBy": used.get(path, [])})
+    if not books and not skipped:
+        return missing("no .xlsx under testdata")
+    return fact({"workbooks": books, "skipped": skipped}, "testdata/**/*.xlsx, @DataDriven datasource in tests")
 
 
 GUIDANCE_FILES = {"CLAUDE.md", "AGENTS.md"}
@@ -518,13 +573,97 @@ def guidewire_version(root, props):
     return fact(value, rel(root, path)) if value else missing("no gw.version property")
 
 
+RESERVED_KEYS = ("PolicyExpirationDate", "UserName", "Password", "Premium")
+SET_CUSTOM = re.compile(r"\bsetCustom\(")
+SET_CUSTOM_KEY = re.compile(r"\bsetCustom\(\s*\"([^\"]*)\"")
+DATA_KEY = re.compile(r"\bDataKey\.")
+SUITE_FILE = "src/main/resources/CenterTestSuiteList.json"
+
+
+def shared_values_usage(root, java):
+    """setCustom( calls, DataKey. references, and setCustom calls that reuse a framework-reserved key."""
+    set_custom = data_key = 0
+    misuse = []
+    for path, text in java.items():
+        set_custom += len(SET_CUSTOM.findall(text))
+        data_key += len(DATA_KEY.findall(text))
+        for key in SET_CUSTOM_KEY.findall(text):
+            if key in RESERVED_KEYS:
+                misuse.append({"path": rel(root, path), "key": key})
+    return fact({"setCustom": set_custom, "dataKey": data_key, "reservedKeyMisuse": misuse},
+                "setCustom( / DataKey. in the project's Java sources")
+
+
+def negative_protocol(java):
+    """How negative tests end: a project exception class, or the framework's passTestWhen."""
+    texts = list(java.values())
+    return fact({"projectException": sum(len(re.findall(r"\bNegativeTestException\b", t)) for t in texts),
+                 "framework": sum(len(re.findall(r"\bpassTestWhen\b", t)) for t in texts)},
+                "NegativeTestException / passTestWhen in the tests")
+
+
+SUITE_KEYS = ("List", "Suites", "Packages")
+
+
+def suites(root):
+    """Suites of CenterTestSuiteList.json: {Name: {List, Suites, Packages}} (only the keys a suite has)."""
+    path = os.path.join(root, *SUITE_FILE.split("/"))
+    if not os.path.isfile(path):
+        return missing(f"no {SUITE_FILE}")
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as error:
+        return missing(f"{SUITE_FILE} is not readable JSON: {error}")
+    listed = data.get("CenterTestSuites") if isinstance(data, dict) else None
+    if not isinstance(listed, list) or not all(isinstance(item, dict) and isinstance(item.get("Name"), str) for item in listed):
+        return fact({"path": SUITE_FILE, "suites": {}, "raw": data}, SUITE_FILE + " (unrecognised shape)")
+    return fact({"path": SUITE_FILE, "suites": {item["Name"]: {k: item[k] for k in SUITE_KEYS if k in item} for item in listed}},
+                SUITE_FILE)
+
+
+# Call-like tokens only (a getter call, or `new Step(` - never the step's own constructor declaration, or a click on a payment button): never a bare name, a field setter,
+# a comment or a string literal. Kinds are back-end commits; plain "submit" is not one (login and search
+# steps click getSubmit() too).
+COMMIT_PATTERNS = {
+    "issue": re.compile(r"\bgetIssuePolicy\w*\(\)|\bgetIssueNow\(\)"),
+    "bind": re.compile(r"\bgetBindOnly\(\)|\bgetBind\w*\(\)|\bnew\s+BindPolicyChange\w*\s*\("),
+    "payment": re.compile(r"\bgetMakePayment\(\)|\bgetPay\w*\(\)\s*\.\s*click\s*\(|\bnew\s+MakePayment\s*\("),
+    "cancel": re.compile(r"\bgetCancelNow\(\)|\bnew\s+CancelPolicy\w*\s*\("),
+    "reinstate": re.compile(r"\bgetReinstate\w*\(\)|\bnew\s+ReinstatePolicy\w*\s*\("),
+    "rewrite": re.compile(r"\bgetRewrite\w*\(\)|\bnew\s+RewritePolicy\w*\s*\("),
+}
+AFTER_COMMIT = re.compile(r"assert|waitForPageTitle|\.set\(")
+NON_CODE = re.compile(r"//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"", re.S)
+IMPORT_LINE = re.compile(r"^\s*(?:import|package)\s.*$", re.M)
+
+
+def code_only(text: str) -> str:
+    """Java text without comments, string contents, imports and the package line."""
+    return IMPORT_LINE.sub("", NON_CODE.sub(lambda m: '""' if m.group().startswith('"') else " ", text))
+
+
+def component_effects(root, steps):
+    """Reusable steps that commit back-end state and whether they act or check after the LAST commit."""
+    found = []
+    for path, text in steps.items():
+        body = code_only(text)
+        last = {kind: [m.end() for m in pattern.finditer(body)] for kind, pattern in COMMIT_PATTERNS.items()}
+        last = {kind: ends[-1] for kind, ends in last.items() if ends}
+        if last:
+            found.append({"path": rel(root, path), "class": class_name(path), "commits": list(last),
+                          "afterCommit": bool(AFTER_COMMIT.search(body, max(last.values())))})
+    return fact(found, "commit calls (issue, bind, payment, cancel, reinstate, rewrite) in reusable steps")
+
+
 def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> dict:
     root = os.path.abspath(root)
     gradle_home = gradle_home or os.environ.get("GRADLE_USER_HOME") or os.path.expanduser("~/.gradle")
     m2_home = m2_home or os.path.expanduser("~/.m2")
     cache_root = cache_root or os.path.join(tempfile.gettempdir(), "recording-to-test-cssids")
     java, props = index(root)
-    result = {"root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
+    tests = {}
+    result = {"schemaVersion": schema.PROJECT_SCHEMA_VERSION, "root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
     package, source = result["clientPackage"]["value"], result["testsRoot"]["value"]
     if package and source:
         base = os.path.join(root, *source.split("/"), *package.split("."))
@@ -535,14 +674,17 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
                       steps=step_conventions(root, steps, reusable_dir), facades=facades(root, java, steps),
                       exemplars=exemplars(root, tests, steps, tests_dir, reusable_dir),
                       transactionBases=transaction_bases(root, steps), screenHelpers=screen_helpers(root, steps),
-                      idioms=idioms(steps))
-        result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir,
-                                    {m["facade"] for m in result["facades"]["value"] or []})
+                      idioms=idioms(steps), negativeProtocol=negative_protocol(tests),
+                      componentEffects=component_effects(root, steps))
+        facade_names = {m["facade"] for m in result["facades"]["value"] or []}
+        result["folders"] = folders(root, tests, steps, tests_dir, reusable_dir, facade_names)
+        result["testFlows"] = test_flows(root, tests, steps, tests_dir, facade_names)
     else:
-        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "transactionBases",
-                    "screenHelpers", "idioms"):
+        for key in ("testLayout", "testStyle", "steps", "facades", "exemplars", "folders", "testFlows",
+                    "transactionBases", "screenHelpers", "idioms", "negativeProtocol", "componentEffects"):
             result[key] = missing("needs clientPackage and testsRoot")
-    result.update(guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
+    result.update(sharedValuesUsage=shared_values_usage(root, java), suites=suites(root),
+                  dataWorkbooks=data_workbooks(root, tests), guidance=guidance(root), cssids=cssids_source(root, cssids, gradle_home, m2_home, cache_root),
                   build=build_info(root, props), guidewireVersion=guidewire_version(root, props))
     return result
 

@@ -72,7 +72,7 @@ class HelpersTest(unittest.TestCase):
                                              {"text": "new style", "level": "error"}])
 
     def test_wait_title_keeps_the_part_before_the_colon(self):
-        self.assertEqual(pr.wait_title("Account Summary: Duncan Test"), "Account Summary")
+        self.assertEqual(pr.wait_title("Account Summary: A000123"), "Account Summary")
         self.assertEqual(pr.wait_title("Offerings"), "Offerings")
         self.assertEqual(pr.wait_title(None), "")
 
@@ -1322,6 +1322,64 @@ class CommandLineTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             with open(out, encoding="utf-8") as f:
                 self.assertEqual(json.load(f)["test"]["testId"], "tc123")
+
+
+class CombineTest(unittest.TestCase):
+    SCRIPT = os.path.join(SCRIPTS, "parse_recording.py")
+
+    def plan(self, name):
+        session = load(name)
+        path = os.path.join(RECORDINGS, name)
+        return pr.build_plan(session, CSSIDS, pr.file_reader(path), None, pr.file_bytes(path))
+
+    def run_script(self, *args):
+        return subprocess.run([sys.executable, self.SCRIPT, *args], capture_output=True, text=True)
+
+    def test_single_recording_shape_unchanged(self):
+        result = self.run_script(os.path.join(RECORDINGS, "real-180418"), "--cssids", CSSIDS)
+        out = json.loads(result.stdout)
+        self.assertNotIn("parts", out)
+        self.assertEqual(out["schemaVersion"], 2)
+        self.assertIn("steps", out)
+
+    def test_two_recordings_chain(self):
+        a, b = self.plan("real-180418"), self.plan("real-174907")
+        combined = pr.combine([a, b])
+        self.assertEqual(combined["schemaVersion"], 2)
+        self.assertEqual(len(combined["parts"]), 2)
+        self.assertEqual(len(combined["chain"]), 1)
+        link = combined["chain"][0]
+        self.assertEqual((link["fromPart"], link["toPart"]), (0, 1))
+        self.assertEqual(link["endsOn"], a["steps"][-1]["waitTitle"])
+
+    def test_second_part_without_login(self):
+        a, b = self.plan("real-180418"), self.plan("real-174907")
+        b["steps"][0]["login"] = False
+        link = pr.combine([a, b])["chain"][0]
+        self.assertIs(link["startsLoggedIn"], False)
+        self.assertEqual(link["startsOn"], b["steps"][0]["waitTitle"])
+
+    def test_part_without_steps_never_raises(self):
+        a = self.plan("real-180418")
+        empty = {"schemaVersion": 2, "steps": []}
+        link = pr.combine([a, empty])["chain"][0]
+        self.assertIsNone(link["startsOn"])
+        self.assertIs(link["startsLoggedIn"], False)
+        link = pr.combine([empty, a])["chain"][0]
+        self.assertIsNone(link["endsOn"])
+
+    def test_cli_accepts_several_paths(self):
+        result = self.run_script(os.path.join(RECORDINGS, "real-180418"), os.path.join(RECORDINGS, "real-174907"),
+                                 "--cssids", CSSIDS)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(len(out["parts"]), 2)
+        self.assertEqual(len(out["chain"]), 1)
+
+    def test_cli_bad_path_among_several_is_an_error(self):
+        result = self.run_script(os.path.join(RECORDINGS, "real-180418"), "/no/such/recording", "--cssids", CSSIDS)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Error: /no/such/recording:", result.stderr)
 
 
 if __name__ == "__main__":

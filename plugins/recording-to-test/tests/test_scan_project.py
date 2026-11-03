@@ -10,6 +10,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 sys.path.insert(0, SCRIPTS)
 import scan_project as sp  # noqa: E402
+from xlsx_fixture import make_xlsx  # noqa: E402
 
 TEST_A = '''package com.acme.tests.pc.personalauto.submission;
 @CenterTest
@@ -336,6 +337,21 @@ class ProjectKnowledgeTest(ProjectTestCase):
         self.assertEqual((flow["restartPoints"], flow["dataDriven"]),
                          (True, "testdata/personalauto/PA_SubmissionDC.xlsx"))
 
+    def test_test_flows_list_every_test_past_the_folder_cut(self):
+        java = "src/main/java/com/acme/tests/pc/personalauto/policychange"
+        for i in range(sp.FOLDER_LIMIT + 2):
+            write(self.root, f"{java}/Extra{i:02d}Test.java", TEST_FLOW.replace("PA_AddDriverTest", f"Extra{i:02d}Test"))
+        result = self.scan()
+        listed = [t for t in result["testFlows"]["value"] if t["folder"] == "pc/personalauto/policychange"]
+        self.assertEqual((len(listed), len(result["folders"]["value"]["tests"]["pc/personalauto/policychange"])),
+                         (sp.FOLDER_LIMIT + 4, sp.FOLDER_LIMIT))
+
+    def test_test_flow_entry_shape(self):
+        entry = next(t for t in self.result["testFlows"]["value"] if t["path"].endswith("PA_AddDriverTest.java"))
+        self.assertEqual(entry, {"path": "src/main/java/com/acme/tests/pc/personalauto/policychange/PA_AddDriverTest.java",
+                                 "folder": "pc/personalauto/policychange",
+                                 "flow": ["PC.loginToPC", "new AddVehiclePolicyChange", "PC.searchForPolicyPC"]})
+
     def test_project_without_guidance(self):
         os.remove(os.path.join(self.root, "src", "main", "java", "com", "acme", "reusable", "CLAUDE.md"))
         self.assertIsNone(self.scan()["guidance"]["value"])
@@ -468,6 +484,223 @@ class BuildAndCommandLineTest(ProjectTestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("project root not found", result.stderr)
+
+
+class DataWorkbooksTest(ProjectTestCase):
+    DC = "testdata/personalauto/PA_SubmissionDC.xlsx"
+
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+        self.dc = os.path.join(self.root, *self.DC.split("/"))
+        os.makedirs(os.path.dirname(self.dc), exist_ok=True)
+        make_xlsx(self.dc, {"DataCombination": [["Code", "Driver", "Vehicle"], ["DC1", "D1", "V1"], ["DC2", "D1", "V2"]]})
+
+    def workbooks(self):
+        return self.scan()["dataWorkbooks"]
+
+    def test_lists_columns_codes_and_rows(self):
+        book = {w["path"]: w for w in self.workbooks()["value"]["workbooks"]}[self.DC]
+        self.assertEqual(book["sheets"], {"DataCombination": {"columns": ["Code", "Driver", "Vehicle"],
+                                                              "codes": ["DC1", "DC2"], "rows": 2}})
+
+    def test_used_by_from_data_driven(self):
+        book = {w["path"]: w for w in self.workbooks()["value"]["workbooks"]}[self.DC]
+        self.assertEqual(book["usedBy"], ["src/main/java/com/acme/tests/pc/personalauto/submission/PA_SubmissionTest.java"])
+
+    def test_corrupt_workbook_is_skipped_with_reason(self):
+        with open(os.path.join(self.root, "testdata", "bad.xlsx"), "wb") as f:
+            f.write(b"not a zip")
+        value = self.workbooks()["value"]
+        self.assertTrue(value["skipped"][0]["path"].endswith("bad.xlsx"))
+        self.assertTrue(value["skipped"][0]["reason"])
+        self.assertEqual([w["path"] for w in value["workbooks"]], [self.DC])
+
+    def test_excel_lock_file_ignored(self):
+        with open(os.path.join(self.root, "testdata", "personalauto", "~$PA_SubmissionDC.xlsx"), "wb") as f:
+            f.write(b"lock")
+        value = self.workbooks()["value"]
+        self.assertEqual(value["skipped"], [])
+        self.assertEqual([w["path"] for w in value["workbooks"]], [self.DC])
+
+    def test_member_read_errors_are_skipped_not_fatal(self):
+        import unittest.mock
+        import zlib
+        bad = os.path.join(self.root, "testdata", "crc.xlsx")
+        make_xlsx(bad, {"S": [["Code"], ["X"]]})
+        real = sp.xlsx_read.read_workbook
+
+        def flaky(path, *args, **kwargs):
+            if path.endswith("crc.xlsx"):
+                raise zlib.error("bad data")
+            return real(path, *args, **kwargs)
+
+        with unittest.mock.patch.object(sp.xlsx_read, "read_workbook", flaky):
+            value = self.workbooks()["value"]
+        self.assertEqual([w["path"] for w in value["workbooks"]], [self.DC])
+        self.assertTrue(value["skipped"][0]["path"].endswith("crc.xlsx"))
+
+    def test_no_testdata_is_missing(self):
+        os.remove(self.dc)
+        self.assertIn("reason", self.workbooks())
+        self.assertIsNone(self.workbooks()["value"])
+
+
+class ConventionsTest(ProjectTestCase):
+    JAVA = "src/main/java/com/acme"
+
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+
+    def add_step(self, name, body):
+        write(self.root, f"{self.JAVA}/reusable/pc/shared/{name}.java", body)
+
+    def add_test(self, name, body):
+        write(self.root, f"{self.JAVA}/tests/pc/personalauto/submission/{name}.java",
+              "@CenterTest\npublic final class %s {\n%s\n}\n" % (name, body))
+
+    def usage(self):
+        return self.scan()["sharedValuesUsage"]["value"]
+
+    def test_counts_setcustom_and_datakey(self):
+        self.add_step("Shared", 'class Shared { void f() { data.setCustom("A", 1); data.setCustom("B", 2); x(DataKey.ONE, DataKey.TWO); } }')
+        usage = self.usage()
+        self.assertEqual((usage["setCustom"], usage["dataKey"]), (2, 2))
+
+    def test_reserved_key_with_setcustom_is_flagged(self):
+        self.add_step("Shared", 'class Shared { void f() { data.setCustom("Premium", x); } }')
+        misuse = self.usage()["reservedKeyMisuse"]
+        self.assertEqual([m["key"] for m in misuse], ["Premium"])
+        self.assertTrue(misuse[0]["path"].endswith("reusable/pc/shared/Shared.java"))
+
+    def test_other_setcustom_keys_not_flagged(self):
+        self.add_step("Shared", 'class Shared { void f() { data.setCustom("Premiums", x); data.setCustom("Other", x); } }')
+        self.assertEqual(self.usage()["reservedKeyMisuse"], [])
+
+    def test_reserved_keys_constant(self):
+        self.assertEqual(sp.RESERVED_KEYS, ("PolicyExpirationDate", "UserName", "Password", "Premium"))
+
+    def test_negative_protocol_counts(self):
+        self.add_test("PA_NegTest", 'void run() { throw new NegativeTestException("x"); }\n'
+                      'void other() { passTestWhen(a); passTestWhen(b); }')
+        self.assertEqual(self.scan()["negativeProtocol"]["value"], {"projectException": 1, "framework": 2})
+
+    def test_negative_protocol_missing_without_package(self):
+        os.remove(os.path.join(self.root, "src/main/resources/customer.centertest.properties"))
+        self.assertIn("reason", self.scan()["negativeProtocol"])
+
+    def suite_file(self, data):
+        write(self.root, "src/main/resources/CenterTestSuiteList.json", json.dumps(data))
+
+    REAL = {"CenterTestSuites": [{"Name": "Regression", "Suites": ["PolicyCenter", "ClaimCenter"]},
+                                 {"Name": "Submission", "List": ["PA_SubmissionTest", "WC_SubmissionTest run2"]},
+                                 {"Name": "Mixed", "Suites": ["Submission"], "List": ["X_Test"]}]}
+
+    def test_suites_listed(self):
+        self.suite_file(self.REAL)
+        value = self.scan()["suites"]["value"]
+        self.assertEqual(value["path"], "src/main/resources/CenterTestSuiteList.json")
+        self.assertEqual(value["suites"], {"Regression": {"Suites": ["PolicyCenter", "ClaimCenter"]},
+                                           "Submission": {"List": ["PA_SubmissionTest", "WC_SubmissionTest run2"]},
+                                           "Mixed": {"Suites": ["Submission"], "List": ["X_Test"]}})
+
+    def test_suite_with_packages_keeps_only_present_keys(self):
+        self.suite_file({"CenterTestSuites": [{"Name": "All", "Packages": ["com.acme.tests"], "Other": 1}]})
+        self.assertEqual(self.scan()["suites"]["value"]["suites"], {"All": {"Packages": ["com.acme.tests"]}})
+
+    def test_unknown_shape_kept_raw(self):
+        self.suite_file({"Smoke": ["a.A"]})
+        value = self.scan()["suites"]["value"]
+        self.assertEqual((value["suites"], value["raw"]), ({}, {"Smoke": ["a.A"]}))
+
+    def test_no_suite_file_is_missing(self):
+        result = self.scan()["suites"]
+        self.assertIsNone(result["value"])
+        self.assertIn("reason", result)
+
+    def test_invalid_suite_file_is_missing(self):
+        write(self.root, "src/main/resources/CenterTestSuiteList.json", "{not json")
+        self.assertIn("reason", self.scan()["suites"])
+
+
+class ComponentEffectsTest(ProjectTestCase):
+    JAVA = "src/main/java/com/acme"
+
+    def setUp(self):
+        super().setUp()
+        fake_project(self.root)
+
+    def step(self, name, body):
+        write(self.root, f"{self.JAVA}/reusable/pc/shared/{name}.java",
+              "package com.acme.reusable.pc.shared;\npublic class %s extends BaseScenarioPC {\n  public void execute() {\n%s\n  }\n}\n" % (name, body))
+
+    def effects(self):
+        return {e["class"]: e for e in self.scan()["componentEffects"]["value"]}
+
+    def test_payment_then_assert_is_after_commit(self):
+        self.step("PayInvoice", "    page.getMakePayment().click();\n    assertEquals(a, b);")
+        entry = self.effects()["PayInvoice"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["payment"], True))
+        self.assertEqual(entry["path"], f"{self.JAVA}/reusable/pc/shared/PayInvoice.java")
+
+    def test_issue_last_is_not_after_commit(self):
+        self.step("IssueIt", "    waitForPageTitle(\"Quote\");\n    page.getIssuePolicy().click();")
+        entry = self.effects()["IssueIt"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["issue"], False))
+
+    def test_class_without_commit_absent(self):
+        self.assertNotIn("SearchForPolicyPC", self.effects())
+
+    def test_set_after_commit_counts(self):
+        self.step("BindAndSet", "    page.getBindOnly().click();\n    page.getName().set(\"x\");")
+        entry = self.effects()["BindAndSet"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["bind"], True))
+
+    def test_multiple_kinds_listed(self):
+        self.step("CancelAndReinstate", "    page.getCancelNow().click();\n    page.getReinstate().click();")
+        self.assertEqual(self.effects()["CancelAndReinstate"]["commits"], ["cancel", "reinstate"])
+
+    def test_commit_patterns_kinds(self):
+        self.assertEqual(set(sp.COMMIT_PATTERNS), {"issue", "bind", "payment", "cancel", "reinstate", "rewrite"})
+
+    def test_payment_in_class_name_and_setter_is_not_a_commit(self):
+        self.step("CreatePaymentPlan", "    page.getPaymentAmount().set(\"5\");")
+        self.assertNotIn("CreatePaymentPlan", self.effects())
+
+    def test_payment_string_literal_and_comment_are_not_commits(self):
+        self.step("Note", "    // getMakePayment()\n    log(\"Payment getMakePayment()\");")
+        self.assertNotIn("Note", self.effects())
+
+    def test_setter_before_issue_and_nothing_after_is_not_after_commit(self):
+        self.step("SetThenIssue", "    page.getName().set(\"x\");\n    page.getIssuePolicy().click();")
+        self.assertFalse(self.effects()["SetThenIssue"]["afterCommit"])
+
+    def test_after_commit_uses_last_commit_not_earliest(self):
+        self.step("MixedOrder", "    page.getBindOnly().click();\n    waitForPageTitle(\"A\");\n    page.getIssuePolicy().click();")
+        entry = self.effects()["MixedOrder"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["issue", "bind"], False))
+
+    def test_login_submit_is_not_a_commit(self):
+        self.step("Login", "    page.getSubmit().click();\n    waitForPageTitle(\"My Summary\");")
+        self.assertNotIn("Login", self.effects())
+
+    def test_constructor_declaration_is_not_a_commit(self):
+        write(self.root, f"{self.JAVA}/reusable/pc/shared/ReinstatePolicy.java",
+              "package com.acme.reusable.pc.shared;\npublic class ReinstatePolicy extends BaseScenarioPC {\n"
+              "  public ReinstatePolicy(InvocationContext ctx) { super(ctx); }\n"
+              "  public void execute() {\n    page.getReinstate().click();\n  }\n}\n")
+        entry = self.effects()["ReinstatePolicy"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["reinstate"], False))
+
+    def test_new_step_instantiation_is_a_commit(self):
+        self.step("PayThenCheck", "    new MakePayment(ctx).execute();\n    assertEquals(a, b);")
+        entry = self.effects()["PayThenCheck"]
+        self.assertEqual((entry["commits"], entry["afterCommit"]), (["payment"], True))
+
+    def test_missing_without_package(self):
+        os.remove(os.path.join(self.root, "src/main/resources/customer.centertest.properties"))
+        self.assertIn("reason", self.scan()["componentEffects"])
 
 
 if __name__ == "__main__":

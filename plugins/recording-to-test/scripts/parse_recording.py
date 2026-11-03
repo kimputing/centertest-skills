@@ -19,9 +19,15 @@ import json
 import os
 import re
 import sys
+import tempfile
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import schema  # noqa: E402
+import flow_match  # noqa: E402
+import data_match  # noqa: E402
+import restart  # noqa: E402
+import narration  # noqa: E402
 import find_getter  # noqa: E402  vendored: byte-identical to plugins/cssid-finder/scripts/find_getter.py
 
 APPS = {"PolicyCenter": "pc", "BillingCenter": "bc", "ClaimCenter": "cc", "ContactManager": "ab"}
@@ -97,6 +103,40 @@ def file_reader(path: str):
     return lambda rel: None
 
 
+def file_bytes(path: str):
+    """read(rel) -> bytes of another file in the recording (e.g. audio/0001.webm), or None.
+    Same lookup and path checks as file_reader."""
+    if os.path.isfile(path) and os.path.basename(path) == "session.json":
+        path = os.path.dirname(path)
+    if os.path.isdir(path):
+        base = path if os.path.isfile(os.path.join(path, "session.json")) else \
+            os.path.join(path, os.path.basename(os.path.normpath(path)))
+
+        def read_dir(rel):
+            target = os.path.normpath(os.path.join(base, rel))
+            if not target.startswith(os.path.normpath(base) + os.sep) or not os.path.isfile(target):
+                return None
+            with open(target, "rb") as f:
+                return f.read()
+        return read_dir
+    if os.path.isfile(path) and zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as z:
+            names = sorted(n for n in z.namelist()
+                           if n.split("/")[-1] == "session.json" and n.count("/") <= 1)
+        prefix = names[0][:-len("session.json")] if names else ""
+
+        def read_zip(rel):
+            if ".." in rel.split("/"):
+                return None
+            with zipfile.ZipFile(path) as z:
+                try:
+                    return z.read(prefix + rel)
+                except KeyError:
+                    return None
+        return read_zip
+    return lambda rel: None
+
+
 def messages(step: dict) -> list:
     """Page messages as {text, level}; recordings before 1.0.9 store plain strings."""
     return [{"text": m, "level": ""} if isinstance(m, str)
@@ -105,7 +145,7 @@ def messages(step: dict) -> list:
 
 
 def wait_title(title) -> str:
-    """The stable part of a page title ('Account Summary: Duncan Test' -> 'Account Summary').
+    """The stable part of a page title ('Account Summary: A000123' -> 'Account Summary').
     waitForPageTitle matches a substring, so the prefix before ':' is enough."""
     return (title or "").split(":")[0].strip()
 
@@ -1693,9 +1733,10 @@ def retries(steps: list) -> list:
     return found
 
 
-def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> dict:
+def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, read_bytes=None, tools=None) -> dict:
     meta = session.get("meta") or {}
     plan = {
+        "schemaVersion": schema.PLAN_SCHEMA_VERSION,
         "recording": {key: session.get(key) for key in ("id", "name", "toolVersion", "startUrl")},
         "test": {"name": session.get("name"), "testId": meta.get("testId"),
                  "description": meta.get("description"), "prerequisites": meta.get("prerequisites"),
@@ -1706,7 +1747,16 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         "notes": [note_entry(None, n.get("text", "")) for n in session.get("notes") or []],
         "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "navigation": [], "noteChecks": [],
         "transactionDates": [], "verifyOnly": [], "imports": [],
+        "facadeSequence": [], "existingTests": [], "dcColumns": [], "dataRowCandidates": [],
+        "restartCandidates": [], "seedPointCandidates": [],
     }
+    # spoken notes first, so noteChecks sees them like typed ones
+    plan["narration"] = narrate(session, read_bytes, tools)
+    for utterance in plan["narration"]["utterances"]:
+        note = note_entry(utterance["seq"], utterance["text"])
+        plan["notes"].append(dict(note, source="narration"))
+        utterance.update({k: note[k] for k in ("asksCheck", "conditional") if k in note})
+    spoken = {u["seq"] for u in plan["narration"]["utterances"] if u.get("seq") is not None}
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
     steps_actions = [with_picked_dates([a for a in s.get("actions") or [] if not a.get("removed")], s)
@@ -1722,8 +1772,8 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         recorded = with_headers(recorded, read_file(dom) if dom and read_file else None)
         notes = [n.get("text", "") for n in recorded_step.get("notes") or []]
         plan["notes"] += [note_entry(recorded_step.get("seq"), text) for text in notes]
-        if not recorded and not notes:
-            continue
+        if not recorded and not notes and recorded_step.get("seq") not in spoken:
+            continue  # a step spoken about stays, like one with typed notes: its notes point at it
         app = APPS.get(recorded_step.get("app"))
         entry = {"seq": recorded_step.get("seq"), "app": app, "appName": recorded_step.get("app"),
                  "appSwitch": bool(recorded) and previous_app is not None and app is not None and app != previous_app,
@@ -1778,6 +1828,18 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
     return plan
 
 
+def narrate(session: dict, read_bytes, tools) -> dict:
+    """narration.narrate, but never fatal: narration is optional, so whatever malformed audio metadata
+    still breaks it makes the narration "unavailable" instead of stopping the plan."""
+    try:
+        with tempfile.TemporaryDirectory() as workdir:
+            found = tools if tools is not None or not session.get("audio") else narration.find_tools()
+            return narration.narrate(session, read_bytes, found or {}, workdir)
+    except Exception as error:  # noqa: BLE001 - any failure here must not cost the plan
+        return {"source": "unavailable", "reason": f"narration failed ({type(error).__name__}: {error})",
+                "segments": [], "utterances": []}
+
+
 def note_entry(seq, text: str) -> dict:
     """A note, flagged when it asks for a check (verify, confirm, ensure…) or states a condition
     ("If there's an error…, override"): the gate lists the condition instead of doing it always."""
@@ -1797,6 +1859,18 @@ def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
     for entry in plan["steps"]:
         entry["pages"] = step_pages(entry)
         entry["screens"] = step_screens(entry)
+    facades = (project.get("facades") or {}).get("value")
+    if facades:
+        plan["facadeSequence"] = flow_match.facade_sequence(plan, facades)
+        plan["existingTests"] = flow_match.existing_tests(plan["facadeSequence"], flow_match.tests_by_folder(project),
+                                                          None)
+    effects = (project.get("componentEffects") or {}).get("value") or []
+    plan["restartCandidates"] = restart.restart_candidates(plan, plan["facadeSequence"], effects)
+    plan["seedPointCandidates"] = restart.seed_points(plan)
+    workbooks = ((project.get("dataWorkbooks") or {}).get("value") or {}).get("workbooks")
+    if workbooks:
+        plan["dcColumns"] = data_match.dc_columns(plan, workbooks)
+        plan["dataRowCandidates"] = data_match.data_row_candidates(plan["dcColumns"], project.get("root") or "")
     apply_idioms(plan, (project.get("idioms") or {}).get("value") or {})
     pages = {page for entry in plan["steps"] for page in entry["pages"]}
     plan_bases = {base["class"] for base in bases
@@ -1892,11 +1966,24 @@ def start_values(plan: dict, snapshots: list) -> list:
     return list(found.values())[:START_VALUES]
 
 
+def combine(plans: list) -> dict:
+    """One plan holding each part of a scenario recorded in several recordings, plus how the parts chain."""
+    chain = []
+    for index in range(len(plans) - 1):
+        before, after = plans[index].get("steps") or [], plans[index + 1].get("steps") or []
+        chain.append({"fromPart": index, "toPart": index + 1,
+                      "endsOn": before[-1]["waitTitle"] if before else None,
+                      "startsOn": after[0]["waitTitle"] if after else None,
+                      "startsLoggedIn": bool(after) and bool(after[0]["login"])})
+    return {"schemaVersion": schema.PLAN_SCHEMA_VERSION, "parts": plans, "chain": chain}
+
+
 def main(argv=None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
     parser = argparse.ArgumentParser(description="CenterTest Recorder recording -> plan JSON")
-    parser.add_argument("recording", help="the recording .zip, its folder, or its session.json")
+    parser.add_argument("recording", nargs="+",
+                        help="the recording .zip, its folder, or its session.json; several for one scenario recorded in parts")
     parser.add_argument("--cssids", required=True, help="resources dir holding cssids/<app>/ (or <app>.cssids)")
     parser.add_argument("--project", help="project.json from scan_project.py: match screens to the project's helpers")
     parser.add_argument("--out", help="write the plan here instead of stdout")
@@ -1904,8 +1991,13 @@ def main(argv=None) -> int:
     if not os.path.isdir(args.cssids):
         print(f"Error: cssids directory not found: {args.cssids}", file=sys.stderr)
         return 2
+    sessions = []
     try:
-        session = load_session(args.recording)
+        for path in args.recording:
+            try:
+                sessions.append(load_session(path))
+            except (RecordingError, ValueError, OSError) as error:
+                raise RecordingError(f"{path}: {error}")
         project = None
         if args.project:
             with open(args.project, encoding="utf-8") as f:
@@ -1913,7 +2005,9 @@ def main(argv=None) -> int:
     except (RecordingError, ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
-    plan = build_plan(session, args.cssids, file_reader(args.recording), project)
+    plans = [build_plan(session, args.cssids, file_reader(path), project, file_bytes(path))
+             for session, path in zip(sessions, args.recording)]
+    plan = plans[0] if len(plans) == 1 else combine(plans)
     # ASCII only (\u escapes): a reader that decodes the file as cp1252 on Windows still gets it right
     text = json.dumps(plan, indent=2, ensure_ascii=True)
     if args.out:

@@ -1,20 +1,75 @@
 # recording-to-test
 
-Turns a CenterTest Recorder recording (the `.zip` an analyst sends, its folder, or its `session.json`) into a CenterTest
-test that follows the project's own structure: the test class in its `tests/<center>/<lob>/<txn>/`
-layout, the project's login facade, new reusable step classes for the recorded screens, and the
-recorded checks as widget assertions.
+A wizard that creates a CenterTest scenario in the shape the current project already uses, reusing
+existing tests, data rows and facades before writing anything new. The input can be a CenterTest
+Recorder recording (the `.zip` an analyst sends, its folder, or its `session.json`), several
+recordings for one scenario, a plain-English request or user story, a Jira issue, or an existing
+test (a new scenario next to it, a data row, or restart points). The result follows the project's own
+structure: the test class in its `tests/<center>/<lob>/<txn>/` layout, the project's login facade,
+new reusable step classes for the recorded screens, data rows, and the recorded checks as widget
+assertions.
 
 ## Prerequisites
 
 - Python 3.9+ (no packages needed)
 - A CenterTest project whose generated page objects are available: the `*-generated` dependency in
   the Gradle/Maven cache (it bundles `cssids/`), or a `*-generated` checkout next to the project.
+- Optional, for recordings with voice narration: `ffmpeg`, `whisper.cpp` (`whisper-cli`) and a ggml
+  model, set as `whisperModel` in `~/.centertest/recording-to-test.json`. Audio never leaves the
+  machine. `ct.py tools` shows what is installed. Without them, narration is skipped, or use the
+  transcript file the Recorder wrote next to the audio.
+- Optional, for writing data rows: `openpyxl` (the default `workbookWriter`), or Excel / manual edits.
+- Optional helper skills from this marketplace: `cssid-finder`, `ddt-tools`, `ddt-analyzer`,
+  `centertest-healthcheck`.
 
 ## Use
 
-In the project directory: "create a test from ~/Downloads/2026-10-01_174907_test1.zip".
-The skill shows a table of what it will generate and waits for your approval before writing files.
+In the project directory: "create a test from ~/Downloads/2026-10-01_174907_test1.zip", "add a test
+for this story", "turn this Jira issue into a test", "make this test resumable" or "add a data row
+for a scenario". The skill shows what it found and plans at the end of each phase and waits for your
+approval before writing files. "Just run it" takes the recommended option at every gate, except for
+the questions it never skips (start state, missing data, a row in an existing workbook, running
+against an environment, git).
+
+## Phases
+
+| Phase | Result |
+|---|---|
+| Understand | inputs read, center / LOB / transaction, start state, narration, missing facts, profile problems |
+| Reuse plan | existing test, data row, override column or step override found before any new code |
+| Data | mechanism per value, rows and columns with their sources, the tests a new row would widen |
+| Code plan | files, overrides, restart points with their re-run safety, flow tags, suite |
+| Write | one diff per file |
+| Verify | compile, runs, regressions, healthcheck, standards, run versus recording, git |
+
+Hard rules: an existing test class is never changed (a scenario that needs an extra step becomes its
+own class; "make this test resumable" edits restart points only); a row added to an existing DC
+workbook is asked about every time; generated code is never hand-edited; no data value is invented.
+
+## Client profiles
+
+Where clients differ, a profile in the client's repo, `.claude/client-profile.md`, sets the switches
+`sharedValues`, `recordedValues`, `comments`, `standardsSkill`, `negativeProtocol`, `workbookWriter`,
+`gate`, `defaultEnvironment`, `contextNaming` and `runCommand`, plus dated facts (re-checked when
+older than 90 days). Kimputing-wide defaults are in `profile/defaults.md`. On first use the skill
+drafts a profile from the scan and writes it only after approval; after a run it offers updates as a
+diff. Personal machine settings (`whisperModel`, `quirks`) stay in
+`~/.centertest/recording-to-test.json`, never in the profile.
+
+## Engine commands
+
+The skill calls one script, `scripts/ct.py <command>`:
+
+| Command | Does |
+|---|---|
+| `scan` | project facts: layout, roles, bases, facades, tests, data layer, build and run commands |
+| `parse` | the plan for one or several recordings, narration included |
+| `xlsx` | sheet names, headers and rows of a workbook |
+| `narrate` | transcript of a recording's audio mapped to steps |
+| `tools` | whether ffmpeg and whisper are installed |
+| `profile resolve` / `profile init` | resolved switches / a draft client profile |
+| `gap-report` | a report of an engine gap, for Kimputing |
+| `scrub` | a `session.json` copy with typed and posted values, `--also` words, hosts, long numbers, issue keys, meta ids and dates replaced in every non-structural string (`scrub <recording> --out DIR [--day-shift N] [--also WORD]`); narration transcripts (`audio/<stem>.transcript.json`) are written scrubbed, audio files never copied, so a recording without a transcript loses its narration; displayed text may remain and anything original still found is listed in `needsReview.leftovers`, so review `needsReview` and the files before storing them, and keep fixtures in a private repo |
 
 ## Checks → assertions
 
@@ -62,7 +117,7 @@ A step creates its wizard page once, in a field set in its constructor, or uses 
 reusable base step that already holds the wizard. It never writes `new SubmissionWizardPage(getContext())`
 in each method. `coverageUtil` is held the same way.
 
-## What it proposes at the confirmation table
+## What it proposes at the gates
 
 - **Where the test starts**, when the recording doesn't begin with a login: the setup the other
   tests in the same `tests/<center>/<lob>/<txn>/` folder use (login, account, submission, policy
@@ -127,8 +182,9 @@ quote and issue methods.
 
 If the project has `CLAUDE.md` / `AGENTS.md` files, the skill follows them. When they ask for an
 edit to an existing file (for example a facade factory method for every new step), it makes that
-edit and lists it. Otherwise it only creates new files.
+edit and lists it. Otherwise it creates new files, and edits existing code only in the few ways the
+skill allows (`SKILL.md`, "Edits to existing code"), each shown as a diff and approved first.
 
 ## What it does not do (yet)
 
-DDT data sheets, ReportPortal configuration.
+ReportPortal configuration.

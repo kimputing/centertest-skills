@@ -1,0 +1,48 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feature/**']
+
+permissions:
+  contents: read
+
+# One group per branch: a newer run cancels a superseded one. A push and its pull request still get one
+# run each (head_ref vs ref differ); that duplicate is accepted on this public repository.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.12"]
+    steps:
+      # Keep line endings byte-exact on Windows (test_vendored_sync compares files byte for byte).
+      - name: Disable git line-ending conversion
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run every plugin's tests
+        shell: bash
+        run: |
+          status=0
+          found=0
+          for dir in plugins/*/tests; do
+            [ -d "$dir" ] || continue
+            found=1
+            echo "::group::$dir"
+            python -m unittest discover -s "$dir" -v || status=1
+            echo "::endgroup::"
+          done
+          [ "$found" = 1 ] || { echo "no plugins/*/tests found"; exit 1; }
+          exit $status
