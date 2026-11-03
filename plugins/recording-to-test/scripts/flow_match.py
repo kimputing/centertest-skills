@@ -2,6 +2,7 @@
 recording, and which existing tests already run those facades. The engine only proposes."""
 
 MAX_CANDIDATES = 3
+MIN_CANDIDATE_SCORE = 0.25  # below this a page/title overlap is noise, not a facade match
 MAX_TESTS = 5
 POPUP = "Popup"
 PAGE_SUFFIX = "Page"
@@ -40,7 +41,7 @@ def _plain(page: str) -> str:
 
 
 def facade_sequence(plan: dict, facades: list) -> list:
-    """Per segment the (at most three) context-only facade methods that list most of its pages and titles."""
+    """Per segment the (at most three, scoring at least 0.25) context-only facade methods that list most of its pages and titles."""
     sequence = []
     for segment in segments(plan):
         wanted = {("page", p) for p in segment["pages"]} | {("title", t) for t in segment["titles"]}
@@ -57,6 +58,7 @@ def facade_sequence(plan: dict, facades: list) -> list:
                 "facade": entry["facade"], "method": entry["method"], "step": entry.get("step"),
                 "score": round(len(shared) / len(wanted), 2),
                 "why": "lists " + ", ".join(sorted(name for _, name in shared))})
+        candidates = [c for c in candidates if c["score"] >= MIN_CANDIDATE_SCORE]
         candidates.sort(key=lambda c: (-c["score"], c["facade"], c["method"]))
         sequence.append(dict(segment, candidates=candidates[:MAX_CANDIDATES]))
     return sequence

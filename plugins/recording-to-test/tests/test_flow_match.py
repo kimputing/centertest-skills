@@ -61,6 +61,22 @@ class FacadeSequenceTest(unittest.TestCase):
         self.assertEqual(found[0]["step"], "com.acme.strong")
         self.assertEqual(set(found[0]), {"facade", "method", "score", "why", "step"})
 
+    def test_weak_candidate_is_dropped_and_the_threshold_kept(self):
+        plan = {"steps": [step(1, ["P%d" % i for i in range(4)])]}
+        found = fm.facade_sequence(plan, [facade("F", "kept", ["P0Page"])])[0]["candidates"]
+        self.assertEqual([(c["method"], c["score"]) for c in found], [("kept", 0.25)])
+        plan = {"steps": [step(1, ["P%d" % i for i in range(17)])]}
+        weak = fm.facade_sequence(plan, [facade("F", "weak", ["P0Page"])])[0]
+        self.assertEqual(weak["candidates"], [])  # 1/17 = 0.06
+
+    def test_segment_with_only_weak_matches_counts_as_missing(self):
+        plan = {"steps": [step(1, ["A"]), step(2, ["B%d" % i for i in range(10)])]}
+        seq = fm.facade_sequence(plan, [facade("PC", "login", ["A"]), facade("F", "noise", ["B0Page"])])
+        self.assertEqual(seq[1]["candidates"], [])
+        found = fm.existing_tests(seq, {"a": [{"path": "a/T.java", "flow": ["PC.login", "F.noise"]}]}, "a")[0]
+        self.assertEqual(found["coveredSeqs"], [1])
+        self.assertEqual(found["missingSeqs"], [2])
+
     def test_max_three(self):
         facades = [facade("F", "m%d" % i, ["SubmissionWizardPage"]) for i in range(5)]
         self.assertEqual(len(self.candidates(facades)), 3)

@@ -110,7 +110,7 @@ a resume pays again).
 | Field | Shape | Notes |
 |---|---|---|
 | `schemaVersion` | `2` | |
-| `facadeSequence` | `[{seqs, pages, titles, candidates: [{facade, method, step, score, why}]}]` | segments by page (as the skill segments today); candidates only from `contextOnly` facades whose pages and titles overlap; `step` is the facade entry's step path |
+| `facadeSequence` | `[{seqs, pages, titles, candidates: [{facade, method, step, score, why}]}]` | segments by page (as the skill segments today); candidates only from `contextOnly` facades whose pages and titles overlap, score ≥ 0.25; `step` is the facade entry's step path |
 | `existingTests` | `[{path, folder, coveredSeqs, missingSeqs, score}]` | tests (from `testFlows`, else `folders`) whose `flow` calls the candidate facades in order; `score` = covered segments ÷ all segments; `missingSeqs` lists every uncovered segment's seqs, including segments with no candidate |
 | `dcColumns` | `[{seq, label, value, workbook, sheet, column, why}]` | label tokens vs header tokens (camel split, `#`/`@` stripped, case-folded); at most 3 workbooks per recorded value: most shared tokens, then workbooks with a non-empty `usedBy`, then path |
 | `dataRowCandidates` | `[{workbook, sheet, code, matched, total}]` | rows whose mapped cells equal recorded values; top 3 per workbook; only workbooks that survive the `dcColumns` cap are read |
