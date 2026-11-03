@@ -15,8 +15,8 @@ exists even without a project (then there is no `project.componentEffects`). Sho
 
 | `kind` | Meaning |
 |---|---|
-| `setup` | The expensive setup that produces what the scenario acts on (account or policy before a cancellation, change, renewal, rewrite or reinstatement). Strong. |
-| `centerSwitch` | A switch between centers. Strong. |
+| `setup` | The expensive setup that produces what the scenario acts on (account or policy before a cancellation, change, renewal, rewrite or reinstatement). Strong. `afterSeq` is the end of the setup segment. |
+| `centerSwitch` | A switch between centers. Strong. `afterSeq` is the step before the app switch. |
 | `stateChanging` | Any work follows a commit (issue, bind, payment, cancel, reinstate, rewrite) anywhere later; `afterSeq` is the commit's step. |
 
 Where no kind fits but a slow step is followed by more work, offer it as a heuristic candidate and
@@ -40,13 +40,16 @@ binding twice, cancelling or reinstating twice.
 - Cross-check `project.componentEffects` (`{path, class, commits, afterCommit}`) for every component
   inside the block: a block that holds a commit and also later steps is not safe, whatever the
   engine says about its neighbours. List the components and their commits in the proposal.
-- For a `notResumable` block use `scenarioContext.restart(X, RestartPolicy.DISABLE_ON_FAILURE)`
-  (`proposePolicy`): a failure inside it reruns the test cleanly with new data instead of resuming
+- For a `stateChanging` candidate there are two remedies. **Recommended when the scenario allows
+  it:** a restart point right after the commit, so a resume never repeats it. Otherwise
+  `scenarioContext.restart(X, RestartPolicy.DISABLE_ON_FAILURE)` (`proposePolicy`) on the block
+  containing the commit: a failure inside it reruns the test cleanly with new data instead of resuming
   on a broken policy forever. Propose it for every cancellation, reversal, payment or other
   back-end state change.
 - Alternative when the block should stay resumable: a back-end state check before redoing the
-  commit (is the payment already there?), written as a condition inside the block. Offer
-  it as the second option; it is new logic, so it needs its own approval.
+  commit (is the payment already there?), written as a condition inside the block. It is new logic,
+  so it needs its own approval, and it is for new test classes only: not available when making an
+  existing test resumable; use `DISABLE_ON_FAILURE` or a new test class.
 - Say plainly in the proposal what a resume would do: "resumes after the policy is issued; the
   payment block is not resumable".
 
@@ -56,7 +59,8 @@ A restart restores the values the scenario saved with `Helper.getData(...)`, **n
 restart point, answer: what is the first step after the block, and what does it need open?
 
 - It needs a screen the block left open: add an `else` branch that navigates there (for example a
-  policy search).
+  policy search). The `else` only re-navigates to the screen the next step needs; no assertions, no
+  data changes.
 - It re-opens what it needs from the saved values: no `else`.
 
 Say which, and why, for every point. This is the resumed-state check; an `else` is part of the
@@ -89,7 +93,8 @@ that part is a new test class.
 
 ## Suites
 
-Read `project.suites`: `{path, suites: {Name: {List|Suites|Packages}}}`; when the file could not be
+Read `project.suites`: `{path, suites: {Name: {List|Suites|Packages}}}` (`List`: test entries;
+`Suites`: other suites listed by name; `Packages`: package regexes); when the file could not be
 parsed it is `{path, suites: {}, raw}`, so show the raw text and ask. Suites group by transaction.
 
 Offer the options with a recommendation and each one's **run cost** (how many scenarios the suite
