@@ -27,6 +27,17 @@ MARKERS: list = [
     ("phases/code.md", "new values or categories"),
     ("phases/code.md", "GwSeedPoint"),
     ("phases/code.md", "centertest.runtime.seed"),
+    ("phases/data.md", "ask every time"),
+    ("phases/data.md", "PolicyExpirationDate"),
+    ("phases/data.md", "usedBy"),
+    ("phases/data.md", "plan.dcColumns"),
+    ("phases/data.md", "TD-034"),
+    ("phases/data.md", "<blank>"),
+    ("phases/data.md", "workbookWriter"),
+    ("phases/data.md", "never raw XML"),
+    ("phases/data.md", "git status"),
+    ("phases/data.md", "ddt-tools"),
+    ("phases/data.md", "ct.py\" xlsx"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only
