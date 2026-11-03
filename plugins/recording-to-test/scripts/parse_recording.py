@@ -22,6 +22,7 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import schema  # noqa: E402
 import find_getter  # noqa: E402  vendored: byte-identical to plugins/cssid-finder/scripts/find_getter.py
 
 APPS = {"PolicyCenter": "pc", "BillingCenter": "bc", "ClaimCenter": "cc", "ContactManager": "ab"}
@@ -1696,6 +1697,7 @@ def retries(steps: list) -> list:
 def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> dict:
     meta = session.get("meta") or {}
     plan = {
+        "schemaVersion": schema.PLAN_SCHEMA_VERSION,
         "recording": {key: session.get(key) for key in ("id", "name", "toolVersion", "startUrl")},
         "test": {"name": session.get("name"), "testId": meta.get("testId"),
                  "description": meta.get("description"), "prerequisites": meta.get("prerequisites"),

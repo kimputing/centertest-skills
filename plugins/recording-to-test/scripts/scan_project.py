@@ -23,6 +23,9 @@ import sys
 import tempfile
 import zipfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import schema  # noqa: E402
+
 SKIP_DIRS = {".git", ".gradle", ".idea", "build", "out", "target", "node_modules"}
 CENTERS = {"BaseScenarioPC": "pc", "BaseScenarioBC": "bc", "BaseScenarioCC": "cc", "BaseScenarioAB": "ab"}
 CENTERTEST_CLASS = re.compile(r"^\s*@CenterTest\s*$", re.M)
@@ -524,7 +527,7 @@ def scan(root, cssids=None, gradle_home=None, m2_home=None, cache_root=None) -> 
     m2_home = m2_home or os.path.expanduser("~/.m2")
     cache_root = cache_root or os.path.join(tempfile.gettempdir(), "recording-to-test-cssids")
     java, props = index(root)
-    result = {"root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
+    result = {"schemaVersion": schema.PROJECT_SCHEMA_VERSION, "root": root, "clientPackage": client_package(root, props), "testsRoot": tests_root(root, java)}
     package, source = result["clientPackage"]["value"], result["testsRoot"]["value"]
     if package and source:
         base = os.path.join(root, *source.split("/"), *package.split("."))
