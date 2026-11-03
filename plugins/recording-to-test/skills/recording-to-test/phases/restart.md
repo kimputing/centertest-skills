@@ -19,6 +19,17 @@ exists even without a project (then there is no `project.componentEffects`). Sho
 | `centerSwitch` | A switch between centers. Strong. `afterSeq` is the step before the app switch. |
 | `stateChanging` | Any work follows a commit (issue, bind, payment, cancel, reinstate, rewrite) anywhere later; `afterSeq` is the commit's step. |
 
+**Several recordings** (`plan.parts`): each part has its own `restartCandidates`; the engine
+computes none across parts. Propose the seam after each part n (`plan.chain`) as a `setup`
+candidate: the earlier parts are the setup the later part acts on. Name steps `part:seq`.
+
+**Without a plan** (a request, story, Jira issue or existing test): there are no
+`plan.restartCandidates`. Derive candidates from the test's flow (`project.testFlows`, or the test
+read in full) and `project.componentEffects`: a setup facade call (the account or policy the
+scenario acts on) is a `setup` candidate; a component that commits and keeps acting
+(`afterCommit: true`) is a `stateChanging` candidate. Judge each one's re-run safety yourself
+([Rerun safety](#rerun-safety)) and say that it is derived, not an engine candidate.
+
 Where no kind fits but a slow step is followed by more work, offer it as a heuristic candidate and
 say so; the user decides. A flow of a login plus one or two calls has none: say "no restart point"
 and move on. For each candidate show: after which step, the reason, `rerunRisk`, and the policy
@@ -77,7 +88,8 @@ that part is a new test class.
 
 ## Implement
 
-- A `RestartPoints` enum next to the test (or the folder's existing one), one constant per point.
+- A `RestartPoints` enum next to the test (or the folder's existing one: a constant added to it is
+  an allowed edit, [SKILL.md#allowed-edits](../SKILL.md#allowed-edits)), one constant per point.
 - Around each block:
   `if (scenarioContext.restart(RestartPoints.X)) { … scenarioContext.restartComplete(RestartPoints.X); }`
   plus the agreed `else`. With a policy: `scenarioContext.restart(RestartPoints.X, RestartPolicy.DISABLE_ON_FAILURE)`.

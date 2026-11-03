@@ -21,8 +21,9 @@ holds, and say which one it was:
 Each rung is checked by **reading the class**, never by its name: a match on a name is a candidate,
 not proof. Open the component and compare what it does with what the scenario needs.
 
-For every segment of `plan.facadeSequence` report one line that reflects behaviour, not only the
-name: which rung, which class, what it drives, what state it leaves for later steps.
+For every segment of `plan.facadeSequence` (without a plan, every screen of the agreed flow)
+report one line that reflects behaviour, not only the name: which rung, which class, what it
+drives, what state it leaves for later steps.
 
 **A scenario that needs an extra step is a new test class.** An existing test that covers the flow
 but lacks one more step (an `assertXYZ` after a submission) is never extended in place: the
@@ -53,6 +54,19 @@ means the tests miss part of the scenario; `missingSeqs` names the recorded step
   user cares about: same. Missing segments: the scenario is a new test class that reuses the
   covering test's components and adds the rest. Never an edit to the covering test.
 - No candidates: say so, and go on with the facade check.
+
+**Several recordings** (`plan.parts`): each part has its own `existingTests`. Rank each part's list
+against the folder as above. A test that covers part 0 is a candidate **prefix** of the scenario
+(where it can start, [phases/recording.md#start-state](recording.md#start-state)), not the
+scenario; a test that covers a later part covers that part only. Never "no new test" for the whole
+scenario from one part's match. Name recorded steps `part:seq` (`1:14`) at the gate.
+
+<a id="without-a-plan"></a>**Without a plan** (a request, story, Jira issue or existing test):
+there is no `plan.existingTests` or `plan.facadeSequence`. Find covering tests in
+`project.testFlows` (each test's `path`, `folder` and `flow`; else `folders.value.tests[…]`),
+ranked against the folder as above, and take facade candidates from `project.facades` (the `pages`
+and `titles` of each context-only method) as evidence for the flow agreed at the Understand gate.
+Then read each class as above.
 
 Also search the components for a class that already does the transaction but has no facade factory
 or no caller: an unfinished component is a candidate (a reinstatement with a hard-coded reason).
@@ -120,6 +134,10 @@ one by one ([SKILL.md#hard-rules](../SKILL.md#hard-rules)):
 | Add a facade factory method | the facade file, the method, the step it builds |
 | Move a hard-coded value to data | the value, the column, every caller (regression run) |
 | Register the test in a suite | [phases/restart.md#suites](restart.md#suites) |
+| Add a value or category to an existing flow-category enum | the enum file, the value, the reason ([phases/code.md#flow-tags](code.md#flow-tags)) |
+| A hierarchy-file edit for a new DC workbook | the file, the entry ([phases/data.md#new-workbook](data.md#new-workbook)) |
+| Add a constant to an existing `RestartPoints` enum | the enum, the constant ([phases/restart.md#implement](restart.md#implement)) |
+| Add `.claude/wizard/` to `.gitignore` | the line ([SKILL.md#session-state-and-plan-file](../SKILL.md#session-state-and-plan-file)) |
 
 A smell found on the way is reported at the end, not fixed.
 

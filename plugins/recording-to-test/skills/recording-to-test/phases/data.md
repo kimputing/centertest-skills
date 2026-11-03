@@ -97,8 +97,9 @@ Adding rows needs no regeneration; adding columns or files does ([Regeneration](
 
 A new DC workbook, a new column or a new relationship is a generation-level change. Propose: the
 workbook path and its columns (mirror the closest existing DC; a plain file copy keeps the header
-row exact, then replace its rows through [Writing rows](#writing-rows)), any hierarchy-file edit,
-and the generated class it should produce. Then [Regeneration](#regeneration).
+row exact, then replace its rows through [Writing rows](#writing-rows)), any hierarchy-file edit
+(an allowed edit to existing code: [SKILL.md#allowed-edits](../SKILL.md#allowed-edits)), and the
+generated class it should produce. Then [Regeneration](#regeneration).
 
 ## No data layer
 
@@ -158,8 +159,9 @@ A value one step produces and a later step reads is shared per `sharedValues`
   `getCustom(<KEY>)` later.
 
 The only prohibited keys are the **reserved built-in keys** the generator owns: `PolicyExpirationDate`,
-`UserName`, `Password`, `Premium`. With no profile, follow what the project uses most
-(`project.sharedValuesUsage`) and ask when it is mixed or shows neither.
+`UserName`, `Password`, `Premium`. When `sharedValues` comes from the scan (`source: scan`) or is
+still `auto`, look at `project.sharedValuesUsage`: both counts non-zero → ask (the scan took the
+majority); both zero → ask; otherwise use the value.
 
 ## Validate
 
@@ -179,8 +181,12 @@ row, new workbook); the existing-state reference check (every `#` code, coded va
 relationship code found in the workbooks); for a new row, the full preview and the widened tests
 (`usedBy`) beside the new-workbook alternative, asked every time; override columns with their
 markers and the row that carries them; generated-value tokens; shared values and their
-`sharedValues` mode; what the user must do (regeneration, manual cells). Wait for approval before
-anything is written.
+`sharedValues` mode; the recording decisions routed here
+([phases/recording.md#gate](recording.md#gate)): date relations (one batch,
+[phases/recording.md#dates](recording.md#dates)), identity values and their generators
+([phases/recording.md#identity-values](recording.md#identity-values)), picks and row filters that
+depend on existing data ([phases/recording.md#row-filters](recording.md#row-filters)); what the
+user must do (regeneration, manual cells). Wait for approval before anything is written.
 
 **Report after writing (the post-write report):** the cells written, the re-read result, and the `ddt-tools`
 validation and diff ([Validate](#validate)).

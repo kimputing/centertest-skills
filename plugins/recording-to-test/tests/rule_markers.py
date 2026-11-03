@@ -83,6 +83,31 @@ MARKERS: list = [
     ("phases/profile.md", "read in full at Start"),
     ("phases/understand.md", "`error`, `warnings`, `invalid`, `unknownKeys` and `staleFacts`"),
     ("phases/verify.md", "never a reserved built-in key"),
+    # allowed edits: the same list in SKILL.md and reuse.md
+    ("SKILL.md", "flow-category enum"),
+    ("phases/reuse.md", "flow-category enum"),
+    ("SKILL.md", "hierarchy-file edit"),
+    ("phases/reuse.md", "hierarchy-file edit"),
+    ("SKILL.md", "existing `RestartPoints` enum"),
+    ("phases/reuse.md", "existing `RestartPoints` enum"),
+    ("phases/reuse.md", "`.claude/wizard/` to `.gitignore`"),
+    # gate modes (ruling S8)
+    ("SKILL.md", "one plan gate"),
+    ("phases/profile.md", "SKILL.md#gate-modes"),
+    # data gate shows the recording decisions routed to it
+    ("phases/data.md", "date relations (one batch"),
+    # several recordings, no plan
+    ("phases/reuse.md", "Several recordings"),
+    ("phases/restart.md", "Several recordings"),
+    ("phases/verify.md", "Several recordings"),
+    ("phases/reuse.md", "`part:seq`"),
+    ("phases/reuse.md", "`project.testFlows`"),
+    ("phases/restart.md", "Without a plan"),
+    ("phases/understand.md", "Reuse plan and Data are skipped"),
+    # "Just run it" (ruling S9)
+    ("SKILL.md", "up to 3 rounds without asking"),
+    ("SKILL.md", "creating the client profile"),
+    ("phases/data.md", "both counts non-zero"),
 ]
 
 # Anchors each phase file must expose (the plan's "Produces anchors" lists): a link is checked only

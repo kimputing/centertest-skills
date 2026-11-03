@@ -50,7 +50,8 @@ and transaction, not an unrelated transaction's tag. Describe what the component
 
 When the scenario reveals a gap, also propose **new values or categories**: a transaction or process
 the existing category enums have no value for, or a dimension they do not cover at all. Show each as
-an addition to the category's file, with the reason, and approve it like any other edit. Never invent
+an addition to the category's file, with the reason, and approve it like any other edit
+([SKILL.md#allowed-edits](../SKILL.md#allowed-edits)). Never invent
 a tag silently.
 
 A run-time tag in a test is proposed only when the data takes a distinguishable path, and then as a
@@ -95,7 +96,9 @@ After the Code plan gate is approved, in this order, **one file at a time**: dat
 component and facade, test class, suite registration.
 
 - After each file show the diff, or the full content for a new file, and wait for a go before the
-  next. Update the session state ([SKILL.md#session-state-and-plan-file](../SKILL.md#session-state-and-plan-file)).
+  next (no wait in `single` gate mode or "Just run it":
+  [SKILL.md#gate-modes](../SKILL.md#gate-modes)). Update the session state
+  ([SKILL.md#session-state-and-plan-file](../SKILL.md#session-state-and-plan-file)).
 - Write what [phases/recording.md#generate](recording.md#generate) describes, as approved.
 - Never hand-edit generated code; never invent a data value; no backup copies.
 - A problem found in unrelated code is reported, not fixed.

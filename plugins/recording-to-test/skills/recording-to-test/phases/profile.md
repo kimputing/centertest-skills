@@ -59,14 +59,12 @@ scan.
 | `standardsSkill` | a skill name, or `none` | `none` | the project's own standards check in Verify ([phases/verify.md#standards](verify.md#standards)) |
 | `negativeProtocol` | `framework`, `project`, `auto` | `auto` | how negative rows are written ([phases/code.md#negative-rows](code.md#negative-rows)) |
 | `workbookWriter` | `openpyxl`, `excel`, `manual` | `openpyxl` | how DC workbook rows are written ([phases/data.md#writing-rows](data.md#writing-rows)) |
-| `gate` | `phases`, `plan`, `single` | `phases` | how many gates are shown: after each phase, one plan gate, or one final gate |
+| `gate` | `phases`, `plan`, `single` | `phases` | how many gates are shown and what every mode still asks ([SKILL.md#gate-modes](../SKILL.md#gate-modes)) |
 | `defaultEnvironment` | a name, or empty | empty | the environment offered first for a run ([phases/verify.md#run](verify.md#run)) |
 | `contextNaming` | `role`, `centerRoleContext`, `auto` | `auto` | how role contexts are named ([phases/code.md#test-class](code.md#test-class)) |
 | `runCommand` | a command template, or empty | empty | the command that runs one test, with `{profile}` and `{testClass}` |
 
-Whatever the switches say, the hard rules in [SKILL.md](../SKILL.md#hard-rules) hold. With `gate`
-set to `plan` or `single`, the gates that "Just run it" never skips (start state, missing data, a
-row in an existing DC workbook, running against an environment, git) are still asked.
+Whatever the switches say, the hard rules in [SKILL.md](../SKILL.md#hard-rules) hold.
 
 The body of the profile holds dated facts about the project (test layout, roles, build and run,
 guidance files) and the client's own rules. Each fact ends `(verified YYYY-MM-DD)`. The body is

@@ -53,9 +53,12 @@ defaults in the phase files, never these rules.
 6. <a id="rule-no-invented-data"></a>Never invent a data value (`#` codes, coded values and relationship codes must exist).
 7. <a id="rule-unrelated-code"></a>Don't touch unrelated code: smells found on the way are reported, not fixed.
 
-**Edits to existing code** are allowed only with approval, and only these: make a private step
-`protected`; add one generic hook to a base and move its code into it; add a facade factory
-method; move a hard-coded value to data; register the test in a suite. Every other caller of a
+<a id="allowed-edits"></a>**Edits to existing code** are allowed only with approval, and only
+these: make a private step `protected`; add one generic hook to a base and move its code into it;
+add a facade factory method; move a hard-coded value to data; register the test in a suite; add a
+value or category to an existing flow-category enum; a hierarchy-file edit for a new DC workbook;
+add a constant to an existing `RestartPoints` enum; add `.claude/wizard/` to `.gitignore`
+([phases/reuse.md#variants](phases/reuse.md#variants) says what each shows). Every other caller of a
 changed base is listed in the plan and gets a regression run
 ([phases/verify.md#regression-runs](phases/verify.md#regression-runs)).
 
@@ -163,13 +166,25 @@ Don't read the other fields: a newer engine may have changed them.
 
 At every gate:
 - **Stop** until the user answers. How many gates are shown is per `gate`
-  ([phases/profile.md#switches](phases/profile.md#switches)).
+  ([Gate modes](#gate-modes)).
 - Questions come in **batches of up to 4**. Each has a **recommended option** with its **reason
   and evidence** (a file path, a plan field such as `plan.existingTests`).
 - Offer the shortcut **"accept recommended"** for the rest of this phase.
 - Show the plan so far in chat and update the plan file
   ([Session state and plan file](#session-state-and-plan-file)).
 - Concise by default; explain on request.
+
+<a id="gate-modes"></a>**Gate modes**, per `gate`:
+- `phases` (the default): a gate after each phase, as in the table.
+- `plan`: Understand, Reuse plan, Data and Code plan are shown together as one plan gate before
+  Write; then Write per file and Verify as usual.
+- `single`: that one plan gate, then Write without per-file waits (each diff is still shown), and
+  Verify.
+
+In every mode these are still asked: the questions ["Just run it"](#just-run-it) never skips,
+[allowed edits](#allowed-edits) to existing code, the restart-points diff of an existing test
+([rule](#rule-existing-tests)), a new row in an existing DC workbook ([rule](#rule-new-row)) and
+creating the client profile.
 
 Where clients differ, the phase files say "per `<switch>`" and you read the resolved value:
 `sharedValues`, `recordedValues`, `comments`, `standardsSkill`, `negativeProtocol`,
@@ -186,7 +201,13 @@ without asking, **except**:
 - the start state ([phases/recording.md#start-state](phases/recording.md#start-state)): always ask;
 - data the test may not have (a value no row, column or default supplies): always ask;
 - an expected outcome the recording doesn't match (`plan.outcomeMismatch`): ask which the test follows;
-- a row in an existing DC workbook ([rule](#rule-new-row)), running against an environment, and git: always ask.
+- a row in an existing DC workbook ([rule](#rule-new-row)), running against an environment, and git: always ask;
+- [allowed edits](#allowed-edits) to existing code, the restart-points diff of an existing test
+  ([rule](#rule-existing-tests)) and creating the client profile: always ask.
+
+Write skips the per-file waits (each diff is still shown). Fix rounds run
+up to 3 rounds without asking, then stop and report what still fails
+([phases/verify.md#fix-rounds](phases/verify.md#fix-rounds)).
 
 List every default taken without asking in the report
 ([phases/verify.md#report](phases/verify.md#report)).
@@ -202,8 +223,8 @@ List every default taken without asking in the report
   and continues at the phase reached; after a regeneration, verify the generated classes first
   ([phases/data.md#regeneration](phases/data.md#regeneration)).
 - **Plan file:** `.claude/wizard/<scenario>.plan.md` in the repo, the same plan as in chat, with
-  personal data masked. On first use propose adding `.claude/wizard/` to `.gitignore` (an approved
-  edit).
+  personal data masked. On first use propose adding `.claude/wizard/` to `.gitignore` (an
+  [allowed edit](#allowed-edits)).
 
 ## Engine gaps
 

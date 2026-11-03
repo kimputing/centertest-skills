@@ -66,7 +66,8 @@ recording](#compare-with-recording), [Report](#report) and [Git](#git), in that 
 
 **Until it passes, asking before each round**: show what the evidence says and what the next fix
 would be, and wait for the user's yes before editing and rerunning. The user may stop at any
-round; the report then says what still fails.
+round; the report then says what still fails. In "Just run it" mode: up to 3 rounds without
+asking, then stop and report ([SKILL.md#just-run-it](../SKILL.md#just-run-it)).
 
 **Read the run's evidence first.** It is in `results/<timestamp>/<test>/TestRecord/`:
 - the `*_Narrative.html`: each step, the failing widget and the error, and the page title per step;
@@ -158,6 +159,10 @@ those the plan dropped as navigation, retries or verify-only):
 - The screenshot columns are **paths** for the user to open. Do not describe the images.
 - List every difference: a different title, steps in another order, a recorded screen the run
   never showed, a run screen the recording never had. Mark steps that match as `same`.
+
+**Several recordings:** compare each part with its own `session.json` and its own steps
+(`plan.parts`), rows named `part:seq`; the seams (`plan.chain`: a dropped login, a step between the
+parts) are listed like any other difference.
 
 **Every difference goes to the user; the wizard does not decide** whether it is acceptable,
 a generated simplification (a collapsed retry, navigation replacing a Next click) or a defect. Say

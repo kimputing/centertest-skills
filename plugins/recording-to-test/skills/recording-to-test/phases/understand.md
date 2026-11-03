@@ -131,7 +131,7 @@ acceptance criteria.
   can't be checked on a screen (an e-mail sent, a batch job) is called out, not dropped.
 - There is no plan: the start state and the data the test needs are always asked (no
   `policyShape` to propose from), and the Reuse plan searches the project's tests and facades by
-  the flow ([phases/reuse.md#ladder](reuse.md#ladder)).
+  the flow ([phases/reuse.md#without-a-plan](reuse.md#without-a-plan)).
 - When the flow needs screens no existing component covers, offer to **record them** with the
   CenterTest Recorder (a recording gives the ids, values and checks). Otherwise the widget ids come
   from the `cssid-finder` skill, never from memory
@@ -162,6 +162,10 @@ The user names a test class and asks for one of:
   to [phases/restart.md#candidates](restart.md#candidates).
 
 Read the class itself, not only its name: the ask is about what it does.
+
+Phases skipped: for "make this test resumable", Reuse plan and Data are skipped (Understand, then
+the Code plan with [phases/restart.md](restart.md#candidates), Write, Verify). For a data row, the
+Code plan is skipped unless the row needs code.
 
 ## Gate
 
