@@ -1,12 +1,12 @@
 # Verify and deliver
 
-Compile, run, compare the run with the recording, review, report, and offer git.
+Compile, run, regression runs, healthcheck, standards, compare with the recording, report, git.
 
-**One order, used everywhere:** compile, run, regression runs, healthcheck, standards, compare with
-recording, report, git. Fix rounds happen inside the run (and any regression run) until it passes.
-One exception: if this run's changes are not committed when the healthcheck runs and the user commits
-at the Git step, the healthcheck runs once more as the very last action and its findings are appended
-to the report.
+**One order, used everywhere:** compile, run, regression runs, healthcheck, standards, compare
+with recording, report, git. Fix rounds happen inside the run (and any regression run) until it
+passes. One exception: if this run's changes are not committed when the healthcheck runs and the
+user commits at the Git step, the healthcheck runs once more as the very last action and its
+findings are appended to the report.
 
 Be honest about verification: say what compiled, what ran, which rows passed and what was not run.
 Try the commands yourself first. If one fails for an environment reason (a build that cannot run
@@ -40,9 +40,9 @@ Never run against an environment without the user's yes. Ask:
    the usual case. Then offer each of `project.build.profiles`.
 
 Run only the new test (or the new rows of it): the command is `project.build.run`, or the one per
-`runCommand` when the profile sets it; fill in `{profile}` and `{testClass}`; with no profile, leave the
-profile argument (`-Pprofile={profile}`) out. When `project.build.run` is `null`, the project's
-`bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that selects a test:
+`runCommand` when the profile sets it; fill in `{profile}` and `{testClass}`; with no profile,
+leave the profile argument (`-Pprofile={profile}`) out. When `project.build.run` is `null`, the
+project's `bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that selects a test:
 ask how this project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file); don't
 guess.
 
@@ -75,10 +75,10 @@ round; the report then says what still fails.
 Then:
 1. **Screen first.** When a widget is not found (`WI-005`) or a click times out,
    check the screen before the id: look at the last screenshot and the page title the narrative
-   shows first. If the page is not where the step expected (still blocked by underwriting issues, a validation error, a
-   warning to accept, another wizard step), the missing widget is a symptom: handle that screen
-   (the project's blocker helper, the missing required field, the accepted warning) instead of
-   patching the id.
+   shows first. If the page is not where the step expected (still blocked by underwriting
+   issues, a validation error, a warning to accept, another wizard step), the missing widget is a symptom: handle that
+   screen (the project's blocker helper, the missing required field, the accepted warning)
+   instead of patching the id.
 2. Only when the right page is shown, fix the getter. If it ends in `.withCssId(…)` or is raw,
    check the recorded id against the page; an id that cannot be resolved goes through the
    `cssid-finder` skill ([phases/recording.md#locators](recording.md#locators)).
@@ -136,12 +136,11 @@ After the healthcheck, before the comparison and report. Per `standardsSkill`:
 
 ## Compare with recording
 
-Only when the input was a recording and the run passed (otherwise n/a). Compare
-**screen by screen** (design:
-the run's screens against the recording's), per recorded step of the plan (`plan.steps`, skipping
+Only when the input was a recording and the run passed (otherwise n/a). Compare the run's screens
+with the recording's **screen by screen**, per recorded step of the plan (`plan.steps`, skipping
 those the plan dropped as navigation, retries or verify-only):
 
-| Step (`seq`) | Recorded title | Run's page title (narrative) | Recorded screenshot | Run's screenshot |
+| `seq` | Recorded title | Run's title (narrative) | Recorded screenshot | Run's screenshot |
 |---|---|---|---|---|
 
 - **Recorded title:** the plan step's `title` (and `waitTitle`) for that `seq`.
@@ -195,7 +194,8 @@ run. Then:
 
 Personal data in the PR draft is masked, and recorded values do not appear in it.
 
-The profile updates this run found are offered at the [Gate](#gate).
+Offer the profile updates this run found here, before Git, as a diff for approval
+([phases/profile.md#updates](profile.md#updates)).
 
 ## Git
 
@@ -211,7 +211,7 @@ commit, PR; the user picks which. The repo is on GitHub or Azure DevOps: read th
 - **PR:** the PR description draft from [Report](#report), the issue or work item linked.
 
 If the user commits and the healthcheck ran before the commit, run it once more now as the very last
-action and append its findings to the report ([Verify order](#verify-and-deliver)).
+action and append its findings to the report (the order at the top).
 
 ## Engine gaps
 
@@ -238,7 +238,8 @@ Show:
 - run vs recording: the table and every difference, awaiting the user's decision (n/a when the
   test was not run or did not pass);
 - the report and PR description draft;
+- the profile updates this run found, as a diff;
 - the git options (branch, commit, PR) for the user to pick.
 
-Wait for an explicit answer on each difference, each finding and each git option. Then offer the
-profile updates ([phases/profile.md#updates](profile.md#updates)).
+Wait for an explicit answer on each difference, each finding, each profile update and each git
+option. A post-commit healthcheck re-run, if any, is the last action.
