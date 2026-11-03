@@ -4,6 +4,9 @@ Compile, run, compare the run with the recording, review, report, and offer git.
 
 **One order, used everywhere:** compile, run, regression runs, healthcheck, standards, compare with
 recording, report, git. Fix rounds happen inside the run (and any regression run) until it passes.
+One exception: if this run's changes are not committed when the healthcheck runs and the user commits
+at the Git step, the healthcheck runs once more as the very last action and its findings are appended
+to the report.
 
 Be honest about verification: say what compiled, what ran, which rows passed and what was not run.
 Try the commands yourself first. If one fails for an environment reason (a build that cannot run
@@ -36,8 +39,8 @@ Never run against an environment without the user's yes. Ask:
    none: a plain run with the environment from the project's `customer.centertest.properties`,
    the usual case. Then offer each of `project.build.profiles`.
 
-Run only the new test (or the new rows of it): take `project.build.run` (or the command per
-`runCommand`) with `{profile}` and `{testClass}` filled in; with no profile, leave the
+Run only the new test (or the new rows of it): the command is `project.build.run`, or the one per
+`runCommand` when the profile sets it; fill in `{profile}` and `{testClass}`; with no profile, leave the
 profile argument (`-Pprofile={profile}`) out. When `project.build.run` is `null`, the project's
 `bootRun` reads `-P` properties (`project.build.bootRunProperties`) but none that selects a test:
 ask how this project runs a single test (often `-Pprofile=… -Pfilter=…` or a suite file); don't
@@ -71,8 +74,8 @@ round; the report then says what still fails.
 
 Then:
 1. **Screen first.** When a widget is not found (`WI-005`) or a click times out,
-   check the screen before the id: look at the last screenshot and the page title the narrative shows first. If the page is
-   not where the step expected (still blocked by underwriting issues, a validation error, a
+   check the screen before the id: look at the last screenshot and the page title the narrative
+   shows first. If the page is not where the step expected (still blocked by underwriting issues, a validation error, a
    warning to accept, another wizard step), the missing widget is a symptom: handle that screen
    (the project's blocker helper, the missing required field, the accepted warning) instead of
    patching the id.
@@ -104,9 +107,9 @@ user's decision, and the fix follows [Fix rounds](#fix-rounds), asking before ea
 ## Healthcheck
 
 Invoke the `centertest-healthcheck` skill (as a skill, never by script path). It analyses the
-**last commit**, not uncommitted files; say so. If the generated files are not committed yet, tell
-the user the check will see nothing of them until the commit, and offer to run it again after
-[Git](#git) has committed.
+**last commit**, not uncommitted files; say so. If this run's changes are not committed yet, say in
+the healthcheck result that it saw none of them; the one re-run after a commit at
+[Git](#git) is the exception in the order at the top of this file.
 
 Report findings **in the files this run changed only**, grouped by file. Findings elsewhere are
 not listed. Delete the report folder the skill wrote when it is done. Fix nothing until the user
@@ -133,7 +136,8 @@ After the healthcheck, before the comparison and report. Per `standardsSkill`:
 
 ## Compare with recording
 
-Only when the input was a recording and the run passed (otherwise n/a). Compare **screen by screen** (design:
+Only when the input was a recording and the run passed (otherwise n/a). Compare
+**screen by screen** (design:
 the run's screens against the recording's), per recorded step of the plan (`plan.steps`, skipping
 those the plan dropped as navigation, retries or verify-only):
 
@@ -206,7 +210,8 @@ commit, PR; the user picks which. The repo is on GitHub or Azure DevOps: read th
   The message follows the project's convention and references the issue or work item.
 - **PR:** the PR description draft from [Report](#report), the issue or work item linked.
 
-If the healthcheck was skipped for lack of a commit, offer to run it after the commit.
+If the user commits and the healthcheck ran before the commit, run it once more now as the very last
+action and append its findings to the report ([Verify order](#verify-and-deliver)).
 
 ## Engine gaps
 
