@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import schema  # noqa: E402
 import flow_match  # noqa: E402
 import data_match  # noqa: E402
+import restart  # noqa: E402
 import find_getter  # noqa: E402  vendored: byte-identical to plugins/cssid-finder/scripts/find_getter.py
 
 APPS = {"PolicyCenter": "pc", "BillingCenter": "bc", "ClaimCenter": "cc", "ContactManager": "ab"}
@@ -1711,6 +1712,7 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None) -> 
         "apps": [], "steps": [], "review": [], "retries": [], "blockers": [], "navigation": [], "noteChecks": [],
         "transactionDates": [], "verifyOnly": [], "imports": [],
         "facadeSequence": [], "existingTests": [], "dcColumns": [], "dataRowCandidates": [],
+        "restartCandidates": [], "seedPointCandidates": [],
     }
     recorded_steps = session.get("steps") or []
     # checks marked "Remove check" in the recorder's review stay in session.json with removed: true
@@ -1807,6 +1809,9 @@ def analyse(plan: dict, recorded_steps: list, read_file, project: dict) -> None:
         plan["facadeSequence"] = flow_match.facade_sequence(plan, facades)
         folders = ((project.get("folders") or {}).get("value") or {}).get("tests") or {}
         plan["existingTests"] = flow_match.existing_tests(plan["facadeSequence"], folders, None)
+    effects = (project.get("componentEffects") or {}).get("value") or []
+    plan["restartCandidates"] = restart.restart_candidates(plan, plan["facadeSequence"], effects)
+    plan["seedPointCandidates"] = restart.seed_points(plan)
     workbooks = ((project.get("dataWorkbooks") or {}).get("value") or {}).get("workbooks")
     if workbooks:
         plan["dcColumns"] = data_match.dc_columns(plan, workbooks)
