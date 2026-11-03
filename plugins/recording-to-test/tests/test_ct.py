@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -54,6 +56,14 @@ class SchemaVersionTest(unittest.TestCase):
             self.assertIn(key, schema.PLAN_FIELDS)
 
 
+def quiet_main(argv):
+    """(exit code, stdout, stderr) of ct.main, so the suite prints only unittest's own lines."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = ct.main(argv)
+    return code, out.getvalue(), err.getvalue()
+
+
 class DispatcherTest(unittest.TestCase):
     def test_commands_are_module_function_strings(self):
         self.assertEqual(set(ct.COMMANDS), {"scan", "parse", "xlsx", "narrate", "profile", "tools", "gap-report"})
@@ -68,16 +78,19 @@ class DispatcherTest(unittest.TestCase):
             self.assertIn(command, text)
 
     def test_unknown_command_exits_2(self):
-        self.assertEqual(ct.main(["nope"]), 2)
+        code, _, err = quiet_main(["nope"])
+        self.assertEqual((code, err.startswith("Error: unknown command: nope")), (2, True))
 
     def test_no_command_exits_2(self):
-        self.assertEqual(ct.main([]), 2)
+        code, out, _ = quiet_main([])
+        self.assertEqual((code, out.startswith("usage: ct.py")), (2, True))
 
     def test_missing_module_exits_2(self):
         saved = dict(ct.COMMANDS)
         ct.COMMANDS["ghost"] = "no_such_module_here:main"
         try:
-            self.assertEqual(ct.main(["ghost"]), 2)
+            code, _, err = quiet_main(["ghost"])
+            self.assertEqual((code, "command ghost is not available" in err), (2, True))
         finally:
             ct.COMMANDS.clear()
             ct.COMMANDS.update(saved)
@@ -97,6 +110,13 @@ class DispatcherTest(unittest.TestCase):
                              capture_output=True, text=True, check=True).stdout
         for command in ct.COMMANDS:
             self.assertIn(command, out)
+
+
+class QuietTest(unittest.TestCase):
+    def test_dispatcher_tests_print_nothing_on_stdout(self):
+        run = subprocess.run([sys.executable, "-m", "unittest", "test_ct.DispatcherTest"], cwd=HERE,
+                             capture_output=True, text=True)
+        self.assertEqual((run.returncode, run.stdout, "Error:" in run.stderr), (0, "", False))
 
 
 if __name__ == "__main__":
