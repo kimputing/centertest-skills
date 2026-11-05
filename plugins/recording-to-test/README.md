@@ -11,7 +11,8 @@ assertions.
 
 ## Prerequisites
 
-- Python 3.9+ (no packages needed)
+- Python 3 (no packages needed). CI tests on Python 3.14; older versions down to 3.9 may still work
+  but aren't tested.
 - A CenterTest project whose generated page objects are available: the `*-generated` dependency in
   the Gradle/Maven cache (it bundles `cssids/`), or a `*-generated` checkout next to the project.
 - Optional, for recordings with voice narration: `ffmpeg`, `whisper.cpp` (`whisper-cli`) and a ggml
