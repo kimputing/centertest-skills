@@ -95,11 +95,40 @@ class CoveringSuite(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             eir_cover.print_cover(report, "Cover-Breadth", "CMD")
-        self.assertIn("COVERING SUITE: 3 of 4 scenarios keep the full run's breadth: 2 test methods, "
+        self.assertIn("COVERING SUITE: 3 of 4 scenarios keep the breadth of the full run: 2 test methods, "
                       "2 product coverages, 2 line/jurisdiction pairs", out.getvalue())
         self.assertIn("GL_SubmissionTest C: 1 test; 2 coverages (GLLine Liquor Liability, GLLine Pollution); "
                       "1 jurisdiction (GL TX)", out.getvalue())
         self.assertIn('"Name": "Cover-Breadth"', out.getvalue())
+
+    def write_suites(self, *suites):
+        resources = os.path.join(self.root, "src", "main", "resources")
+        os.makedirs(resources, exist_ok=True)
+        with open(os.path.join(resources, "CenterTestSuiteList.json"), "w") as fh:
+            json.dump({"CenterTestSuites": [{"Name": n, "List": entries} for n, entries in suites]}, fh)
+
+    def test_what_a_suite_misses_and_the_fewest_scenarios_to_add(self):
+        self.write_suites(("Smoke", ["GL_SubmissionTest run A"]))
+        report = eir_cover.cover_report(self.root, "src", self.cssids, "smoke")  # suite names: any case
+        # A runs the submission flow, Liquor and AZ: missing the renewal flow, Pollution and TX
+        self.assertEqual(report["missing"], {"test": 1, "coverage": 1, "jurisdiction": 1})
+        self.assertEqual([p["scenario"] for p in report["picks"]],
+                         [["GL_SubmissionTest", "run", "C"], ["GL_RenewalTest", "run", "R1"]])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            eir_cover.print_cover(report, "Cover-Smoke", None)
+        self.assertIn("MISSES 1 test methods, 1 product coverages, 1 line/jurisdiction pairs", out.getvalue())
+        self.assertIn("Adding 2 scenario(s) closes it:", out.getvalue())
+
+    def test_measured_against_another_suite_the_suites_own_reach_counts(self):
+        self.write_suites(("Smoke", ["GL_SubmissionTest run C"]), ("Regression", ["GL_SubmissionTest run (A|B)"]))
+        report = eir_cover.cover_report(self.root, "src", self.cssids, "Smoke", of="Regression")
+        # Regression's breadth: the submission flow, both coverages, AZ; C (not in it) still covers all but AZ
+        self.assertEqual(report["items"], {"test": 1, "coverage": 2, "jurisdiction": 1})
+        self.assertEqual(report["misses"], [("jurisdiction", "GL", "AZ")])
+        self.assertEqual([p["scenario"] for p in report["picks"]], [["GL_SubmissionTest", "run", "A"]])
+        self.assertEqual(eir_cover.cover_report(self.root, "src", self.cssids, "Nope"),
+                         {"error": "no suite named 'Nope' in CenterTestSuiteList.json"})
 
     def test_without_a_generated_project_it_still_covers_every_flow(self):
         report = eir_cover.cover_report(self.root, "src", None)

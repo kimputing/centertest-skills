@@ -104,9 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
-    p.add_argument("--cover", action="store_true",
+    p.add_argument("--cover", nargs="?", const="", metavar="SUITE",
                    help="The fewest scenarios that still run every test method, select every product coverage and run "
-                        "every line in every jurisdiction the full regression does: a suite and its command")
+                        "every line in every jurisdiction the full regression does: a suite and its command. With a "
+                        "suite name: what that suite misses, and the fewest scenarios to add")
+    p.add_argument("--of", metavar="SUITE",
+                   help="With --cover: measure against this suite instead of every scenario that runs")
     p.add_argument("--scenario", nargs=2, metavar=("TEST", "CODE"),
                    help="Everything one scenario enters: its DataCombination row (TEST = test class or DC workbook, "
                         "CODE = row code) and every row it references, as a tree, with the tests and suites that run it")
@@ -211,17 +214,18 @@ def main():
         print(f"\n  CenterTest weekly: {len(args.weekly)} project(s), last {args.days} days")
         sys.exit(run_weekly(config, args.weekly, args.days, args.cssids))
 
-    if args.cover:
+    if args.cover is not None:
         from eir_cover import cover_report, print_cover
         from eir_impact import suite_command
         from eir_json import emit
         from eir_screens import find_cssids_dir
         report = cover_report(config.repository_dir, config.source_root,
-                              find_cssids_dir(config.repository_dir, args.cssids))
-        command = suite_command(config.repository_dir, "Cover-Breadth")
-        emit(dict(report, suite="Cover-Breadth", command=command))
-        print_cover(report, "Cover-Breadth", command)
-        sys.exit(0)
+                              find_cssids_dir(config.repository_dir, args.cssids), args.cover or None, args.of)
+        name = f"Cover-{re.sub(r'[^A-Za-z0-9]+', '', args.cover)[:40]}" if args.cover else "Cover-Breadth"
+        command = suite_command(config.repository_dir, name)
+        emit(dict(report, suite_name=name, command=command))
+        print_cover(report, name, command)
+        sys.exit(2 if report.get("error") else 0)
 
     if args.scenario:
         from eir_json import emit

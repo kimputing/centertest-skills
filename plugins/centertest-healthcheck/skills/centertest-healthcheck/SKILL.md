@@ -125,7 +125,10 @@ Picks the fewest scenarios that still run every test method once, select every p
 full run selects and run every line in every jurisdiction it runs in (greedy set cover over the
 scenarios a test runs; ties in name order). Prints "N of M scenarios", the first picks with what each
 adds, and a suite `Cover-Breadth` with its command. Use it for a smoke or pre-release run, or after an
-environment refresh. Say what it does not keep: repeated scenarios of one flow with other data (limits,
+environment refresh. `--cover SUITE` says what an existing suite misses (test methods, coverages,
+line/jurisdiction pairs, named) and the fewest scenarios to add; `--of REGRESSION` measures it against
+another suite (a PolicyCenter smoke suite against the PolicyCenter regression) instead of everything
+that runs. A suite's own scenarios count even when the reference suite does not contain them. Say what it does not keep: repeated scenarios of one flow with other data (limits,
 options), which find data-specific defects. Offer the suite through `suite-builder` (or `picker --from`
 the `--json` result to trim it), as for `--uses`.
 

@@ -9,6 +9,10 @@ picks, again and again, the scenario that adds the most items not covered yet (t
 name order), until every item is covered. The picks come back as suite entries (vendored
 suite-builder) and one command -- a smoke or pre-release run that still touches every flow, coverage
 and jurisdiction.
+
+With a suite (--cover Smoke): what that suite leaves out of the breadth, and the fewest scenarios to
+add to close it. --of Regression measures against another suite instead of everything that runs
+(a PolicyCenter smoke suite against the PolicyCenter regression, not against BillingCenter's flows).
 """
 
 from __future__ import annotations
@@ -51,11 +55,43 @@ def breadth_items(repo_dir: str, source_root: str, cssids_dir: str | None):
     return scenarios, every
 
 
-def cover_report(repo_dir: str, source_root: str, cssids_dir: str | None) -> dict:
-    """The greedy cover: picks in order with what each adds, as suite entries."""
+def _suite_scenarios(repo_dir: str, source_root: str, name: str) -> set | None:
+    """The scenarios a suite of CenterTestSuiteList.json runs (as CenterTest resolves it); None if no such suite."""
+    import suite as suites
+    path = suites.find_suite_file(repo_dir)
+    if not os.path.isfile(path):
+        return None
+    doc, _text = suites.load_suites(path)
+    if not any(str(s.get("Name", "")).lower() == name.lower() for s in doc["CenterTestSuites"]):
+        return None
+    name = next(str(s["Name"]) for s in doc["CenterTestSuites"] if str(s.get("Name", "")).lower() == name.lower())
+    return set(suites.resolve_suite(doc, name, suites.scan(repo_dir, source_root))["scenarios"])
+
+
+def cover_report(repo_dir: str, source_root: str, cssids_dir: str | None, suite: str | None = None,
+                 of: str | None = None) -> dict:
+    """The greedy cover: picks in order with what each adds, as suite entries. With `suite`: what it misses
+    of the breadth of `of` (default: every scenario that runs) and the fewest scenarios of `of` to add."""
     import suite as suites
     scenarios, every = breadth_items(repo_dir, source_root, cssids_dir)
-    left, picks = set(every), []
+    out = {}
+    for label, name in (("suite", suite), ("of", of)):
+        if name:
+            found = _suite_scenarios(repo_dir, source_root, name)
+            if found is None:
+                return {"error": f"no suite named {name!r} in CenterTestSuiteList.json"}
+            out[label] = found
+    every_scenario = scenarios
+    if "of" in out:
+        scenarios = {s: items for s, items in scenarios.items() if s in out["of"]}
+        every = set().union(*scenarios.values()) if scenarios else set()
+    left, picks, misses = set(every), [], None
+    if "suite" in out:
+        # what the suite's own scenarios reach counts, in the reference suite or not
+        has = out["suite"] & set(every_scenario)
+        left -= set().union(*(every_scenario[s] for s in has)) if has else set()
+        misses = sorted(left)
+        scenarios = {s: items for s, items in scenarios.items() if s not in has}
     order = sorted(scenarios)
     while left:
         best = max(order, key=lambda s: len(scenarios[s] & left))  # max() keeps the first of equals
@@ -67,9 +103,13 @@ def cover_report(repo_dir: str, source_root: str, cssids_dir: str | None) -> dic
     selected = {tuple(p["scenario"]) for p in picks}
     tests = [t for t in suites.scan(repo_dir, source_root) if any(c == t["class"] for c, _m, _code in selected)]
     kinds = ("test", "coverage", "jurisdiction")
-    return {"scenarios": len(selected), "of": len(scenarios),
-            "items": {k: sum(1 for i in every if i[0] == k) for k in kinds},
-            "picks": picks, "entries": suites.compact(selected, tests)}
+    report = {"scenarios": len(selected), "of": len(scenarios),
+              "items": {k: sum(1 for i in every if i[0] == k) for k in kinds},
+              "picks": picks, "entries": suites.compact(selected, tests), "measured_against": of}
+    if misses is not None:
+        report.update(suite=suite, suite_scenarios=len(out["suite"]), misses=misses,
+                      missing={k: sum(1 for i in misses if i[0] == k) for k in kinds})
+    return report
 
 
 def _label(item: tuple) -> str:
@@ -77,10 +117,28 @@ def _label(item: tuple) -> str:
 
 
 def print_cover(report: dict, name: str, command: str | None) -> None:
+    if report.get("error"):
+        print(f"  {report['error']}")
+        return
     items = report["items"]
-    print(f"  COVERING SUITE: {report['scenarios']} of {report['of']} scenarios keep the full run's breadth: "
-          f"{items['test']} test methods, {items['coverage']} product coverages, "
-          f"{items['jurisdiction']} line/jurisdiction pairs")
+    against = f"suite {report['measured_against']}" if report.get("measured_against") else "the full run"
+    breadth = (f"{items['test']} test methods, {items['coverage']} product coverages, "
+               f"{items['jurisdiction']} line/jurisdiction pairs")
+    if "misses" in report:
+        miss = report["missing"]
+        print(f"  {report['suite']} ({report['suite_scenarios']} scenarios) against {against} ({breadth}):")
+        if not report["misses"]:
+            print("  it misses nothing: every flow, coverage and line/jurisdiction is in it.")
+            return
+        print(f"  MISSES {miss['test']} test methods, {miss['coverage']} product coverages, "
+              f"{miss['jurisdiction']} line/jurisdiction pairs")
+        for kind in ("test", "coverage", "jurisdiction"):
+            names = [_label(i) for i in report["misses"] if i[0] == kind]
+            if names:
+                print(f"    {kind}: {', '.join(names[:10])}{', ...' if len(names) > 10 else ''}")
+        print(f"\n  Adding {report['scenarios']} scenario(s) closes it:")
+    else:
+        print(f"  COVERING SUITE: {report['scenarios']} of {report['of']} scenarios keep the breadth of {against}: {breadth}")
     for p in report["picks"][:15]:
         cls, method, code = p["scenario"]
         kinds = {k: [_label(i) for i in p["adds"] if i[0] == k] for k in ("test", "coverage", "jurisdiction")}
@@ -90,7 +148,8 @@ def print_cover(report: dict, name: str, command: str | None) -> None:
         print(f"    {cls} {code}: {adds}")
     if len(report["picks"]) > 15:
         print(f"    ... {len(report['picks']) - 15} more, each adding less")
-    print("\n  As a suite for CenterTestSuiteList.json:\n")
+    print("\n  As a suite for CenterTestSuiteList.json" + (" (or add these entries to it)" if "misses" in report else "")
+          + ":\n")
     print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))
     if command:
         print(f"\n  Then: {command}")
