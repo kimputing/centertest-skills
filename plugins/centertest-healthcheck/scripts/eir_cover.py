@@ -174,14 +174,19 @@ def suite_breadth(repo_dir: str, source_root: str, cssids_dir: str | None) -> li
         reached = set().union(*(scenarios[s] for s in chosen)) if chosen else set()
         return dict({"suite": name, "scenarios": len(chosen)}, **{k: sum(1 for i in reached if i[0] == k) for k in kinds})
 
-    rows = [row("(full run)", set(scenarios))]
+    rows, union = [row("(full run)", set(scenarios))], set()
     for s in doc["CenterTestSuites"]:
         name = str(s.get("Name", ""))
         try:
             chosen = set(suites.resolve_suite(doc, name, tests)["scenarios"]) & set(scenarios)
         except Exception:  # a broken suite (rule 14005 names it) reaches nothing
             chosen = set()
+        union |= chosen
         rows.append(row(name, chosen))
+    # what the full run reaches that no suite does: it runs only when someone runs everything
+    reached = set().union(*(scenarios[s] for s in union)) if union else set()
+    rows[0]["no_suite"] = sorted(every - reached)
+    rows[0]["any_suite"] = {k: sum(1 for i in reached if i[0] == k) for k in kinds}
     return rows
 
 
@@ -200,6 +205,13 @@ def print_suite_breadth(rows: list[dict]) -> None:
     idle = [r["suite"] for r in ranked if not r["scenarios"]]
     if idle:
         print(f"  Run nothing ({len(idle)}): {', '.join(idle)}")
+    missing = full.get("no_suite") or []
+    if missing:
+        flows = [i[1] for i in missing if i[0] == "test"]
+        others = len(missing) - len(flows)
+        print(f"  In no suite: {len(flows)} flow(s)" + (f" ({', '.join(flows[:6])}{', ...' if len(flows) > 6 else ''})" if flows else "")
+              + (f", {others} coverage or line/jurisdiction item(s)" if others else "")
+              + " - they run only in a full run")
 
 
 def suite_breadth_rows(rows: list[dict]) -> list[list]:

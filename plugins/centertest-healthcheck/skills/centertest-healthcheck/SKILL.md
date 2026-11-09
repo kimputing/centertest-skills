@@ -51,7 +51,8 @@ The terminal summary ends with the trust blockers, the test data, the screens an
    on it (`not here, on other lines`) — state-specific rules and forms of that line nobody exercises.
    Then **how much of the full run each suite reaches** (flows, coverages, line/jurisdictions as a share):
    name the suite that is the real regression, a "regression" or "smoke" suite that reaches little, and
-   the suites that run nothing; offer `--cover SUITE` for what one misses.
+   the suites that run nothing, and what **no suite** reaches (flows, coverages, line/jurisdictions that
+   run only when everything runs); offer `--cover SUITE` for what one misses.
 4. **Offer the next step that fits** (and run it only when asked):
    discarded `.equals()` → `--fix 15018` (diff first); suite entries that run nothing → the
    `suite-builder` skill's `doctor`; unused codes → `ddt-tools` cleanup report; a branch to merge →

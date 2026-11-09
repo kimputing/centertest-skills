@@ -734,6 +734,21 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 
+def _no_suite_html(missing) -> str:
+    """Flows, coverages and line/jurisdictions the full run reaches and no suite does."""
+    if not missing:
+        return ""
+    labels = {"test": "Flows", "coverage": "Coverages", "jurisdiction": "Line/jurisdictions"}
+    groups = "".join(
+        f'<div class="chips-label">{labels[k]} ({len(names)})</div><div class="chips">'
+        + "".join(f'<span class="chip warn">{_html_escape(n)}</span>' for n in names[:40])
+        + (f'<span class="chip">+{len(names) - 40}</span>' if len(names) > 40 else "") + "</div>"
+        for k in ("test", "coverage", "jurisdiction")
+        for names in [[i[1] if k == "test" else f"{i[1]} {i[2]}" for i in missing if i[0] == k]] if names)
+    return (f'<details class="more"><summary>{len(missing)} reached by no suite: they run only when everything '
+            f'runs</summary>{groups}</details>')
+
+
 def _suites_panel_html(rows) -> str:
     """'How much of the full run each suite reaches': flows (test methods), product coverages and
     line/jurisdiction pairs as a share of what every scenario together reaches."""
@@ -762,6 +777,7 @@ def _suites_panel_html(rows) -> str:
             '<th class="num">Flows</th><th class="num">Coverages</th><th class="num">Jurisdictions</th></tr></thead>'
             f'<tbody>{body}</tbody></table></div>'
             + (f'<p class="screens-note">Run nothing ({len(idle)}): {_html_escape(", ".join(idle))}</p>' if idle else "")
+            + _no_suite_html(full.get("no_suite") or [])
             + '</div>\n')
 
 

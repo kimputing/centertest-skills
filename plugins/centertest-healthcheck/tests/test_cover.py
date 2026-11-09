@@ -134,7 +134,8 @@ class CoveringSuite(unittest.TestCase):
         import eir_report
         self.write_suites(("Smoke", ["GL_SubmissionTest run A"]), ("All", ["GL_.*"]), ("Empty", ["Nothing.*"]))
         rows = eir_cover.suite_breadth(self.root, "src", self.cssids)
-        self.assertEqual(rows[0], {"suite": "(full run)", "scenarios": 4, "test": 2, "coverage": 2, "jurisdiction": 2})
+        self.assertEqual(rows[0], {"suite": "(full run)", "scenarios": 4, "test": 2, "coverage": 2, "jurisdiction": 2,
+                                   "no_suite": [], "any_suite": {"test": 2, "coverage": 2, "jurisdiction": 2}})
         self.assertEqual(rows[1], {"suite": "Smoke", "scenarios": 1, "test": 1, "coverage": 1, "jurisdiction": 1})
         self.assertEqual(rows[2]["scenarios"], 4)
         out = io.StringIO()
@@ -147,6 +148,21 @@ class CoveringSuite(unittest.TestCase):
         self.assertIn('<td class="num" title="1 of 2"><span class="share"><i style="width:50%"></i></span>50%</td>', html)
         self.assertIn("Run nothing (1): Empty", html)
         self.assertEqual(eir_cover.suite_breadth_rows(rows)[1], ["Smoke", 1, 1, 0.5, 1, 0.5, 1, 0.5])
+        self.assertEqual(rows[0]["no_suite"], [])  # "All" runs everything
+
+    def test_what_no_suite_reaches(self):
+        import eir_report
+        self.write_suites(("Smoke", ["GL_SubmissionTest run A"]))
+        rows = eir_cover.suite_breadth(self.root, "src", self.cssids)
+        self.assertEqual(rows[0]["no_suite"], [("coverage", "GLLine", "Pollution"), ("jurisdiction", "GL", "TX"),
+                                               ("test", "GL_RenewalTest.run")])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            eir_cover.print_suite_breadth(rows)
+        self.assertIn("In no suite: 1 flow(s) (GL_RenewalTest.run), 2 coverage or line/jurisdiction item(s)", out.getvalue())
+        html = eir_report._suites_panel_html(rows)
+        self.assertIn("3 reached by no suite: they run only when everything runs", html)
+        self.assertIn('<span class="chip warn">GL_RenewalTest.run</span>', html)
         os.remove(os.path.join(self.root, "src", "main", "resources", "CenterTestSuiteList.json"))
         self.assertIsNone(eir_cover.suite_breadth(self.root, "src", self.cssids))
 
