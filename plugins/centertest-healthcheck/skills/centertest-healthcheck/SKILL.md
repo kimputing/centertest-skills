@@ -115,6 +115,20 @@ and lists only the findings that changed, trust blockers first:
   --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run. To trim it
   first, save the `--json` result and open `suite.py picker --from <file>`: the plan comes pre-ticked.
 
+### The smallest suite with the full run's breadth
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --cover
+```
+
+Picks the fewest scenarios that still run every test method once, select every product coverage the
+full run selects and run every line in every jurisdiction it runs in (greedy set cover over the
+scenarios a test runs; ties in name order). Prints "N of M scenarios", the first picks with what each
+adds, and a suite `Cover-Breadth` with its command. Use it for a smoke or pre-release run, or after an
+environment refresh. Say what it does not keep: repeated scenarios of one flow with other data (limits,
+options), which find data-specific defects. Offer the suite through `suite-builder` (or `picker --from`
+the `--json` result to trim it), as for `--uses`.
+
 ### Everything one scenario enters
 
 ```bash

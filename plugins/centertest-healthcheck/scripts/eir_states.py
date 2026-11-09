@@ -52,9 +52,9 @@ def line_of(rel_path: str) -> str | None:
     return base.split("_")[0] if "_" in base else None
 
 
-def state_coverage(repo_dir: str, cssids_dir: str | None) -> list[dict] | None:
-    """[{line, states: {code: scenarios}, elsewhere: [codes]}] for lines whose scenarios name a state;
-    None without a Jurisdiction typelist."""
+def rows_by_state(repo_dir: str, cssids_dir: str | None) -> dict[tuple, set] | None:
+    """{(line, state code): ("dc", workbook, code) keys of the enabled DataCombination rows of that line whose
+    reached rows name the state}; None without a Jurisdiction typelist."""
     codes = jurisdictions(cssids_dir)
     if not codes:
         return None
@@ -71,7 +71,7 @@ def state_coverage(repo_dir: str, cssids_dir: str | None) -> list[dict] | None:
                       if i < len(cells) and cells[i].strip().lower() in codes}
             if states:
                 named[_key(t, code)] = states
-    per_line: dict[str, dict[str, int]] = {}
+    out: dict[tuple, set] = {}
     for t in tables:
         line = line_of(t["rel"]) if t["dc"] else None
         if not line:
@@ -87,10 +87,20 @@ def state_coverage(repo_dir: str, cssids_dir: str | None) -> list[dict] | None:
                     if nxt not in seen:
                         seen.add(nxt)
                         frontier.append(nxt)
-            states = set().union(*(named.get(k, set()) for k in seen))
-            counts = per_line.setdefault(line, {})
-            for s in states:
-                counts[s] = counts.get(s, 0) + 1
+            for state in set().union(*(named.get(k, set()) for k in seen)):
+                out.setdefault((line, state), set()).add(start)
+    return out
+
+
+def state_coverage(repo_dir: str, cssids_dir: str | None) -> list[dict] | None:
+    """[{line, states: {code: scenarios}, elsewhere: [codes]}] for lines whose scenarios name a state;
+    None without a Jurisdiction typelist."""
+    rows = rows_by_state(repo_dir, cssids_dir)
+    if rows is None:
+        return None
+    per_line: dict[str, dict[str, int]] = {}
+    for (line, state), keys in rows.items():
+        per_line.setdefault(line, {})[state] = len(keys)
     everywhere = set().union(*per_line.values()) if per_line else set()
     return [{"line": line, "states": dict(sorted(states.items())), "elsewhere": sorted(everywhere - set(states))}
             for line, states in sorted(per_line.items(), key=lambda kv: (-len(kv[1]), kv[0])) if states]

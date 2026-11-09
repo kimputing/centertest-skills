@@ -25,6 +25,7 @@ scripts/
 │                        # --uses PATTERN: data rows naming a value -> DC rows reaching them (#Ref, joins, @Rel, engine scopes) -> tests + suite
 ├── eir_products.py      # Product coverages (generated <Line>_coverage_structure.json) selected by scenarios (eir_uses.reached_values, coverage-like tables only) + the tests that select each
 │                        # + option terms: options the scenarios set (eir_uses.term_values: Coverage/CovTerm/CovtermValue rows) and values that are not an option
+├── eir_cover.py         # --cover: greedy set cover of scenarios over test methods, product coverages, line/jurisdiction pairs -> suite
 ├── eir_states.py        # Jurisdictions per line (DC prefix): State/Jurisdiction cells of rows enabled scenarios reach, by generated TC_Jurisdiction code/name
 ├── eir_reach.py         # Forward reach from a test (per call: Facade.method, new Step, typed fields, superclasses); assertion vocabulary; rule 9010
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
