@@ -608,7 +608,8 @@ def _membership(doc: dict, tests: list[dict]) -> dict:
 
 def entries_from(path: str) -> tuple[str, list[str]]:
     """(suite name, entries) from a JSON file: a suite ({"Name", "List"}), a healthcheck --json / review result
-    (its rerun suite, or the "suite" and "entries" of --uses / --touches), or a plain list of entries."""
+    (its rerun suite, the "suite" and "entries" of --uses / --touches, or the "suite_name" and "entries" of
+    --cover - whose "suite" is the suite it measured, not the new one), or a plain list of entries."""
     with open(path, encoding="utf-8") as fh:
         doc = json.load(fh)
     if isinstance(doc, list):
@@ -618,7 +619,7 @@ def entries_from(path: str) -> tuple[str, list[str]]:
         return one.get("name", ""), list(one["entries"])
     if doc.get("List") is not None:
         return str(doc.get("Name", "")), list(doc["List"])
-    return str(doc.get("suite", "")), list(doc.get("entries") or [])
+    return str(doc.get("suite_name") or doc.get("suite", "")), list(doc.get("entries") or [])
 
 
 def write_picker(project, source_root, tests, suite_path, doc, preselect=None, out=None, start=None) -> str:

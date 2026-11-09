@@ -87,8 +87,11 @@ class SuiteTest(unittest.TestCase):
             "suite.json": {"Name": "Texas", "List": ["PA_SubmissionTest run tx_.*"]},
             "review.json": {"meta": {"rerun_suite": {"name": "Rerun-abc", "entries": ["PA_SubmissionTest run tx_Dallas"]}}},
             "uses.json": {"suite": "Uses-Texas", "entries": ["PA_SubmissionTest run tx_Austin"]},
+            # --cover Smoke: "suite" is the suite it measured; the additions are a new suite, never Smoke itself
+            "cover.json": {"suite": "Smoke", "suite_name": "Cover-Smoke", "entries": ["PA_SubmissionTest run tx_Austin"]},
         }
-        expected = {"suite.json": ("Texas", 2), "review.json": ("Rerun-abc", 1), "uses.json": ("Uses-Texas", 1)}
+        expected = {"suite.json": ("Texas", 2), "review.json": ("Rerun-abc", 1), "uses.json": ("Uses-Texas", 1),
+                    "cover.json": ("Cover-Smoke", 1)}
         for name, doc in sources.items():
             path = os.path.join(self.p, name)
             with open(path, "w") as fh:
