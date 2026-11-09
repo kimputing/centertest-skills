@@ -26,6 +26,7 @@ See [`skills/centertest-healthcheck/SKILL.md`](skills/centertest-healthcheck/SKI
 
 - **20+ analysis rules** — code statistics, naming conventions, complexity, security, CenterTest compliance
 - **Excel + HTML + Markdown reports** — summary sheet with one detail sheet per rule, plus a scored HTML dashboard
+- **Branch review** — `--review main feature/x` lists only what the branch introduced or fixed, writes a PR comment, exits 1 on a new trust blocker
 - **Git history analysis** — date range, monthly sampling, PR diff, specific commits
 - **Local-first** — analyzes working directory instantly, no clone needed
 - **Non-destructive git** — uses `git show` instead of checkout

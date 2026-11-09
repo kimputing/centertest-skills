@@ -10,6 +10,7 @@ scripts/
 ├── eir_git.py           # Non-destructive git (git show/ls-tree, no checkout)
 ├── eir_models.py        # Dataclasses: SourceCodeFile, ClassEntry, Method, Field, CommitInfo, RuleResult
 ├── eir_report.py        # HTML dashboard + Excel appendix + Markdown + terminal output
+├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution
 ├── rule_core.py         # Shared utilities: get_test_list, divide_by_package, split_camel_case
 └── rules/
@@ -81,6 +82,7 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 
 ## Gotchas
 
+- `--review` keys findings without position columns (`Row`) and with digits in grouped items replaced by `#`, so a moved row or a count going from 2x to 3x is not "new". Rules that error on either side are listed as not compared; an uncompared trust rule makes the verdict "Not verified" (exit 1).
 - `eir_analyzer.py` name is historical — the skill is centertest-healthcheck
 - Rule 9005 checks method-level `@DataDriven` (not just class-level)
 - Rules 9001, 9003, 9005, 9007 and 9008 scan the main class **and its inner classes** (tests often keep flow steps there). Inner-class findings are labelled `Outer.Inner`. The parser only collects direct inner classes, so a class nested inside an inner class is still not scanned.

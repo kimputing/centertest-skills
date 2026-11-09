@@ -11,6 +11,7 @@ Usage:
     eir_analyzer.py --list-rulesets
     eir_analyzer.py --set-path "/path/to/project"
     eir_analyzer.py --show-path
+    eir_analyzer.py --review main [feature/branch]
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/centertest-healthcheck/scripts/eir_analyzer.py
 """
@@ -82,6 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monthly", action="store_true", help="Sample one commit per month")
     p.add_argument("--pr", nargs=2, metavar=("TARGET", "SOURCE"),
                    help="PR diff mode: analyze diff between branches")
+    p.add_argument("--review", nargs="+", metavar="REV",
+                   help="Branch review: BASE [HEAD] (HEAD defaults to HEAD). Lists only the findings "
+                        "the branch introduced or fixed since its merge-base, writes a PR comment and "
+                        "exits 1 when it introduces a trust blocker")
 
     # Config management
     p.add_argument("--set-path", metavar="DIR", help="Save project path to config")
@@ -149,6 +154,16 @@ def main():
 
     # Build config from all layers
     config = EirConfig(args)
+
+    if args.review:
+        if len(args.review) > 2:
+            parser.error("--review takes BASE and optionally HEAD")
+        from eir_review import run_review
+        base_rev = args.review[0]
+        head_rev = args.review[1] if len(args.review) > 1 else "HEAD"
+        print(f"\n  CenterTest branch review: {head_rev} vs {base_rev}  ({config.repository_dir})")
+        suppressions = load_suppressions(os.path.join(config.repository_dir, "healthcheck"))
+        sys.exit(run_review(config, base_rev, head_rev, suppressions))
 
     # Banner
     print()

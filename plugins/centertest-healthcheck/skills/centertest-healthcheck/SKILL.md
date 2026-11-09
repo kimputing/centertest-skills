@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -43,6 +43,23 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 ```bash
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --rules "0001,1002,3001"
 ```
+
+### Review a branch (what it introduced)
+
+The question a reviewer asks of a tester's branch: what did *this branch* add or fix? The review
+compares the branch tip with its merge-base (exported with `git archive`; nothing is checked out)
+and lists only the findings that changed, trust blockers first:
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --ruleset CenterTestFull --review main feature/new-tests
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --ruleset CenterTestFull --review main   # HEAD vs main
+```
+
+- Writes `healthcheck/Review_<timestamp>.md`, a ready-to-paste PR comment; show it to the user.
+- Verdict: **Changes requested** (introduces a trust blocker, exit 1), **Mergeable with follow-ups**
+  (new non-blocking findings), **Clean**, or **Not verified** (a trust rule could not run on both sides, exit 1).
+- Reviews committed state; uncommitted changes are not included. Branch names fall back to `origin/<name>`.
+- Use it in a pipeline to block merges that add tests that cannot fail or data that cannot load.
 
 ### Git History Analysis
 
