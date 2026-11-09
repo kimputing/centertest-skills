@@ -560,14 +560,17 @@ def analyze_hierarchy():
                 if not any(rx.fullmatch(d) for d in dc_files):
                     results.append((f"  $references pattern: {pattern}", "NO_MATCH", "Matches no DC file"))
 
-    # Child DC files NOT covered by any class-inheritance pattern (informational)
+    # Child DC files NOT covered by any class-inheritance pattern. Informational only: the
+    # framework has no such check and class-inheritance entries are optional (and ignored for
+    # data resolution), so these rows are INFO, never issues, and only listed when the project
+    # declares class-inheritance entries at all.
     all_patterns = [p for patterns in class_entries.values() for p in patterns]
     parent_dcs = set(class_entries.keys())
-    for dc in dc_files:
+    for dc in dc_files if class_entries else []:
         if dc in parent_dcs:
             continue
         if not any(re.match(p, dc) for p in all_patterns):
-            results.append((dc, "UNCOVERED", "DC file not covered by any hierarchy pattern"))
+            results.append((dc, "INFO", "Not a child of any class-inheritance entry (optional feature)"))
 
     # $identifiers + $relationships (DC -> DC relationships)
     identifiers_raw = hierarchy.get("$identifiers", {})
@@ -1075,7 +1078,7 @@ def main():
     print(f"  Invalid hardcoded:     {len(invalid_hc)}")
 
     hierarchy = analyze_hierarchy()
-    hierarchy_issues = [r for r in hierarchy if r[1] not in ("OK", "MATCHED")]
+    hierarchy_issues = [r for r in hierarchy if r[1] not in ("OK", "MATCHED", "INFO")]
     print(f"  Hierarchy issues:      {len(hierarchy_issues)}")
 
     duplicates = analyze_duplicate_codes()

@@ -205,27 +205,12 @@ Always note which path produced a given report before comparing numbers across r
 Two more counts can differ dramatically between the paths and look alarming — they
 aren't a sign either implementation is broken:
 
-- **Hierarchy issues.** The fallback's `Hierarchy_Validation` sheet includes a bulk
-  `UNCOVERED` row for every DC file not matched by any class-inheritance (`extends`)
-  pattern — a one-row-per-DC inventory of non-use of that *optional* feature, not a
-  defect list. On a project that declares only one or two `extends` entries, that can be
-  the overwhelming majority of its rows. The real CenterTest engine
-  (`DataDrivenHierarchyValidator`) has no equivalent check at any severity, and
-  `DataDrivenHierarchyParser` documents outright that class-inheritance entries are
-  ignored for data resolution — so this bulk row has no counterpart in what actually
-  runs. Data Studio's hierarchy check mirrors the real validator's checks (`$references`,
-  `$identifiers`, `$relationships`) plus the generator's own `MISSING_FILE` check on a
-  class-inheritance parent, so its number reflects genuine validation issues rather than
-  an inventory dump. Expect Data Studio's hierarchy count to be much smaller for any
-  project that leans on `extends`.
-- **Orphaned files.** The fallback treats a Data file as "referenced" once it matches a
-  DC's `$references` scope pattern — it never checks whether any DC row actually
-  populates the corresponding `#`-column with a value. Data Studio derives "referenced"
-  from the reference GRAPH, which only gets an edge when a row's cell is actually
-  populated. A Data file whose `#column` is declared but always empty is therefore
-  "referenced" (not orphaned) to the fallback, but correctly orphaned to Data Studio —
-  so Data Studio can report *more* orphans than the fallback, the opposite direction from
-  the unused-codes correction.
+- **Hierarchy issues.** Both paths now count only genuine `$references` / `$identifiers` /
+  `$relationships` / parent-file problems. The fallback used to add an `UNCOVERED` issue for every
+  DC not matched by a class-inheritance (`extends`) pattern — an optional feature the engine ignores
+  for data resolution — which inflated its count (158 vs Data Studio's 9 on one client, 62 of 68
+  issues on another). Those rows are now `INFO`, listed only when the project declares
+  class-inheritance entries, and never counted.
 
 **Measured example, `ootb-v10-centertest`:** Data Studio additionally flags
 `InlandMarineData.xlsx` as orphaned (3 vs. the fallback's 2). It IS declared under
@@ -245,9 +230,9 @@ real client project this took the orphan list from 4 to 0, all four confirmed op
 real non-generated code.
 
 Same project, hierarchy issues: Data Studio
-reports 9 (genuine `$references`/`$identifiers`/`$relationships`/parent-file issues), the
-fallback reports 158, all but a handful of which are `UNCOVERED` rows for DCs the
-project's single `extends` entry doesn't happen to cover.
+reports 9 (genuine `$references`/`$identifiers`/`$relationships`/parent-file issues); the
+fallback used to report 158, all but a handful of them `UNCOVERED` rows for DCs the
+project's single `extends` entry doesn't cover. Those rows are now `INFO` and not counted.
 
 ### Report output (Data Studio's `--xlsx`)
 
