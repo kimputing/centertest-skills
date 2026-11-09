@@ -323,6 +323,8 @@ TRUST_RULES = {
               "the result of .equals() is thrown away, so the verification passes whatever the app shows"),
     "15005": ("Failures swallowed",
               "an empty catch block hides the exception, so the step reports success"),
+    "9003": ("Tests that read data they never load",
+             "the test reads the scenario's data row but has no @DataDriven, so the run has no data"),
     "14002": ("Datasources that do not exist",
               "the @DataDriven workbook is missing, so the test cannot load its data"),
     "14003": ("Test data codes that do not exist",
