@@ -259,6 +259,36 @@ def scenarios_using(repo_dir: str, pattern: str) -> dict[str, set[str]]:
     return result
 
 
+def suites_running(repo_dir: str, tests: list, selected: set) -> dict | None:
+    """{"suites": [(suite, scenarios of `selected` it runs)], "none": scenarios no suite runs}; None without
+    a suite file. Suites resolved as CenterTest does (vendored suite-builder engine)."""
+    import suite as suites
+    path = suites.find_suite_file(repo_dir)
+    if not selected or not os.path.isfile(path):
+        return None
+    try:
+        doc, _text = suites.load_suites(path)
+    except (OSError, ValueError):
+        return None
+    runs, covered = [], set()
+    for s in doc["CenterTestSuites"]:
+        name = str(s.get("Name", ""))
+        hit = suites.resolve_suite(doc, name, tests)["scenarios"] & selected
+        if hit:
+            runs.append((name, len(hit)))
+            covered |= hit
+    return {"suites": sorted(runs, key=lambda kv: (-kv[1], kv[0])), "none": len(selected - covered)}
+
+
+def _print_suites(report: dict) -> None:
+    s = report.get("in_suites")
+    if s is None:
+        return
+    parts = [f"{name} {n}" for name, n in s["suites"][:8]] + (["…"] if len(s["suites"]) > 8 else [])
+    print(f"\n  In suites: {', '.join(parts) if parts else 'none'}"
+          + (f"; {s['none']} scenario(s) no suite runs" if s["none"] else "; every one is in a suite"))
+
+
 def uses_report(repo_dir: str, source_root: str, pattern: str) -> dict:
     """The rows, the tests that run them, and suite entries for exactly those scenarios."""
     import suite as suites
@@ -276,7 +306,7 @@ def uses_report(repo_dir: str, source_root: str, pattern: str) -> dict:
                        "not_run": sorted(codes - {c for _cls, _m, c in run})})
     used = [t for t in tests if any(c == t["class"] for c, _m, _code in selected)]
     return {"pattern": pattern, "workbooks": per_dc, "scenarios": len(selected),
-            "entries": suites.compact(selected, used)}
+            "entries": suites.compact(selected, used), "in_suites": suites_running(repo_dir, tests, selected)}
 
 
 def suite_name(pattern: str) -> str:
@@ -297,6 +327,7 @@ def print_uses(report: dict, name: str, command: str | None) -> None:
     if not report["entries"]:
         print("\n  None of these rows runs (disabled, or no test reads the workbook).")
         return
+    _print_suites(report)
     import json
     print(f"\n  {report['scenarios']} scenario(s) run it. As a suite for CenterTestSuiteList.json:\n")
     print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))
@@ -359,10 +390,11 @@ def touches_report(repo_dir: str, source_root: str, pattern: str, cssids_dir: st
         tests = tests_reaching({page}, sources, {page: {getter}} if getter else None)
         per_page.append({"page": page + (f".{getter}" if getter else ""), "tests": sorted(tests)})
         reached |= set(tests)
-    scanned = [t for t in suites.scan(repo_dir, source_root) if t["class"] in reached]
+    all_tests = suites.scan(repo_dir, source_root)
+    scanned = [t for t in all_tests if t["class"] in reached]
     selected = set(suites.scenarios_of(scanned))
     return {"pattern": pattern, "pages": per_page, "tests": sorted(reached), "scenarios": len(selected),
-            "entries": suites.compact(selected, scanned)}
+            "entries": suites.compact(selected, scanned), "in_suites": suites_running(repo_dir, all_tests, selected)}
 
 
 def print_touches(report: dict, name: str, command: str | None) -> None:
@@ -376,6 +408,7 @@ def print_touches(report: dict, name: str, command: str | None) -> None:
     if not report["entries"]:
         print("\n  No test reaches it (or its tests have no enabled rows).")
         return
+    _print_suites(report)
     import json
     print(f"\n  {len(report['tests'])} test(s), {report['scenarios']} scenario(s). As a suite for CenterTestSuiteList.json:\n")
     print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))

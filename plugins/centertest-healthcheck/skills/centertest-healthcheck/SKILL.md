@@ -108,7 +108,8 @@ and lists only the findings that changed, trust blockers first:
 Finds every test data row whose value cell matches the pattern (whole cell, case-insensitive regex:
 `"Hired Auto.*|HiredAuto"`), follows references to it (`#Ref`, `#A<>#B` joins, `@Rel` — scoped as the
 reference check scopes them) and prints per DC workbook the rows, the tests that run them, rows that are
-disabled, and a suite `Uses-<Pattern>` that runs exactly those scenarios plus its command. Use it when a
+disabled, which suites run how many of them (and how many no suite runs — say that first: regression never
+exercises those), and a suite `Uses-<Pattern>` that runs exactly those scenarios plus its command. Use it when a
 product change (a coverage, a form, a state) needs a targeted rerun. "No scenario exercises it" is an
 answer too: say so and point at the product coverage panel. Offer to add the suite with the
 `suite-builder` skill (`create … --entry`, dry run first).

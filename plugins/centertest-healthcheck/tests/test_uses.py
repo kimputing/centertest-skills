@@ -147,6 +147,16 @@ public class CreateGL { void go() { var w = new SubmissionWizardPage(getContext(
         self.assertEqual(widget_targets(fixtures, "No-Such-Widget"), [])
         self.assertEqual(widget_targets(None, "A-B"), [])
 
+    def test_which_suites_run_the_scenarios(self):
+        from eir_uses import uses_report
+        res = os.path.join(self.root, "src", "main", "resources")
+        os.makedirs(res, exist_ok=True)
+        with open(os.path.join(res, "CenterTestSuiteList.json"), "w") as fh:
+            json.dump({"CenterTestSuites": [{"Name": "Smoke", "List": ["GL_SubmissionTest run Direct"]},
+                                            {"Name": "Regression", "List": ["GL_SubmissionTest"]}]}, fh)
+        report = uses_report(self.root, "src", "Liquor Liability")
+        self.assertEqual(report["in_suites"], {"suites": [("Regression", 3), ("Smoke", 1)], "none": 1})
+
     def test_nothing_uses_it(self):
         from eir_uses import print_uses, uses_report
         out = io.StringIO()
