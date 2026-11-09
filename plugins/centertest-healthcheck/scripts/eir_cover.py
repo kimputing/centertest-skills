@@ -22,9 +22,45 @@ import json
 import os
 
 
-def breadth_items(repo_dir: str, source_root: str, cssids_dir: str | None):
+def _option_items(repo_dir: str, cssids_dir: str | None) -> dict[tuple, set]:
+    """{("dc", workbook, code) of an enabled row: ("option", line, "Coverage / Term = Option") items it selects}:
+    the limit and deductible options its reached Coverage / CovTerm / CovtermValue rows set (eir_products)."""
+    from eir_products import option_index, options_of
+    from eir_uses import _DISABLED, _graph, _key, term_cells
+    index = option_index(cssids_dir)
+    if not index:
+        return {}
+    cells = term_cells(repo_dir)
+    tables, links = _graph(repo_dir)
+    out_of = dict(links)
+    out: dict[tuple, set] = {}
+    for t in tables:
+        if not t["dc"]:
+            continue
+        di = next((i for i, h in enumerate(t["headers"]) if h.lower() == "disabled"), None)
+        for code, row in t["rows"]:
+            if di is not None and di < len(row) and row[di].strip().lower() in _DISABLED:
+                continue
+            start = _key(t, code)
+            seen, frontier = {start}, [start]
+            while frontier:
+                for nxt in out_of.get(frontier.pop(), ()):
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        frontier.append(nxt)
+            items = set()
+            for key in seen:
+                for cov, term, value in cells.get(key, ()):
+                    items |= options_of(index, cov, term, value)
+            if items:
+                out[start] = items
+    return out
+
+
+def breadth_items(repo_dir: str, source_root: str, cssids_dir: str | None, deep: bool = False):
     """(scenarios, items): scenarios = {(class, method, code): set of items it covers}, items = every
-    ("test", "Class.method"), ("coverage", line, name) and ("jurisdiction", line, state) the full run reaches."""
+    ("test", "Class.method"), ("coverage", line, name) and ("jurisdiction", line, state) the full run reaches;
+    with deep, also every ("option", line, "Coverage / Term = Option") a limit or deductible is set to."""
     import suite as suites
     from eir_uses import rows_by_value
     tests = suites.scan(repo_dir, source_root)
@@ -51,6 +87,9 @@ def breadth_items(repo_dir: str, source_root: str, cssids_dir: str | None):
     for (line, state), rows in (rows_by_state(repo_dir, cssids_dir) or {}).items():
         for row in rows:
             row_items.setdefault(row, set()).add(("jurisdiction", line, state))
+    if deep:
+        for row, items in _option_items(repo_dir, cssids_dir).items():
+            row_items.setdefault(row, set()).update(items)
     for s, items in scenarios.items():
         if s[2]:
             items |= row_items.get(("dc", datasource.get((s[0], s[1])), s[2].lower()), set())
@@ -72,11 +111,11 @@ def _suite_scenarios(repo_dir: str, source_root: str, name: str) -> set | None:
 
 
 def cover_report(repo_dir: str, source_root: str, cssids_dir: str | None, suite: str | None = None,
-                 of: str | None = None) -> dict:
+                 of: str | None = None, deep: bool = False) -> dict:
     """The greedy cover: picks in order with what each adds, as suite entries. With `suite`: what it misses
     of the breadth of `of` (default: every scenario that runs) and the fewest scenarios of `of` to add."""
     import suite as suites
-    scenarios, every = breadth_items(repo_dir, source_root, cssids_dir)
+    scenarios, every = breadth_items(repo_dir, source_root, cssids_dir, deep)
     out = {}
     for label, name in (("suite", suite), ("of", of)):
         if name:
@@ -105,7 +144,7 @@ def cover_report(repo_dir: str, source_root: str, cssids_dir: str | None, suite:
         left -= gain
     selected = {tuple(p["scenario"]) for p in picks}
     tests = [t for t in suites.scan(repo_dir, source_root) if any(c == t["class"] for c, _m, _code in selected)]
-    kinds = ("test", "coverage", "jurisdiction")
+    kinds = ("test", "coverage", "jurisdiction") + (("option",) if deep else ())
     report = {"scenarios": len(selected), "of": len(scenarios),
               "items": {k: sum(1 for i in every if i[0] == k) for k in kinds},
               "picks": picks, "entries": suites.compact(selected, tests), "measured_against": of}
@@ -119,23 +158,26 @@ def _label(item: tuple) -> str:
     return item[1] if item[0] == "test" else f"{item[1]} {item[2]}"
 
 
+_KINDS = ("test", "coverage", "jurisdiction", "option")
+_KIND_NAMES = {"test": "test methods", "coverage": "product coverages", "jurisdiction": "line/jurisdiction pairs",
+               "option": "term options"}
+
+
 def print_cover(report: dict, name: str, command: str | None) -> None:
     if report.get("error"):
         print(f"  {report['error']}")
         return
     items = report["items"]
     against = f"suite {report['measured_against']}" if report.get("measured_against") else "the full run"
-    breadth = (f"{items['test']} test methods, {items['coverage']} product coverages, "
-               f"{items['jurisdiction']} line/jurisdiction pairs")
+    breadth = ", ".join(f"{items[k]} {_KIND_NAMES[k]}" for k in _KINDS if k != "option" or items.get(k))
     if "misses" in report:
         miss = report["missing"]
         print(f"  {report['suite']} ({report['suite_scenarios']} scenarios) against {against} ({breadth}):")
         if not report["misses"]:
             print("  it misses nothing: every flow, coverage and line/jurisdiction is in it.")
             return
-        print(f"  MISSES {miss['test']} test methods, {miss['coverage']} product coverages, "
-              f"{miss['jurisdiction']} line/jurisdiction pairs")
-        for kind in ("test", "coverage", "jurisdiction"):
+        print("  MISSES " + ", ".join(f"{miss[k]} {_KIND_NAMES[k]}" for k in _KINDS if k in miss and (k != "option" or items.get(k))))
+        for kind in _KINDS:
             names = [_label(i) for i in report["misses"] if i[0] == kind]
             if names:
                 print(f"    {kind}: {', '.join(names[:10])}{', ...' if len(names) > 10 else ''}")
@@ -144,7 +186,7 @@ def print_cover(report: dict, name: str, command: str | None) -> None:
         print(f"  COVERING SUITE: {report['scenarios']} of {report['of']} scenarios keep the breadth of {against}: {breadth}")
     for p in report["picks"][:15]:
         cls, method, code = p["scenario"]
-        kinds = {k: [_label(i) for i in p["adds"] if i[0] == k] for k in ("test", "coverage", "jurisdiction")}
+        kinds = {k: [_label(i) for i in p["adds"] if i[0] == k] for k in _KINDS}
         adds = "; ".join(f"{len(v)} {k}{'s' if len(v) != 1 else ''}" + (f" ({', '.join(v[:3])}{', ...' if len(v) > 3 else ''})"
                                                                          if k != "test" else "")
                          for k, v in kinds.items() if v)

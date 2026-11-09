@@ -179,6 +179,30 @@ class CoveringSuite(unittest.TestCase):
             print_scenario(report)
         self.assertIn("Nothing only this scenario reaches", out.getvalue())
 
+    def test_deep_also_keeps_every_limit_option(self):
+        model = [{"codeIdentifier": "GLLiquor", "name": "Liquor Liability",
+                  "covTerms": [{"name": "Limit", "covTermChoices": [{"codeIdentifier": "z1", "name": "$1,000"},
+                                                                     {"codeIdentifier": "z2", "name": "$2,000"}]}]},
+                 {"codeIdentifier": "GLPollution", "name": "Pollution"}]
+        with open(os.path.join(os.path.dirname(self.cssids), "GLLine_coverage_structure.json"), "w") as fh:
+            json.dump(model, fh)
+        make_xlsx(os.path.join(self.root, "testdata", "GLData.xlsx"), {
+            "Coverage": [["Code", "Coverage", "CovTerm", "CovtermValue"], ["liq", "Liquor Liability", "Limit", "1,000"],
+                         ["liq2", "Liquor Liability", "Limit", "2000"], ["pol", "Pollution", "", ""]],
+            "Address": [["Code", "State"], ["phx", "AZ"], ["aus", "Texas"]]})
+        make_xlsx(os.path.join(self.root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {"DataCombination": [
+            ["Code", "#Coverage", "#Address"], ["A", "liq", "phx"], ["B", "liq2", "phx"], ["C", "liq,pol", "aus"]]})
+        plain = eir_cover.cover_report(self.root, "src", self.cssids)
+        self.assertNotIn(["GL_SubmissionTest", "run", "B"], [p["scenario"] for p in plain["picks"]])
+        deep = eir_cover.cover_report(self.root, "src", self.cssids, deep=True)
+        self.assertEqual(deep["items"]["option"], 2)  # "2000" is the $2,000 option: only B sets it
+        self.assertIn(["GL_SubmissionTest", "run", "B"], [p["scenario"] for p in deep["picks"]])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            eir_cover.print_cover(deep, "Cover-Breadth", None)
+        self.assertIn("2 term options", out.getvalue())
+        self.assertIn("GLLine Liquor Liability / Limit = $2,000", out.getvalue())
+
     def test_without_a_generated_project_it_still_covers_every_flow(self):
         report = eir_cover.cover_report(self.root, "src", None)
         self.assertEqual(report["items"], {"test": 2, "coverage": 0, "jurisdiction": 0})

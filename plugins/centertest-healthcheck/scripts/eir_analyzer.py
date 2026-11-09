@@ -108,6 +108,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="The fewest scenarios that still run every test method, select every product coverage and run "
                         "every line in every jurisdiction the full regression does: a suite and its command. With a "
                         "suite name: what that suite misses, and the fewest scenarios to add")
+    p.add_argument("--deep", action="store_true",
+                   help="With --cover: also keep every limit and deductible option the full run sets")
     p.add_argument("--of", metavar="SUITE",
                    help="With --cover: measure against this suite instead of every scenario that runs")
     p.add_argument("--scenario", nargs=2, metavar=("TEST", "CODE"),
@@ -220,7 +222,8 @@ def main():
         from eir_json import emit
         from eir_screens import find_cssids_dir
         report = cover_report(config.repository_dir, config.source_root,
-                              find_cssids_dir(config.repository_dir, args.cssids), args.cover or None, args.of)
+                              find_cssids_dir(config.repository_dir, args.cssids), args.cover or None, args.of,
+                              args.deep)
         name = f"Cover-{re.sub(r'[^A-Za-z0-9]+', '', args.cover)[:40]}" if args.cover else "Cover-Breadth"
         command = suite_command(config.repository_dir, name)
         emit(dict(report, suite_name=name, command=command))

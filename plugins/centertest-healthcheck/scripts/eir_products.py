@@ -111,6 +111,47 @@ def _offered(models: list) -> dict[tuple, set]:
     return out
 
 
+def option_index(cssids_dir: str | None) -> dict[tuple, list]:
+    """{(coverage, term) lower-cased, by name or code: [(line, coverage name, term name, {squeezed key: option})]}
+    over every line's option terms: what a Coverage / CovTerm / CovtermValue row can select."""
+    index: dict[tuple, list] = {}
+    for path in structure_files(cssids_dir):
+        line = os.path.basename(path)[:-len("_coverage_structure.json")]
+        try:
+            with open(path, encoding="utf-8") as fh:
+                coverages = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        for c in coverages if isinstance(coverages, list) else []:
+            if not isinstance(c, dict) or not c.get("name"):
+                continue
+            for t in c.get("covTerms") or []:
+                choices = [ch for ch in t.get("covTermChoices") or [] if ch.get("name")]
+                if not choices or not t.get("name"):
+                    continue
+                by_key = {}
+                for ch in choices:
+                    for k in (ch.get("name"), ch.get("codeIdentifier")):
+                        if k:
+                            by_key.setdefault(_squeeze(k), ch["name"].strip())
+                entry = (line, c["name"].strip(), t["name"].strip(), by_key)
+                for ck in {c["name"].strip().lower(), str(c.get("codeIdentifier") or "").strip().lower()} - {""}:
+                    for tk in {t["name"].strip().lower(), str(t.get("codeIdentifier") or "").strip().lower()} - {""}:
+                        index.setdefault((ck, tk), []).append(entry)
+    return index
+
+
+def options_of(index: dict, coverage: str, term: str, value: str) -> set[tuple]:
+    """("option", line, "Coverage / Term = Option") items a cell value selects (whole cell or comma list)."""
+    out = set()
+    for line, cov, term_name, by_key in index.get((coverage.lower(), term.lower()), ()):
+        match = lambda text: next((by_key[k] for k in _keys_of(text) if k in by_key), None)
+        parts = [value] if match(value) else [p for p in value.split(",") if p.strip()]
+        if parts and all(match(p) for p in parts):
+            out |= {("option", line, f"{cov} / {term_name} = {match(p)}") for p in parts}
+    return out
+
+
 def term_options(entries: list[dict], set_values: dict, offered: dict | None = None) -> list[dict]:
     """[{term, options, chosen, not_offered}] for the option terms of one coverage that the scenarios set.
     A value no line offers (`offered`, from _offered) is not_offered."""

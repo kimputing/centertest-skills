@@ -205,6 +205,22 @@ def _column(t: dict, *names: str):
     return next((squeezed.index(n) for n in names if n in squeezed), None)
 
 
+def term_cells(repo_dir: str) -> dict[tuple, list]:
+    """{row key: [(coverage, term, value)]} for every row with Coverage, CovTerm and CovtermValue cells (one value
+    per line of a cell), reached or not."""
+    tables, _links = _graph(repo_dir)
+    out: dict[tuple, list] = {}
+    for t in tables:
+        ci, ti, vi = _column(t, "coverage"), _column(t, "covterm"), _column(t, "covtermvalue")
+        if ci is None or ti is None or vi is None:
+            continue
+        for code, cells in t["rows"]:
+            cov, term, value = (cells[i].strip() if i < len(cells) else "" for i in (ci, ti, vi))
+            if cov and term and value:
+                out[_key(t, code)] = [(cov, term, v.strip()) for v in value.splitlines() if v.strip()]
+    return out
+
+
 def term_values(repo_dir: str) -> dict[tuple, set]:
     """{(coverage, term) lower-cased: the values the scenarios set}, from rows enabled scenarios reach with
     the coverage steps' columns Coverage, CovTerm and CovtermValue (UI labels; an API payload's
