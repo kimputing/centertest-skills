@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -60,6 +60,19 @@ and lists only the findings that changed, trust blockers first:
   (new non-blocking findings), **Clean**, or **Not verified** (a trust rule could not run on both sides, exit 1).
 - Reviews committed state; uncommitted changes are not included. Branch names fall back to `origin/<name>`.
 - Use it in a pipeline to block merges that add tests that cannot fail or data that cannot load.
+
+### Health trend (for a status report)
+
+How the suite moved month by month — health score, trust blockers, test classes and cases, findings —
+from the last mainline commit of each month (exported with `git archive`, same rules as a normal run):
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --ruleset CenterTestFull --trend 6
+```
+
+Writes `healthcheck/Trend_<timestamp>.html` (one chart per measure plus the table) and prints the table.
+About 3 s per month. Use `CenterTestFull` so blockers are complete; the page names trust rules a smaller
+ruleset left out. Lead the summary with the direction of trust blockers and test cases.
 
 ### Git History Analysis
 

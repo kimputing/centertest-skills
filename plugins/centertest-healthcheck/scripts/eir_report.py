@@ -394,6 +394,45 @@ def _html_escape(text: str) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
+# Severity of each category for the health score. Informational categories are not scored.
+#   - Low (ClassNames, Methods): suggestions, nice-to-have
+#   - Medium (Inheritance, Selenium, Complexity, CenterTest): should fix
+#   - High (Quality, Security): must fix
+_SEVERITY = {
+    "Statistics": None,
+    "ClassNames": "low",
+    "Methods":    "low",
+    "Inheritance": "medium",
+    "Selenium":   "medium",
+    "Complexity": "medium",
+    "CenterTest": "medium",
+    "Quality":    "high",
+    "Security":   "high",
+}
+_WEIGHT = {"low": 1, "medium": 2, "high": 3}
+
+
+def health_score(results: list[RuleResult], total_files: int) -> int:
+    """The health score (0-100): severity-weighted rule credit, capped at TRUST_SCORE_CAP when a
+    trust blocker exists. The dashboard and the trend both use this, so they always agree."""
+    earned = possible = 0.0
+    for r in results:
+        severity = _SEVERITY.get(r.category, "medium")
+        if severity is None or r.error:
+            if severity is not None:
+                possible += _WEIGHT[severity]
+            continue
+        weight = _WEIGHT[severity]
+        possible += weight
+        count = _count_items(r)
+        # Partial credit: few findings in a large codebase is still mostly healthy.
+        earned += weight if count == 0 else weight * max(0, 1.0 - min(count / max(total_files, 1), 1.0))
+    score = round(earned / possible * 100) if possible > 0 else 0
+    if trust_blockers(results)[0]:
+        score = min(score, TRUST_SCORE_CAP)
+    return score
+
+
 def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int = 0) -> str:
     """The 'Can these tests be trusted?' panel shown under the score."""
     unchecked = ""
@@ -437,56 +476,21 @@ def generate_html(results: list[RuleResult], output_dir: str,
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Compute summary stats with weighted scoring
-    # Rules have different severity weights:
-    #   - Informational (Statistics): not scored — always have data, not issues
-    #   - Low (ClassNames, Methods): suggestions, nice-to-have
-    #   - Medium (Inheritance, Selenium, Complexity, CenterTest): should fix
-    #   - High (Quality, Security): must fix
-    _SEVERITY = {
-        "Statistics": None,    # informational — excluded from scoring
-        "ClassNames": "low",
-        "Methods":    "low",
-        "Inheritance": "medium",
-        "Selenium":   "medium",
-        "Complexity": "medium",
-        "CenterTest": "medium",
-        "Quality":    "high",
-        "Security":   "high",
-    }
-    _WEIGHT = {"low": 1, "medium": 2, "high": 3}
-
     total_issues = 0
     rules_passed = 0
     rules_failed = 0
     rules_error = 0
-    score_earned = 0.0
-    score_possible = 0.0
     categories: dict[str, dict] = {}
 
     for r in results:
         count = _count_items(r)
         total_issues += count
-        severity = _SEVERITY.get(r.category, "medium")
-
         if r.error:
             rules_error += 1
         elif count > 0:
             rules_failed += 1
         else:
             rules_passed += 1
-
-        # Weighted scoring (skip informational rules)
-        if severity is not None:
-            weight = _WEIGHT[severity]
-            score_possible += weight
-            if count == 0 and not r.error:
-                score_earned += weight
-            elif not r.error:
-                # Partial credit: few findings in a large codebase is still mostly healthy
-                # Deduct proportionally but never below 0
-                penalty = min(count / max(total_files, 1), 1.0)
-                score_earned += weight * max(0, 1.0 - penalty)
 
         cat = r.category
         if cat not in categories:
@@ -498,20 +502,17 @@ def generate_html(results: list[RuleResult], output_dir: str,
         categories[cat]["issues"] += count
 
     total_rules = len(results)
-    health_score = round(score_earned / score_possible * 100) if score_possible > 0 else 0
-
+    score = health_score(results, total_files)
     blockers, trust_not_checked, trust_dormant = trust_blockers(results)
-    if blockers:
-        health_score = min(health_score, TRUST_SCORE_CAP)
 
     # Determine score color
     if blockers:
         score_color = "#ef4444"  # red
         score_label = "At risk"
-    elif health_score >= 80:
+    elif score >= 80:
         score_color = "#22c55e"  # green
         score_label = "Healthy"
-    elif health_score >= 60:
+    elif score >= 60:
         score_color = "#f59e0b"  # amber
         score_label = "Needs Attention"
     else:
@@ -700,7 +701,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
   <div class="score-row">
     <div class="score-card">
-      <div class="score-number">{health_score}</div>
+      <div class="score-number">{score}</div>
       <div class="score-label">Health Score</div>
       <div class="score-badge">{score_label}</div>
     </div>

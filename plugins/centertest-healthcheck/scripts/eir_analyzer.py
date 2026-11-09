@@ -12,6 +12,7 @@ Usage:
     eir_analyzer.py --set-path "/path/to/project"
     eir_analyzer.py --show-path
     eir_analyzer.py --review main [feature/branch]
+    eir_analyzer.py --trend [MONTHS]
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/centertest-healthcheck/scripts/eir_analyzer.py
 """
@@ -88,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monthly", action="store_true", help="Sample one commit per month")
     p.add_argument("--pr", nargs=2, metavar=("TARGET", "SOURCE"),
                    help="PR diff mode: analyze diff between branches")
+    p.add_argument("--trend", nargs="?", const=6, type=int, metavar="MONTHS",
+                   help="Health trend: score, trust blockers and test cases for the last mainline "
+                        "commit of each of the last MONTHS months (default 6), as an HTML page")
     p.add_argument("--review", nargs="+", metavar="REV",
                    help="Branch review: BASE [HEAD] (HEAD defaults to HEAD). Lists only the findings "
                         "the branch introduced or fixed since its merge-base, writes a PR comment and "
@@ -159,6 +163,12 @@ def main():
 
     # Build config from all layers
     config = EirConfig(args)
+
+    if args.trend:
+        from eir_trend import run_trend
+        print(f"\n  CenterTest health trend: last {args.trend} months  ({config.repository_dir})")
+        suppressions = load_suppressions(os.path.join(config.repository_dir, "healthcheck"))
+        sys.exit(run_trend(config, args.trend, suppressions))
 
     if args.review:
         if len(args.review) > 2:
