@@ -67,5 +67,28 @@ class CoveragesSeriesTest(unittest.TestCase):
         self.assertNotIn("Product coverages selected", without)
 
 
+    def test_flows_and_jurisdictions_get_a_chart_each(self):
+        from eir_trend import render_html
+        base = {"score": 59, "blockers": 1, "dormant": 0, "tests": 3, "cases": 3, "findings": 4, "files": 9,
+                "not_checked": [], "sha": "abc", "coverages": None}
+        points = [dict(base, month="2026-10", flows=9, jurisdictions=3), dict(base, month="2026-11", flows=48, jurisdictions=8)]
+        page = render_html(points, "portage")
+        self.assertIn("<figcaption>Flows that run</figcaption>", page)
+        self.assertIn("<figcaption>Jurisdictions</figcaption>", page)
+        self.assertIn("flows that run 9 → 48, jurisdictions 3 → 8", page)
+        page = render_html([dict(base, month="2026-11", flows=None, jurisdictions=None)], "x")
+        self.assertNotIn("<figcaption>Jurisdictions</figcaption>", page)
+
+    def test_flows_count_every_test_method_that_runs(self):
+        import tempfile
+        from eir_trend import _flows
+        with tempfile.TemporaryDirectory() as root:
+            src = os.path.join(root, "src", "main", "java", "x")
+            os.makedirs(src)
+            with open(os.path.join(src, "ATest.java"), "w") as fh:
+                fh.write("@CenterTest public final class ATest { @CenterTestCase() public void run(ScenarioContext s) { } }")
+            self.assertEqual(_flows(root, "src"), 1)  # no DataCombination: it runs once
+
+
 if __name__ == "__main__":
     unittest.main()

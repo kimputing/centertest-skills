@@ -212,7 +212,8 @@ runs (a client whose widest suite reaches little has no real regression suite: s
 
 ### Health trend (for a status report)
 
-How the suite moved month by month — health score, trust blockers, test classes and cases, findings —
+How the suite moved month by month — health score, trust blockers, test classes and cases, flows that
+run, product coverages selected and jurisdictions (with the generated product model), findings —
 from the last mainline commit of each month (exported with `git archive`, same rules as a normal run):
 
 ```bash
@@ -221,7 +222,8 @@ from the last mainline commit of each month (exported with `git archive`, same r
 
 Writes `healthcheck/Trend_<timestamp>.html` (one chart per measure plus the table) and prints the table.
 About 3 s per month. Use `CenterTestFull` so blockers are complete; the page names trust rules a smaller
-ruleset left out. Lead the summary with the direction of trust blockers and test cases.
+ruleset left out. Lead the summary with the direction of trust blockers and test cases, then breadth
+(flows, coverages, jurisdictions): a month where one drops is worth naming.
 
 ### Git History Analysis
 

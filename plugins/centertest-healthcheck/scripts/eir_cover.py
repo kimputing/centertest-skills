@@ -4,7 +4,8 @@
 A breadth item is something the full run exercises: every test method (each flow once), every product
 coverage the scenarios select (per line, from the generated product model, as eir_products counts
 them) and every jurisdiction each line's scenarios run in (eir_states). Only scenarios a test runs
-count: an enabled DataCombination row of a test method's @DataDriven datasource. A greedy set cover
+count: an enabled DataCombination row of a test method's @DataDriven datasource, or the one run of a
+test without one. A greedy set cover
 picks, again and again, the scenario that adds the most items not covered yet (ties: the first in
 name order), until every item is covered. The picks come back as suite entries (vendored
 suite-builder) and one command -- a smoke or pre-release run that still touches every flow, coverage
@@ -28,7 +29,8 @@ def breadth_items(repo_dir: str, source_root: str, cssids_dir: str | None):
     from eir_uses import rows_by_value
     tests = suites.scan(repo_dir, source_root)
     datasource = {(t["class"], m["name"]): m["datasource"] for t in tests for m in t["methods"]}
-    scenarios = {s: {("test", f"{s[0]}.{s[1]}")} for s in suites.scenarios_of(tests) if s[2]}
+    # a test without a DataCombination runs once (code ""): a flow like any other
+    scenarios = {s: {("test", f"{s[0]}.{s[1]}")} for s in suites.scenarios_of(tests)}
     row_items: dict[tuple, set] = {}
     from eir_products import structure_files
     by_value = rows_by_value(repo_dir, coverage_only=True) if structure_files(cssids_dir) else {}
@@ -50,7 +52,8 @@ def breadth_items(repo_dir: str, source_root: str, cssids_dir: str | None):
         for row in rows:
             row_items.setdefault(row, set()).add(("jurisdiction", line, state))
     for s, items in scenarios.items():
-        items |= row_items.get(("dc", datasource.get((s[0], s[1])), s[2].lower()), set())
+        if s[2]:
+            items |= row_items.get(("dc", datasource.get((s[0], s[1])), s[2].lower()), set())
     every = set().union(*scenarios.values()) if scenarios else set()
     return scenarios, every
 

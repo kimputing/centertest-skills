@@ -68,13 +68,26 @@ def collect(config, months: int, suppressions, product_dir: str | None = None) -
             results, files = analyze_commit(config.repository_dir, sha, tree, config, suppressions)
             point = snapshot_metrics(results, files)
             point.update(month=month, sha=sha[:8], date=datetime.fromtimestamp(epoch).strftime("%Y-%m-%d"))
-            point["coverages"] = None
+            point["coverages"] = point["jurisdictions"] = None
+            point["flows"] = _flows(tree, config.source_root)
             if product_dir:
                 from eir_products import product_coverage
                 lines = product_coverage(tree, product_dir, config.source_root)
                 point["coverages"] = sum(len(l["named"]) for l in lines) if lines else None
+                from eir_states import state_coverage
+                states = state_coverage(tree, product_dir)
+                point["jurisdictions"] = len(set().union(*(l["states"] for l in states))) if states else None
             points.append(point)
     return points
+
+
+def _flows(tree: str, source_root: str) -> int | None:
+    """Test methods that run at least one scenario (enabled row, or no datasource): the flows a full run covers."""
+    try:
+        import suite as suites
+        return len({(c, m) for c, m, _code in suites.scenarios_of(suites.scan(tree, source_root))})
+    except Exception:
+        return None
 
 
 # --- Rendering --------------------------------------------------------------------
@@ -141,15 +154,18 @@ def render_html(points: list[dict], project: str) -> str:
         f'<tr><td>{p["month"]}</td><td class="mono">{p["sha"]}</td><td>{p["score"]}</td>'
         f'<td class="{"bad" if p["blockers"] else ""}">{p["blockers"]}</td><td>{p["dormant"]}</td>'
         f'<td>{p["tests"] if p["tests"] is not None else "–"}</td><td>{p["cases"] if p["cases"] is not None else "–"}</td>'
+        f'<td>{"–" if p.get("flows") is None else p["flows"]}</td>'
         f'<td>{"–" if p.get("coverages") is None else p["coverages"]}</td>'
+        f'<td>{"–" if p.get("jurisdictions") is None else p["jurisdictions"]}</td>'
         f'<td>{p["findings"]}</td><td>{p["files"]}</td></tr>' for p in points)
     unchecked = sorted({r for p in points for r in p["not_checked"]})
     note = (f'<p class="note">Trust rules not in this ruleset, so not counted: {", ".join(unchecked)}. '
             'Use --ruleset CenterTestFull for complete blockers.</p>') if unchecked else ""
     headline = (f'Score {first["score"]} → {last["score"]}, trust blockers {first["blockers"]} → {last["blockers"]}'
                 + (f', test cases {first["cases"]} → {last["cases"]}' if last["cases"] is not None else "")
-                + (f', coverages selected {first["coverages"]} → {last["coverages"]}'
-                   if first.get("coverages") is not None and last.get("coverages") is not None else "")
+                + "".join(f', {label} {first[k]} → {last[k]}' for k, label in
+                          (("flows", "flows that run"), ("coverages", "coverages selected"), ("jurisdictions", "jurisdictions"))
+                          if first.get(k) is not None and last.get(k) is not None)
                 + f' between {first["month"]} and {last["month"]}.')
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -189,10 +205,12 @@ def render_html(points: list[dict], project: str) -> str:
 {_chart("Health score", "", points, "score", fixed_max=100, divisions=4)}
 {_chart("Trust blockers", "", points, "blockers")}
 {_chart("Test cases", "", points, "cases")}
+{_chart("Flows that run", "", points, "flows") if any(p.get("flows") is not None for p in points) else ""}
 {_chart("Product coverages selected", "", points, "coverages") if any(p.get("coverages") is not None for p in points) else ""}
+{_chart("Jurisdictions", "", points, "jurisdictions") if any(p.get("jurisdictions") is not None for p in points) else ""}
 </div>
 <div class="table"><table>
-<thead><tr><th>Month</th><th>Commit</th><th>Score</th><th>Trust blockers</th><th>Not run</th><th>Test classes</th><th>Test cases</th><th>Coverages selected</th><th>Findings</th><th>Java files</th></tr></thead>
+<thead><tr><th>Month</th><th>Commit</th><th>Score</th><th>Trust blockers</th><th>Not run</th><th>Test classes</th><th>Test cases</th><th>Flows that run</th><th>Coverages selected</th><th>Jurisdictions</th><th>Findings</th><th>Java files</th></tr></thead>
 <tbody>{rows}</tbody></table></div>
 {note}
 <p class="note">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")} by centertest-healthcheck --trend.</p>
@@ -201,15 +219,17 @@ def render_html(points: list[dict], project: str) -> str:
 
 
 def print_trend(points: list[dict]) -> None:
-    print("\n" + "=" * 72)
+    print("\n" + "=" * 84)
     print("  HEALTH TREND (last mainline commit of each month)")
-    print("=" * 72)
-    print(f"  {'Month':<8} {'Commit':<9} {'Score':>5} {'Blockers':>8} {'Tests':>6} {'Cases':>6} {'Covs':>5} {'Findings':>8}")
+    print("=" * 84)
+    print(f"  {'Month':<8} {'Commit':<9} {'Score':>5} {'Blockers':>8} {'Tests':>6} {'Cases':>6} {'Flows':>5} {'Covs':>5} "
+          f"{'Juris':>5} {'Findings':>8}")
     for p in points:
         print(f"  {p['month']:<8} {p['sha']:<9} {p['score']:>5} {p['blockers']:>8} "
               f"{p['tests'] if p['tests'] is not None else '-':>6} {p['cases'] if p['cases'] is not None else '-':>6} "
-              f"{'-' if p.get('coverages') is None else p['coverages']:>5} {p['findings']:>8}")
-    print("=" * 72)
+              f"{'-' if p.get('flows') is None else p['flows']:>5} {'-' if p.get('coverages') is None else p['coverages']:>5} "
+              f"{'-' if p.get('jurisdictions') is None else p['jurisdictions']:>5} {p['findings']:>8}")
+    print("=" * 84)
 
 
 def run_trend(config, months: int, suppressions, cssids: str | None = None) -> int:
