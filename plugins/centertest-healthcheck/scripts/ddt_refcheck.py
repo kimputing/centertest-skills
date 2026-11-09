@@ -333,11 +333,8 @@ def _validate_one_ref_file(ref_path, all_codes):
                     continue
                 available = all_codes[target_key]
                 for code in [c.strip() for c in cell_value.split(",")]:
-                    if code and not SENTINEL_RE.fullmatch(code) and base_code(code) not in available:
-                        similar = [c for c in available if c.lower() == code.lower()]
-                        hint = f" (did you mean '{similar[0]}'?)" if similar else ""
-                        errors.append((row_idx, col_header, code, target_key,
-                                       f"code not found{hint}"))
+                    if code and not SENTINEL_RE.fullmatch(code) and not _has_code(available, code):
+                        errors.append((row_idx, col_header, code, target_key, "code not found"))
 
     for sheet_name in ref_wb.sheetnames:
         lower = sheet_name.lower()
@@ -392,6 +389,37 @@ def base_code(code):
     return _INSTANCE.sub("", code.strip()).strip()
 
 
+def _has_code(available, code):
+    """Whether a referenced code names a row. CenterTest resolves codes case-insensitively
+    (ReferenceGraphLoader lower-cases the cell, TestDataUtility the keys), so 'NS_Johnteen' finds 'NS_JohnTeen'."""
+    wanted = base_code(code)
+    if wanted in available:
+        return True
+    wanted = wanted.lower()
+    return any(c.lower() == wanted for c in available)
+
+
+class _Codes(dict):
+    """Used codes of one sheet, matched as CenterTest matches them: case-insensitively, instance copies
+    ("Coupe(2)") as their record. Keys are stored lower-cased."""
+
+    @staticmethod
+    def _k(code):
+        return base_code(str(code)).lower()
+
+    def __contains__(self, code):
+        return super().__contains__(self._k(code))
+
+    def __getitem__(self, code):
+        return super().__getitem__(self._k(code))
+
+    def get(self, code, default=None):
+        return super().get(self._k(code), default)
+
+    def setdefault(self, code, default=None):
+        return super().setdefault(self._k(code), default)
+
+
 # "@Rel.#Ref": a relationship-hop reference (a code). With a trailing ".Field" it is an override.
 HOP_REF_RE = re.compile(r"@(\w+)\.#(\w+)")
 
@@ -425,10 +453,8 @@ def _missing_codes(row_idx, col, cell_value, available, sheet_key):
     """Errors for each comma-separated code in cell_value that is not in available."""
     errors = []
     for code in [c.strip() for c in (cell_value or "").split(",")]:
-        if code and not SENTINEL_RE.fullmatch(code) and base_code(code) not in available:
-            similar = [c for c in available if c.lower() == code.lower()]
-            hint = f" (did you mean '{similar[0]}'?)" if similar else ""
-            errors.append((row_idx, col, code, sheet_key, f"code not found{hint}"))
+        if code and not SENTINEL_RE.fullmatch(code) and not _has_code(available, code):
+            errors.append((row_idx, col, code, sheet_key, "code not found"))
     return errors
 
 
@@ -566,7 +592,7 @@ def validate_dc(dc_path):
                                    f"unknown identifier '{ident}' for relationship '{rel_name}' (add it under $relationships)"))
                 elif not os.path.isfile(target_file):
                     errors.append((row_idx, col, raw, rel_name, f"target DC file not found: {target_file}"))
-                elif bare not in load_dc_codes(target_file):
+                elif not _has_code(load_dc_codes(target_file), bare):
                     errors.append((row_idx, col, raw, rel_name, f"code '{bare}' not found in {target_file}"))
 
     # --- @Rel.#Ref hop columns: the code must exist in the *related* DC's reference scope ---
@@ -634,7 +660,7 @@ def used_codes(dc_files=None, source_root="src/main/java"):
     used = {}
 
     def add(sheet, code, how):
-        used.setdefault(sheet, {}).setdefault(code, set()).add(how)
+        used.setdefault(sheet, _Codes()).setdefault(code, set()).add(how)
 
     if dc_files is None:
         dc_files = find_all_dc_files()

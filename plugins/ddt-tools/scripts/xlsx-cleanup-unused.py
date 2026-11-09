@@ -101,7 +101,8 @@ def main():
 
     for filepath, sheets in sorted(data_codes.items()):
         for sheet_name, codes in sorted(sheets.items()):
-            unused = set(codes.keys()) - set(used.get(_norm_sheet(sheet_name), {}))
+            in_use = used.get(_norm_sheet(sheet_name), {})
+            unused = {c for c in codes if c not in in_use}
             if unused:
                 findings.append((filepath, sheet_name, unused, codes))
                 total_unused += len(unused)

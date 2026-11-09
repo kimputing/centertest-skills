@@ -41,3 +41,5 @@ It also provides `run_with_pr_review_report(tool_name, main)` — wraps a tool's
 - `xlsx-diff.py` shells out to `git show` — needs to run inside a git repo
 - `xlsx-textconv.py` is designed for `.gitattributes` integration: `*.xlsx diff=xlsx`
 - All scripts exit 0 on success, 1 on error — usable in CI pipelines
+
+- Codes match as CenterTest matches them: case-insensitively (`ReferenceGraphLoader` lower-cases the cell, `TestDataUtility` the keys) and an instance copy `Coupe(2)` as its record — `_has_code()` for references, `_Codes` for `used_codes()`. A case-only difference is not a broken reference and not an unused code.
