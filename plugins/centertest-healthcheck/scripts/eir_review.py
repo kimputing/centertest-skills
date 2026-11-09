@@ -296,6 +296,18 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         if commands and (not one or len(commands) <= 3):
             out += ([""] + (["One test at a time:"] if one else []) + ["```bash"] + commands[:limit * 2] + ["```"])
         out.append("")
+    scope = meta.get("scope")
+    if scope and (scope["removed"] or scope["switched_off"] or scope["added"]):
+        def names(items):
+            shown = [f"`{c} {m}{(' ' + k) if k else ''}`" for c, m, k in items[:limit]]
+            return ", ".join(shown) + (f" … +{len(items) - limit}" if len(items) > limit else "")
+        out += ["### Run scope", "", f"A full run executes {scope['before']} → {scope['after']} scenarios.", ""]
+        if scope["removed"]:
+            out += [f"**Removed** ({len(scope['removed'])}: the test or its row is gone): {names(scope['removed'])}", ""]
+        if scope["switched_off"]:
+            out += [f"**Switched off** ({len(scope['switched_off'])}: the row is disabled): {names(scope['switched_off'])}", ""]
+        if scope["added"]:
+            out += [f"Added ({len(scope['added'])}): {names(scope['added'])}", ""]
     coverage = meta.get("coverage") or []
     if coverage:
         lost = [(c["line"], n) for c in coverage for n in c["lost"]]
@@ -377,6 +389,10 @@ def print_review(changes: list[dict], meta: dict) -> None:
         files = len({d["file"] for d in data})
         print(f"  ~~ data: {files} workbook(s), {sum(len(d['added']) for d in data)} rows added, "
               f"{sum(len(d['changed']) for d in data)} changed, {sum(len(d['removed']) for d in data)} removed")
+    scope = meta.get("scope")
+    if scope and (scope["removed"] or scope["switched_off"] or scope["added"]):
+        print(f"  ## run scope {scope['before']} -> {scope['after']} scenarios: {len(scope['removed'])} removed, "
+              f"{len(scope['switched_off'])} switched off, {len(scope['added'])} added")
     for c in meta.get("coverage") or []:
         if c["lost"]:
             print(f"  -- {c['line']}: no scenario selects {len(c['lost'])} coverage(s) any more: "
@@ -400,6 +416,17 @@ def print_review(changes: list[dict], meta: dict) -> None:
     print("-" * 60)
     print(f"  {line}")
     print("=" * 60)
+
+
+def run_scope(base_tree: str, head_tree: str, source_root: str) -> dict:
+    """What a full run executes, merge-base -> branch tip: (class, method, code) scenarios removed (the test or
+    row is gone), switched off (the row is still there, disabled) and added, by the vendored suite engine."""
+    import suite as suites
+    base_t, head_t = suites.scan(base_tree, source_root), suites.scan(head_tree, source_root)
+    on_a, on_b = set(suites.scenarios_of(base_t)), set(suites.scenarios_of(head_t))
+    all_b = set(suites.scenarios_of(head_t, include_disabled=True))
+    return {"before": len(on_a), "after": len(on_b), "removed": sorted(on_a - all_b),
+            "switched_off": sorted((on_a - on_b) & all_b), "added": sorted(on_b - on_a)}
 
 
 def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[dict]:
@@ -470,6 +497,7 @@ def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: s
         from eir_impact import suite_changes
         suites_changed = (suite_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), suite_rel, config.source_root)
                           if suite_rel and suite_rel in changed else [])
+        scope = run_scope(os.path.join(tmp, "base"), os.path.join(tmp, "head"), config.source_root)
         from eir_screens import find_cssids_dir
         product_dir = find_cssids_dir(repo, cssids)
         coverage = (coverage_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir)
@@ -480,7 +508,7 @@ def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: s
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
             "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
-            "suites": suites_changed, "coverage": coverage,
+            "suites": suites_changed, "coverage": coverage, "scope": scope,
             "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
                             "command": suite_command(repo, suite_name)} if suite_entries else None}
     return changes, meta

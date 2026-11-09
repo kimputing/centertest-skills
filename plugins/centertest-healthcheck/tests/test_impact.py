@@ -292,3 +292,34 @@ public final class CancelTest {
         # CancelTest reaches WC_SubmissionDC through a step: "AZ" is not one of its own rows
         self.assertEqual(plan, {"SubmissionTest": ["AZ"], "CancelTest": []})
 
+class RunScopeTest(unittest.TestCase):
+    def build(self, root, rows, with_account):
+        from xlsx_fixture import make_xlsx
+        src = os.path.join(root, "src", "main", "java", "com", "x")
+        os.makedirs(src)
+        with open(os.path.join(src, "PolicyTest.java"), "w") as fh:
+            fh.write('@CenterTest public final class PolicyTest { @CenterTestCase() '
+                     '@DataDriven(datasource = "testdata/PolicyDC.xlsx") public void run(ScenarioContext s) { } }')
+        if with_account:
+            with open(os.path.join(src, "AccountTest.java"), "w") as fh:
+                fh.write('@CenterTest public final class AccountTest { @CenterTestCase() public void run(ScenarioContext s) { } }')
+        os.makedirs(os.path.join(root, "testdata"))
+        make_xlsx(os.path.join(root, "testdata", "PolicyDC.xlsx"), {"DataCombination": [["Code", "Disabled"]] + rows})
+
+    def test_removed_switched_off_and_added(self):
+        import tempfile
+        from eir_review import render_markdown, run_scope
+        with tempfile.TemporaryDirectory() as tmp:
+            base, head = os.path.join(tmp, "base"), os.path.join(tmp, "head")
+            self.build(base, [["A", ""], ["B", ""], ["C", ""]], True)
+            self.build(head, [["A", ""], ["B", "true"], ["D", ""]], False)
+            scope = run_scope(base, head, "src")
+        self.assertEqual((scope["before"], scope["after"]), (4, 2))
+        self.assertEqual(scope["removed"], [("AccountTest", "run", ""), ("PolicyTest", "run", "C")])
+        self.assertEqual(scope["switched_off"], [("PolicyTest", "run", "B")])
+        self.assertEqual(scope["added"], [("PolicyTest", "run", "D")])
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "scope": scope}
+        md = render_markdown([], meta)
+        self.assertIn("A full run executes 4 → 2 scenarios.", md)
+        self.assertIn("**Switched off** (1: the row is disabled): `PolicyTest run B`", md)

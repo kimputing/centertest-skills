@@ -52,8 +52,17 @@ def week_of(path: str, config, days: int, cssids: str | None = None) -> dict:
         lost=[(c["line"], n) for c in meta.get("coverage") or [] for n in c["lost"]],
         gained=sum(len(c["gained"]) for c in meta.get("coverage") or []),
         rows=sum(len(d["added"]) + len(d["changed"]) + len(d["removed"]) for d in meta.get("data") or []),
-        rerun=len(meta.get("rerun") or []), changed=meta.get("changed", 0))
+        rerun=len(meta.get("rerun") or []), changed=meta.get("changed", 0), scope=meta.get("scope"))
     return out
+
+
+def _scope(w: dict) -> str:
+    s = w.get("scope")
+    if not s:
+        return "–"
+    gone = len(s["removed"]) + len(s["switched_off"])
+    tail = f'<div class="kind {"bad" if gone else ""}">−{gone} removed or off, +{len(s["added"])}</div>'
+    return f'{s["before"]} → {s["after"]}{tail}'
 
 
 def render_html(weeks: list[dict], days: int) -> str:
@@ -62,10 +71,10 @@ def render_html(weeks: list[dict], days: int) -> str:
         name = (f'<td class="name">{_html_escape(w["name"])}'
                 f'<div class="path">last commit {_html_escape(w.get("last") or "–")}</div></td>')
         if w.get("error"):
-            rows.append(f'<tr>{name}<td colspan="6" class="muted">Not analysed: {_html_escape(w["error"])}</td></tr>')
+            rows.append(f'<tr>{name}<td colspan="7" class="muted">Not analysed: {_html_escape(w["error"])}</td></tr>')
             continue
         if not w.get("verdict"):
-            rows.append(f'<tr>{name}<td colspan="6" class="muted">Quiet: nothing landed in {days} days</td></tr>')
+            rows.append(f'<tr>{name}<td colspan="7" class="muted">Quiet: nothing landed in {days} days</td></tr>')
             continue
         blockers = "".join(f'<div class="kind">{n} × {_html_escape(t)}</div>' for t, n in w["blockers"])
         lost = "".join(f'<div class="kind">{_html_escape(l)}: {_html_escape(c)}</div>' for l, c in w["lost"][:6])
@@ -75,7 +84,7 @@ def render_html(weeks: list[dict], days: int) -> str:
             f'<td class="{"bad" if w["blocked"] else "ok"}">{_html_escape(w["verdict"])}{blockers}</td>'
             f'<td class="num">+{w["added"]} / −{w["fixed"]}</td>'
             f'<td class="num {"bad" if w["lost"] else ""}">{len(w["lost"])} lost, {w["gained"]} gained{lost}</td>'
-            f'<td class="num">{w["rows"]}</td><td class="num">{w["rerun"]}</td></tr>')
+            f'<td class="num">{w["rows"]}</td><td class="num">{_scope(w)}</td><td class="num">{w["rerun"]}</td></tr>')
     busy = [w for w in weeks if w.get("verdict")]
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -103,7 +112,8 @@ def render_html(weeks: list[dict], days: int) -> str:
 ago against HEAD, run through the branch review; projects were only read. Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <div class="table"><table>
 <thead><tr><th>Suite</th><th class="num">Commits</th><th>Verdict</th><th class="num">Findings added / fixed</th>
-<th class="num">Product coverage</th><th class="num">Data rows changed</th><th class="num">Tests to rerun</th></tr></thead>
+<th class="num">Product coverage</th><th class="num">Data rows changed</th><th class="num">Scenarios per run</th>
+<th class="num">Tests to rerun</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
 </div></body></html>
 """
@@ -125,7 +135,10 @@ def print_weekly(weeks: list[dict], days: int) -> None:
             if w["lost"]:
                 print(f"  {'':<28} -- coverages no scenario selects any more: "
                       + ", ".join(f"{l}: {c}" for l, c in w["lost"][:4]) + (" ..." if len(w["lost"]) > 4 else ""))
-            print(f"  {'':<28} findings +{w['added']}/-{w['fixed']}, data rows {w['rows']}, rerun {w['rerun']} test(s)")
+            s = w.get("scope") or {}
+            print(f"  {'':<28} findings +{w['added']}/-{w['fixed']}, data rows {w['rows']}, rerun {w['rerun']} test(s)"
+                  + (f", scenarios {s['before']} -> {s['after']} ({len(s['removed'])} removed, "
+                     f"{len(s['switched_off'])} switched off)" if s else ""))
     print("=" * 92)
 
 

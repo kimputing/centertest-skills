@@ -89,6 +89,8 @@ and lists only the findings that changed, trust blockers first:
   use them) — and the `bootRun` commands to run them when the project's `build.gradle` forwards
   `-PcenterTest` and `-Pfilter` (a `Code=^(...)$` row filter). Offer to run them against the user's
   environment; never run them unasked.
+- **Run scope**: scenarios a full run executes, merge-base → tip, with those **removed** (test or row gone)
+  and **switched off** (row disabled) named — say these: they shrink the run without failing anything.
 - **Product coverage**: when the branch changes test data and the generated product model is found
   (`--cssids` or `<project>-generated`), the coverages scenarios no longer select (say these first: a
   reviewer should confirm each was meant) and those newly selected, per line of business.
