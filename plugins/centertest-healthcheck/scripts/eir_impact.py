@@ -95,9 +95,22 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
     words = {name: set().union(*(own_words[c] for c in lineage(name))) for name in sources}
     texts = {name: "\n".join(sources[c][1] for c in lineage(name)) for name in sources}
     reached: dict[str, str] = {}
+
+    def closed(cls, names):
+        """names plus the methods of cls that call them, until nothing new (execute() -> fill() -> ...)."""
+        if names is None or cls not in methods:
+            return names
+        names = set(names)
+        while True:
+            pattern = re.compile(r"(?<![\w.])(?:this\.)?(?:" + "|".join(map(re.escape, names)) + r")\s*\(")
+            more = {n for n, body in methods[cls] if n not in names and pattern.search(body)}
+            if not more:
+                return names
+            names |= more
+
     for begin in classes:
         # affected[class] = None (the whole class) or the set of its affected method names
-        affected: dict[str, set | None] = {begin: (start or {}).get(begin)}
+        affected: dict[str, set | None] = {begin: closed(begin, (start or {}).get(begin))}
         frontier = [begin]
         while frontier:
             current = frontier.pop()
@@ -118,19 +131,23 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
                     hit = None
                 else:
                     typed = bool(instance.search(texts[other]))
-                    # held in a superclass field: the methods that use that field
-                    fields = set() if current in own_words[other] else set(re.findall(
-                        r"\b" + re.escape(current) + r"(?:<[^>]*>)?\s+(\w+)\s*[;=]", texts[other]))
+                    # held in a field (its own or a superclass's): the methods that use that field
+                    fields = set(re.findall(r"\b" + re.escape(current) + r"(?:<[^>]*>)?\s+(\w+)\s*[;=]", texts[other]))
                     uses = re.compile(r"\b(?:" + "|".join(map(re.escape, [current, *sorted(fields)])) + r")\b")
+                    # a method that builds the step (a facade's `return new Step(...)`) hands it to a caller
+                    # that runs it: it passes the change on once the step's execute() is affected
+                    builds = names is not None and "execute" in names and re.compile(
+                        r"\bnew\s+" + re.escape(current) + r"\s*[(<]")
                     hit = {name for name, body in methods[other]
                            if uses.search(body)
-                           and (calls is None or static.search(body) or (typed and calls.search(body)))}
+                           and (calls is None or static.search(body) or (typed and calls.search(body))
+                                or (builds and builds.search(body)))}
                     if not hit:
                         continue
                 known = affected.get(other, set())
                 if known is None:
                     continue
-                merged = None if hit is None else (known | hit)
+                merged = None if hit is None else closed(other, known | hit)
                 if other not in affected or merged is None or merged != known:
                     affected[other] = merged
                     frontier.append(other)

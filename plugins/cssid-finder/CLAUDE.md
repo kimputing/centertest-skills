@@ -47,3 +47,9 @@ which is why the script tries multiple variants.
 - Environment variable `CENTERTEST_CSSIDS_DIR` overrides saved config
 - Don't match page-file lines with `grep` on the raw id: since 6.15 a Guidewire 9 key reads
   `Page\:Panel\:Field` on disk, and a substring can't be escaped reliably — parse the lines instead
+
+## Vendored elsewhere
+
+`scripts/find_getter.py` is copied byte for byte into `plugins/recording-to-test/scripts/` and
+`plugins/centertest-healthcheck/scripts/` (`--touches <widget id>`); their tests fail when a copy differs —
+copy it to both after every change.

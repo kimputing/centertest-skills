@@ -203,7 +203,10 @@ def main():
         from eir_impact import suite_command
         from eir_uses import print_touches, touches_report
         name = "Touches-" + (re.sub(r"[^A-Za-z0-9]+", "", args.touches) or "Page")[:40]
-        print_touches(touches_report(config.repository_dir, config.source_root, args.touches), name,
+        from eir_screens import find_cssids_dir
+        report = touches_report(config.repository_dir, config.source_root, args.touches,
+                                find_cssids_dir(config.repository_dir, args.cssids))
+        print_touches(report, name,
                       suite_command(config.repository_dir, name))
         sys.exit(0)
 

@@ -261,20 +261,56 @@ def print_uses(report: dict, name: str, command: str | None) -> None:
 _PAGE_IMPORT = re.compile(r"^import\s+[\w.]+\.generated\.pages\.[\w.]*?\.?(\w+)\s*;", re.M)
 
 
-def touches_report(repo_dir: str, source_root: str, pattern: str) -> dict:
+_CHAIN_PAGE = re.compile(r"new\s+(\w+)\(getContext\(\)\)")
+_CHAIN_GETTER = re.compile(r"\.(get\w+)\(")
+
+
+def widget_targets(cssids_dir: str | None, widget_id: str) -> list[tuple[str, str, str]]:
+    """[(page class, last getter, getter chain)] for a Guidewire widget id, looked up in the generated
+    cssids the way cssid-finder does (vendored find_getter.py): an exact key first, then a partial one."""
+    import find_getter
+    if not cssids_dir:
+        return []
+    roots = [cssids_dir, os.path.dirname(os.path.abspath(cssids_dir))]
+    found = []
+    for app in ("pc", "bc", "cc", "ab"):
+        layout, path = next((find_getter.detect_layout(r, app) for r in roots
+                             if find_getter.detect_layout(r, app)[0] is not None), (None, None))
+        if layout is None:
+            continue
+        forms = find_getter.normalize_css_id(widget_id)
+        for exact in ([True, False] if layout == "properties" else [True]):
+            hits = [g for form in forms for g in (find_getter.search_properties(path, form, exact_only=exact)
+                                                    if layout == "properties" else find_getter.search_legacy(path, form))]
+            if hits:
+                found += hits
+                break
+    out = []
+    for chain in dict.fromkeys(found):
+        page = _CHAIN_PAGE.search(chain)
+        getters = [g for g in _CHAIN_GETTER.findall(chain) if g != "getContext"]
+        if page and getters:
+            out.append((page.group(1), getters[-1], chain))
+    return out
+
+
+def touches_report(repo_dir: str, source_root: str, pattern: str, cssids_dir: str | None = None) -> dict:
     """Tests that reach a generated page (regex over the page classes the project imports) or one
     widget getter ("SubmissionWizardPage.getPolicyInfoStep"), and a suite that runs them whole.
     Reach is the --review rerun reach: per method, a static call must name its class."""
     import suite as suites
     from eir_impact import _java_sources, tests_reaching
     sources = _java_sources(repo_dir, source_root)
-    page_rx, _, getter = pattern.partition(".")
-    rx = re.compile(page_rx, re.I)
-    pages = sorted({p for _path, text in sources.values() for p in _PAGE_IMPORT.findall(text) if rx.search(p)})
-    start = {p: {getter} for p in pages} if getter else None
+    if "-" in pattern and "." not in pattern:  # a Guidewire widget id
+        targets = [(page, getter) for page, getter, _chain in widget_targets(cssids_dir, pattern)]
+    else:
+        page_rx, _, getter = pattern.partition(".")
+        rx = re.compile(page_rx, re.I)
+        targets = [(p, getter) for p in sorted({p for _path, text in sources.values()
+                                                for p in _PAGE_IMPORT.findall(text) if rx.search(p)})]
     per_page, reached = [], set()
-    for page in pages:
-        tests = tests_reaching({page}, sources, start)
+    for page, getter in dict.fromkeys(targets):
+        tests = tests_reaching({page}, sources, {page: {getter}} if getter else None)
         per_page.append({"page": page + (f".{getter}" if getter else ""), "tests": sorted(tests)})
         reached |= set(tests)
     scanned = [t for t in suites.scan(repo_dir, source_root) if t["class"] in reached]
@@ -286,7 +322,7 @@ def touches_report(repo_dir: str, source_root: str, pattern: str) -> dict:
 def print_touches(report: dict, name: str, command: str | None) -> None:
     print(f"\n  TESTS THAT TOUCH /{report['pattern']}/")
     if not report["pages"]:
-        print("  No generated page the project imports matches it.")
+        print("  No generated page the project imports matches it (a widget id needs the generated cssids: --cssids).")
         return
     for p in report["pages"]:
         names = ", ".join(p["tests"][:8]) + (f" +{len(p['tests']) - 8}" if len(p["tests"]) > 8 else "")

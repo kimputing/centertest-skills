@@ -104,6 +104,35 @@ public final class OtherTest {
         self.assertEqual(set(reached), {"PaTest"})  # other() never uses wizardPage
 
 
+class StepClosureTest(unittest.TestCase):
+    SRC = {
+        "CreatePersonAccount": ("CreatePersonAccount.java", """public class CreatePersonAccount extends BaseScenarioPC {
+    private CreateAccountPage page = new CreateAccountPage(getContext());
+    public void execute() { search(); fillAddress(); }
+    private void search() { }
+    private void fillAddress() { page.getGlobalAddressContainer().getCity().set(address.getCity()); }
+}"""),
+        "PC": ("PC.java", """public final class PC {
+    public static CreatePersonAccount createPersonAccount(Ctx c) { return new CreatePersonAccount(c); }
+    public static Login login(Ctx c) { return new Login(c); }
+}"""),
+        "AccountTest": ("AccountTest.java", """@CenterTest
+public final class AccountTest {
+    @CenterTestCase()
+    public void run(ScenarioContext s) { PC.createPersonAccount(c).execute(); }
+}"""),
+        "LoginTest": ("LoginTest.java", """@CenterTest
+public final class LoginTest {
+    @CenterTestCase()
+    public void run(ScenarioContext s) { PC.login(c).execute(); }
+}"""),
+    }
+
+    def test_a_widget_set_in_a_helper_reaches_the_test_through_execute_and_the_facade(self):
+        reached = tests_reaching({"CreateAccountPage"}, self.SRC, {"CreateAccountPage": {"getCity"}})
+        self.assertEqual(set(reached), {"AccountTest"})
+
+
 class CommandTest(unittest.TestCase):
     def test_rows_become_a_code_filter_only_when_the_build_forwards_it(self):
         entry = {"test": "WC_ClaimTest", "codes": ["CA-Claim", "Default"]}

@@ -138,6 +138,15 @@ public class CreateGL { void go() { var w = new SubmissionWizardPage(getContext(
         self.assertEqual(touches_report(self.root, "src", "SubmissionWizardPage.getQuoteStep")["tests"], [])
         self.assertEqual(touches_report(self.root, "src", "NoSuchPage")["pages"], [])
 
+    def test_a_widget_id_resolves_through_the_generated_cssids(self):
+        from eir_uses import widget_targets
+        fixtures = os.path.join(PLUGINS, "recording-to-test", "tests", "fixtures", "cssids")
+        targets = widget_targets(fixtures, "OrganizationSearchPopup-OrganizationSearchPopupScreen-"
+                                           "OrganizationSearchDV-GlobalContactNameInputSet-Name")
+        self.assertEqual([(p, g) for p, g, _c in targets], [("OrganizationSearchPopup", "getName")])
+        self.assertEqual(widget_targets(fixtures, "No-Such-Widget"), [])
+        self.assertEqual(widget_targets(None, "A-B"), [])
+
     def test_nothing_uses_it(self):
         from eir_uses import print_uses, uses_report
         out = io.StringIO()

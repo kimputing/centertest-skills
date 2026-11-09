@@ -17,7 +17,8 @@ scripts/
 ├── eir_impact.py        # Rerun plan for --review: per-method Java reach, changed DC rows, changed reference codes; rerun_suite() = the plan as suite entries (vendored suite.compact)
 ├── eir_data.py          # Test data panel: scenarios per full run, unread DCs, unused codes (= xlsx-cleanup-unused), broken refs live/dormant
 ├── eir_screens.py       # Screens/wizards the suite's own code opens (generated cssids/ -> page classes)
-├── eir_uses.py         # --touches PAGE[.getX]: tests reaching a generated page/widget (eir_impact.tests_reaching) + suite;
+├── find_getter.py      # vendored, byte-identical copy of cssid-finder's (widget id -> getter chain for --touches)
+├── eir_uses.py         # --touches PAGE[.getX] | widget-id: tests reaching a generated page/widget (eir_impact.tests_reaching) + suite;
 │                        # --uses PATTERN: data rows naming a value -> DC rows reaching them (#Ref, joins, @Rel, engine scopes) -> tests + suite
 ├── eir_products.py      # Product coverages (generated <Line>_coverage_structure.json) selected by scenarios (eir_uses.reached_values)
 ├── eir_reach.py         # Forward reach from a test (per call: Facade.method, new Step, typed fields, superclasses); assertion vocabulary; rule 9010
@@ -100,7 +101,7 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 
 - `--review` keys findings without position columns (`Row`) and with digits in grouped items replaced by `#`, so a moved row or a count going from 2x to 3x is not "new". Rules that error on either side are listed as not compared; an uncompared trust rule makes the verdict "Not verified" (exit 1).
 - `eir_analyzer.py` name is historical — the skill is centertest-healthcheck
-- Rerun reach (`eir_impact.tests_reaching`): a static call must name its class (`BC.createAccount(`, never `PC.createAccount(`); a bare `.name(` counts only where the class is used as an instance (in the file or a project superclass); a class held in a superclass field reaches the subclass methods that use that field. A changed workbook starts from its readers' methods that name it (`_reading_methods`, declaration line included; `rule_ddt._workbook_tokens` gives the names). Changed row codes filter only a test whose own `@DataDriven` datasource is that workbook; any other test reaching it reruns whole.
+- Rerun reach (`eir_impact.tests_reaching`): a static call must name its class (`BC.createAccount(`, never `PC.createAccount(`); a bare `.name(` counts only where the class is used as an instance (in the file or a project superclass); a class held in a field (own or a superclass's) reaches the methods that use that field. Affected methods are closed over same-class callers (`execute()` -> helper), and a method that builds the step (`return new Step(...)`) passes it on once `execute` is affected. A changed workbook starts from its readers' methods that name it (`_reading_methods`, declaration line included; `rule_ddt._workbook_tokens` gives the names). Changed row codes filter only a test whose own `@DataDriven` datasource is that workbook; any other test reaching it reruns whole.
 - Rule 9005 checks method-level `@DataDriven` (not just class-level)
 - Rules 9001, 9003, 9005, 9007 and 9008 scan the main class **and its inner classes** (tests often keep flow steps there). Inner-class findings are labelled `Outer.Inner`. The parser only collects direct inner classes, so a class nested inside an inner class is still not scanned.
 - Rule 1001 has `suffix_exceptions` set for `CheckEnvironmentAvailability`

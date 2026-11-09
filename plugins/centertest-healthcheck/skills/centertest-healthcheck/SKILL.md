@@ -118,7 +118,9 @@ answer too: say so and point at the product coverage panel. Offer to add the sui
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --touches "SubmissionWizardPage.getOfferingStep"
 ```
 
-A regex over the generated page classes the project imports, or `Page.getWidget` for one widget. Prints per
+A regex over the generated page classes the project imports, `Page.getWidget` for one widget, or a
+Guidewire widget id from the app or a log (`SubmissionWizard-…-OrganizationType`, resolved through the
+generated cssids like cssid-finder does). Prints per
 page the tests that reach it (the review's reach: per method, through facades, steps and fields inherited
 from a base class) and a `Touches-<Pattern>` suite with its command. Use it when a Guidewire screen (PCF)
 changes or an upgrade touches a wizard. Offer the suite through `suite-builder`, as for `--uses`.
