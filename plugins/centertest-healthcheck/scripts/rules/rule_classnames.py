@@ -149,8 +149,10 @@ def possible_new_packages(commits: CommitsDict, config) -> RuleResult:
     """
     Find common word prefixes in test class names within a package.
 
-    For each package with >1 test class, splits class names by CamelCase,
-    finds words appearing in >30% of classes. These suggest sub-package opportunities.
+    For each package, splits test class names by CamelCase and suggests a sub-package for a
+    word shared by at least 3 classes (and more than 30% of them) but not by all: a word every
+    class carries is the package's theme, not a split. Connecting words and words that already
+    name a segment of the package path are skipped.
     """
     result = RuleResult(
         rule_id="1004",
@@ -158,7 +160,9 @@ def possible_new_packages(commits: CommitsDict, config) -> RuleResult:
         category="ClassNames",
     )
 
-    skip_words = {"Test", "ScenarioContainer", "_", ""}
+    skip_words = {"Test", "ScenarioContainer", "_", "", "In", "And", "Of", "For", "With", "To", "By",
+                  "On", "The", "A", "An", "From", "Or", "At", "Is"}
+    min_classes = 3
 
     for commit_info, files in sorted(commits.items()):
         by_package = divide_tests_by_package(files)
@@ -182,9 +186,12 @@ def possible_new_packages(commits: CommitsDict, config) -> RuleResult:
                         word_counts[w] += 1
                         seen.add(w)
 
-            # Filter to words appearing in >30% of classes
+            # A sub-package: enough classes share the word, but not all of them
             threshold = total_classes * 0.3
-            candidates = {w: c for w, c in word_counts.items() if c > threshold}
+            segments = {seg.lower() for seg in pkg_name.split(".")}
+            candidates = {w: c for w, c in word_counts.items()
+                          if c > threshold and c >= min_classes and c < total_classes
+                          and w.lower() not in segments}
 
             if candidates:
                 items = []
