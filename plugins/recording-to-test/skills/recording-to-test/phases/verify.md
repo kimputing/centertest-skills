@@ -4,9 +4,7 @@ Compile, run, regression runs, healthcheck, standards, compare with the recordin
 
 **One order, used everywhere:** compile, run, regression runs, healthcheck, standards, compare
 with recording, report, git. Fix rounds happen inside the run (and any regression run) until it
-passes. One exception: if this run's changes are not committed when the healthcheck runs and the
-user commits at the Git step, the healthcheck runs once more as the very last action and its
-findings are appended to the report.
+passes.
 
 Be honest about verification: say what compiled, what ran, which rows passed and what was not run.
 Try the commands yourself first. If one fails for an environment reason (a build that cannot run
@@ -114,14 +112,18 @@ user's decision, and the fix follows [Fix rounds](#fix-rounds), asking before ea
 
 ## Healthcheck
 
-Invoke the `centertest-healthcheck` skill (as a skill, never by script path). It analyses the
-**last commit**, not uncommitted files; say so. If this run's changes are not committed yet, say in
-the healthcheck result that it saw none of them; the one re-run after a commit at
-[Git](#git) is the exception in the order at the top of this file.
+Invoke the `centertest-healthcheck` skill (as a skill, never by script path) on the project with
+the `CenterTestFull` ruleset. It reads the working tree, so it sees this run's files whether or not
+they are committed.
 
-Report findings **in the files this run changed only**, grouped by file. Findings elsewhere are
-not listed. Delete the report folder the skill wrote when it is done. Fix nothing until the user
-picks.
+Report findings **in the files this run changed only**, grouped by file, with their `path:line`.
+Findings elsewhere are not listed. **Trust blockers come first and are not optional:** a test this
+run wrote that opens screens but checks nothing (9010), a check whose result is thrown away (15018),
+a swallowed failure (15005), a scenario-data read without `@DataDriven` (9003), or a data row whose
+codes do not resolve (14003/14004, when a test runs it) means the test is not done — propose the fix
+(the recording's checks become widget assertions; see [phases/code.md](code.md)) and apply it after
+the user agrees, then re-run the healthcheck. Other findings are listed for the user to pick; fix
+nothing they did not pick. Delete the report folder the skill wrote when it is done.
 
 ## Standards
 
@@ -199,7 +201,7 @@ run. Then:
 - data: rows or columns added, the workbook, tests widened, TODOs for the data layer
   ([phases/data.md#gate](data.md#gate)); restart points added and suite entries, or the suite
   file and the class to add when the guidance does not say to edit it;
-- regression results, healthcheck findings in changed files (state that it saw the last commit),
+- regression results, healthcheck findings in changed files (trust blockers first, each resolved),
   standards findings, and run-vs-recording differences with the user's decisions;
 - **every default taken without asking** when the user said to just run it
   ([SKILL.md#just-run-it](../SKILL.md#just-run-it));
@@ -224,9 +226,6 @@ commit, PR; the user picks which. The repo is on GitHub or Azure DevOps: read th
   The message follows the project's convention and references the issue or work item.
 - **PR:** the PR description draft from [Report](#report), the issue or work item linked.
 
-If the user commits and the healthcheck ran before the commit, run it once more now as the very last
-action and append its findings to the report (the order at the top).
-
 ## Engine gaps
 
 When a problem is in the engine (a plan field wrong or missing for what the recording shows, a
@@ -249,7 +248,8 @@ Show:
 - compile result and the rounds it took;
 - run: environment, scenarios scheduled vs rows selected, status per row, fix rounds taken;
 - regression runs: callers run and their results;
-- healthcheck findings in changed files (last commit only) and standards findings, to be picked;
+- trust blockers in changed files and how each was resolved; other healthcheck findings in changed
+  files and standards findings, to be picked;
 - run vs recording: the table and every difference, awaiting the user's decision (n/a when the
   test was not run or did not pass);
 - the report and PR description draft;
@@ -257,4 +257,4 @@ Show:
 - the git options (branch, commit, PR) for the user to pick.
 
 Wait for an explicit answer on each difference, each finding, each profile update and each git
-option. A post-commit healthcheck re-run, if any, is the last action.
+option.
