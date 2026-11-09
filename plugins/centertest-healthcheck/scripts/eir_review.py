@@ -251,11 +251,24 @@ def _rerun_by_cause(rerun: list[dict], limit: int) -> list[str]:
     return out
 
 
+def breadth_lost(meta: dict) -> str:
+    """'The run loses 2 flows, 3 coverages, 1 limit/deductible option, 1 line/jurisdiction' - what leaves
+    regression without any test failing, in one line for the top of the review; "" when nothing does."""
+    scope, coverage = meta.get("scope") or {}, meta.get("coverage") or []
+    counts = [(len(scope.get("flows_stopped") or []), "flow"),
+              (sum(len(c["lost"]) for c in coverage), "coverage"),
+              (sum(len(c.get("options_lost") or []) for c in coverage), "limit/deductible option"),
+              (sum(len(s["lost"]) for s in meta.get("states") or []), "line/jurisdiction")]
+    parts = [f"{n} {what}{'' if n == 1 else 's'}" for n, what in counts if n]
+    return "The run loses " + ", ".join(parts) + " (details below)." if parts else ""
+
+
 def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
     """The review as Markdown for a pull-request comment."""
     line, _ = verdict(changes)
+    lost = breadth_lost(meta)
     out = [f"## CenterTest review: `{meta['head_name']}` vs `{meta['base_name']}`", "",
-           f"**{line}**", "",
+           f"**{line}**", ""] + ([f"**{lost}**", ""] if lost else []) + [
            f"Compared {meta['head_short']} with the merge-base {meta['base_short']} "
            f"({meta['head_files']} vs {meta['base_files']} Java files, rules: {meta['ruleset']}). "
            "Only findings this branch added or removed are listed.", ""]
@@ -511,6 +524,8 @@ def print_review(changes: list[dict], meta: dict) -> None:
               + ", ".join(c["rule_id"] for c in changes if c["fixed"]))
     print("-" * 60)
     print(f"  {line}")
+    if breadth_lost(meta):
+        print(f"  {breadth_lost(meta)}")
     print("=" * 60)
 
 

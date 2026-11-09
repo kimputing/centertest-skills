@@ -339,6 +339,23 @@ class RunScopeTest(unittest.TestCase):
         self.assertEqual(scope["flows_stopped"], [{"test": "AccountTest.run", "deleted": True}])
         self.assertIn("**Flows that no longer run** (1): AccountTest.run (test gone: deleted or renamed)", md)
 
+    def test_what_the_run_loses_heads_the_comment(self):
+        from eir_json import review_json
+        from eir_review import breadth_lost, render_markdown
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [],
+                "scope": {"before": 3, "after": 2, "removed": [], "switched_off": [], "added": [],
+                          "flows_stopped": [{"test": "A.run", "deleted": False}]},
+                "coverage": [{"line": "GLLine", "lost": ["Pollution", "Liquor"], "gained": [], "not_offered": [],
+                              "options_lost": ["Liquor / Limit = $1,000"], "options_gained": []}],
+                "states": [{"line": "GL", "lost": ["NV"], "gained": []}]}
+        line = "The run loses 1 flow, 2 coverages, 1 limit/deductible option, 1 line/jurisdiction (details below)."
+        self.assertEqual(breadth_lost(meta), line)
+        md = render_markdown([], meta)
+        self.assertLess(md.index(line), md.index("Compared 2 with the merge-base"))  # right under the verdict
+        self.assertEqual(review_json([], meta)["breadth_lost"], line)
+        self.assertEqual(breadth_lost({"scope": None}), "")
+
     def test_a_flow_whose_every_row_is_switched_off_stops_running(self):
         import tempfile
         from eir_review import run_scope

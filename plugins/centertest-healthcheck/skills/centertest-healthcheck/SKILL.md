@@ -102,6 +102,9 @@ and lists only the findings that changed, trust blockers first:
   use them) — and the `bootRun` commands to run them when the project's `build.gradle` forwards
   `-PcenterTest` and `-Pfilter` (a `Code=^(...)$` row filter). Offer to run them against the user's
   environment; never run them unasked.
+- **What the run loses**: right under the verdict, one line ("The run loses 1 flow, 2 coverages, 1
+  limit/deductible option, 1 line/jurisdiction") when the branch takes anything out of regression without
+  a test failing; JSON `breadth_lost`. Say it right after the verdict.
 - **Who introduced each trust blocker**: a `path:line` finding is blamed on the tip (author, date, commit); a
   line written before the range says so (something it relies on changed); a workbook row gets the range's last
   commit to that workbook. The weekly page sums them per author. Report facts, not blame.

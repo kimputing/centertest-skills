@@ -58,11 +58,12 @@ def health_json(results, project: str, files: int, data=None, screens=None, prod
 
 
 def review_json(changes, meta) -> dict:
-    from eir_review import verdict
+    from eir_review import breadth_lost, verdict
     line, code = verdict(changes)
     return {"schema": SCHEMA, "tool": "centertest-healthcheck --review",
             "generated": datetime.now().isoformat(timespec="seconds"),
-            "verdict": line, "exit_code": code, "changes": _plain(changes), "meta": _plain(meta)}
+            "verdict": line, "breadth_lost": breadth_lost(meta), "exit_code": code, "changes": _plain(changes),
+            "meta": _plain(meta)}
 
 
 def write(doc: dict, output_dir: str, stem: str) -> str:
