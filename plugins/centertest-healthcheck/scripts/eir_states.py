@@ -96,6 +96,22 @@ def state_coverage(repo_dir: str, cssids_dir: str | None) -> list[dict] | None:
             for line, states in sorted(per_line.items(), key=lambda kv: (-len(kv[1]), kv[0])) if states]
 
 
+def state_delta(base_tree: str, head_tree: str, cssids_dir: str | None) -> list[dict]:
+    """[{line, lost, gained}]: jurisdictions a line's scenarios ran in at the merge-base and no longer do on the
+    branch tip (a row removed or switched off, an address changed), and the other way round."""
+    base, head = state_coverage(base_tree, cssids_dir), state_coverage(head_tree, cssids_dir)
+    if base is None or head is None:
+        return []
+    was = {l["line"]: set(l["states"]) for l in base}
+    now = {l["line"]: set(l["states"]) for l in head}
+    out = []
+    for line in sorted(set(was) | set(now)):
+        lost, gained = was.get(line, set()) - now.get(line, set()), now.get(line, set()) - was.get(line, set())
+        if lost or gained:
+            out.append({"line": line, "lost": sorted(lost), "gained": sorted(gained)})
+    return out
+
+
 def print_states(lines: list[dict]) -> None:
     every = set().union(*(l["states"] for l in lines))
     print(f"  JURISDICTIONS THE SCENARIOS RUN IN ({len(every)} in all; a State/Jurisdiction cell of a row they reach)")

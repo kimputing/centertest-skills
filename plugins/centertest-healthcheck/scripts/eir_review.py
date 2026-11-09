@@ -382,6 +382,22 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
             out.append(f"Newly selected ({len(gained)}): " + "; ".join(f"{l}: {n}" for l, n in gained[:limit])
                        + (f" … +{len(gained) - limit}" if len(gained) > limit else ""))
             out.append("")
+    states = meta.get("states") or []
+    if states:
+        lost = [(s["line"], j) for s in states for j in s["lost"]]
+        gained = [(s["line"], j) for s in states for j in s["gained"]]
+        out += ["### Jurisdictions", "",
+                "States or provinces a line's scenarios run in (a State/Jurisdiction cell of a row an enabled scenario "
+                "reaches), merge-base → branch tip.", ""]
+        if lost:
+            out.append(f"**No scenario of the line runs there any more** ({len(lost)}): "
+                       + "; ".join(f"{line}: {j}" for line, j in lost[:limit * 2])
+                       + (f" … +{len(lost) - limit * 2}" if len(lost) > limit * 2 else ""))
+            out.append("")
+        if gained:
+            out.append(f"Newly run in ({len(gained)}): " + "; ".join(f"{line}: {j}" for line, j in gained[:limit])
+                       + (f" … +{len(gained) - limit}" if len(gained) > limit else ""))
+            out.append("")
     errored = [c for c in changes if c.get("error")]
     if errored:
         out += ["### Not compared", ""]
@@ -459,6 +475,11 @@ def print_review(changes: list[dict], meta: dict) -> None:
                   + ", ".join(c["gained"][:4]) + (" ..." if len(c["gained"]) > 4 else ""))
         for n in c.get("not_offered") or []:
             print(f"  !! {c['line']}: {n['coverage']} / {n['term']} = {n['value']} is not an option in the product model")
+    for s in meta.get("states") or []:
+        if s["lost"]:
+            print(f"  -- {s['line']}: no scenario runs in {', '.join(s['lost'])} any more")
+        if s["gained"]:
+            print(f"  ++ {s['line']}: now runs in {', '.join(s['gained'])}")
     rerun = meta.get("rerun") or []
     if rerun:
         print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
@@ -601,8 +622,10 @@ def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: s
         scope = run_scope(os.path.join(tmp, "base"), os.path.join(tmp, "head"), config.source_root)
         from eir_screens import find_cssids_dir
         product_dir = find_cssids_dir(repo, cssids)
-        coverage = (coverage_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir)
-                    if product_dir and any(p.startswith("testdata/") for p in changed) else [])
+        data_changed = product_dir and any(p.startswith("testdata/") for p in changed)
+        coverage = coverage_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir) if data_changed else []
+        from eir_states import state_delta
+        states = state_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir) if data_changed else []
     changes = diff_results(results["base"][0], results["head"][0])
     shown = [label for c in changes if c.get("blocking") for label in c["introduced"][:15]]
     who = blame(repo, start, head_sha, shown, changed) if shown else {}
@@ -611,7 +634,8 @@ def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: s
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
             "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
-            "suites": suites_changed, "coverage": coverage, "scope": scope, "blame": who,
+            "suites": suites_changed, "coverage": coverage, "states": states, "scope": scope,
+            "blame": who,
             "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
                             "command": suite_command(repo, suite_name)} if suite_entries else None}
     return changes, meta

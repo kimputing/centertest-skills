@@ -106,6 +106,9 @@ and lists only the findings that changed, trust blockers first:
   reviewer should confirm each was meant) and those newly selected, per line of business, and the **term
   values the branch introduces that are not an option in the product model** (a limit or deductible the
   dropdown does not offer): name each with its options, so the author corrects the row before the run.
+- **Jurisdictions**: the states or provinces a line's scenarios no longer run in on the branch (say these:
+  a row removed, switched off or re-addressed silently drops a state's rules from regression) and those
+  newly run in.
 - **All of it in one run**: from two tests up, the comment carries a suite `Rerun-<sha>` whose entries
   run exactly the plan's scenarios (a whole test, or `Class method (codeA|codeB)` for changed rows) and
   the one command to start it. Offer to add it with the `suite-builder` skill (`create Rerun-<sha>

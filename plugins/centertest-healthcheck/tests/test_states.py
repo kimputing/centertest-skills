@@ -65,6 +65,22 @@ class StateCoverage(unittest.TestCase):
             {"line": "GL", "states": {"CA": 1}, "elsewhere": ["AZ", "TX"]},
         ])
 
+    def test_the_review_names_jurisdictions_a_line_stops_running_in(self):
+        import shutil
+        from eir_review import render_markdown
+        base = os.path.join(self.tmp.name, "base")
+        shutil.copytree(self.root, base)
+        make_xlsx(os.path.join(base, "testdata", "ca", "CA_SubmissionDC.xlsx"), {"DataCombination": [
+            ["Code", "#Address", "Disabled"], ["Phoenix", "phx", ""], ["Reno", "reno", ""]]})  # NV ran; TX did not
+        delta = eir_states.state_delta(base, self.root, self.cssids)
+        self.assertEqual(delta, [{"line": "CA", "lost": ["NV"], "gained": ["TX"]}])
+        self.assertEqual(eir_states.state_delta(self.root, self.root, self.cssids), [])
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "states": delta}
+        md = render_markdown([], meta)
+        self.assertIn("**No scenario of the line runs there any more** (1): CA: NV", md)
+        self.assertIn("Newly run in (1): CA: TX", md)
+
     def test_no_jurisdiction_typelist_no_panel(self):
         self.assertIsNone(eir_states.state_coverage(self.root, os.path.join(self.tmp.name, "nowhere")))
         self.assertIsNone(eir_states.state_coverage(self.root, None))
