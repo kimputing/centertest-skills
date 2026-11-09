@@ -158,6 +158,22 @@ def reached_values(repo_dir: str, start: set | None = None, coverage_only: bool 
     enabled DataCombination row, or `start` (("dc", rel path, code) keys) --
     itself included, and the headers of its filled value columns (a term set as its own column):
     what the scenarios actually select, not what merely sits in a sheet."""
+    tables, reached = _reached(repo_dir, start)
+    values = set()
+    for t in tables:
+        if coverage_only and not _coverage_table(t):
+            continue
+        cols = _value_columns(t)
+        for code, cells in t["rows"]:
+            if _key(t, code) in reached:
+                filled = [i for i in cols if i < len(cells) and cells[i].strip()]
+                values |= {cells[i].strip().lower() for i in filled}
+                values |= {t["headers"][i].lower() for i in filled}  # a term set as its own column
+    return values
+
+
+def _reached(repo_dir: str, start: set | None = None):
+    """(tables, keys of every row the start rows -- by default every enabled DataCombination row -- reach)."""
     tables, links = _graph(repo_dir)
     out_of = dict(links)
     if start is not None:
@@ -176,17 +192,32 @@ def reached_values(repo_dir: str, start: set | None = None, coverage_only: bool 
             if nxt not in reached:
                 reached.add(nxt)
                 frontier.append(nxt)
-    values = set()
+    return tables, reached
+
+
+def _column(t: dict, *names: str):
+    squeezed = [h.lower().replace(" ", "") for h in t["headers"]]
+    return next((squeezed.index(n) for n in names if n in squeezed), None)
+
+
+def term_values(repo_dir: str) -> dict[tuple, set]:
+    """{(coverage, term) lower-cased: the values the scenarios set}, from rows enabled scenarios reach with
+    the coverage steps' columns Coverage, CovTerm and CovtermValue (UI labels; an API payload's
+    PatternCode/ChosenTerm rows are not compared). A cell with several lines sets one value per line."""
+    tables, reached = _reached(repo_dir)
+    out: dict[tuple, set] = {}
     for t in tables:
-        if coverage_only and not _coverage_table(t):
+        ci, ti, vi = _column(t, "coverage"), _column(t, "covterm"), _column(t, "covtermvalue")
+        if ci is None or ti is None or vi is None:
             continue
-        cols = _value_columns(t)
         for code, cells in t["rows"]:
-            if _key(t, code) in reached:
-                filled = [i for i in cols if i < len(cells) and cells[i].strip()]
-                values |= {cells[i].strip().lower() for i in filled}
-                values |= {t["headers"][i].lower() for i in filled}  # a term set as its own column
-    return values
+            if _key(t, code) not in reached:
+                continue
+            cov, term, value = (cells[i].strip() if i < len(cells) else "" for i in (ci, ti, vi))
+            if cov and term and value:
+                out.setdefault((cov.lower(), term.lower()), set()).update(
+                    v.strip() for v in value.splitlines() if v.strip())
+    return out
 
 
 def rows_by_value(repo_dir: str, coverage_only: bool = False) -> dict[str, set]:

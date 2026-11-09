@@ -181,5 +181,80 @@ class CoverageDeltaTest(unittest.TestCase):
         self.assertIn("Newly selected (1): GLLine: Cyber Suite", md)
 
 
+TERMS = [
+    {"codeIdentifier": "GLLiquorCov", "name": "Liquor Liability Endorsement",
+     "covTerms": [{"codeIdentifier": "GLLiquorLimit", "name": "Limit",
+                   "covTermChoices": [{"codeIdentifier": "z1", "name": "$500,000"},
+                                      {"codeIdentifier": "z2", "name": "$1,000,000"},
+                                      {"codeIdentifier": "z3", "name": "$2,000,000"}]},
+                  {"codeIdentifier": "GLLiquorDed", "name": "Deductible",
+                   "covTermChoices": [{"codeIdentifier": "z4", "name": "No Deductible"},
+                                      {"codeIdentifier": "z5", "name": "500"}]}]},
+    {"codeIdentifier": "GLMedPay", "name": "Medical Payments",
+     "covTerms": [{"codeIdentifier": "GLMedLimit", "name": "Limit",
+                   "covTermChoices": [{"codeIdentifier": "z6", "name": "5,000"}]}]},
+]
+
+
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class TermOptions(unittest.TestCase):
+    """Which options of a coverage's option terms the scenarios set, and values that are not an option."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = self.root = os.path.join(self.tmp.name, "proj")
+        self.resources = os.path.join(self.tmp.name, "gen", "src", "main", "resources")
+        os.makedirs(os.path.join(self.resources, "cssids", "pc"))
+        with open(os.path.join(self.resources, "GLLine_coverage_structure.json"), "w") as fh:
+            json.dump(TERMS, fh)
+        os.makedirs(os.path.join(root, "testdata", "gl"))
+        with open(os.path.join(root, "testdata", "DataDrivenHierarchy.json"), "w") as fh:
+            json.dump({"$references": {"testdata/GLData.xlsx": ["testdata/gl/.*DC\\.xlsx"]}}, fh)
+        make_xlsx(os.path.join(root, "testdata", "GLData.xlsx"), {
+            "Coverage": [["Code", "Coverage", "CovTerm", "CovtermValue"],
+                         ["lim", "Liquor Liability Endorsement", "Limit", "1,000,000"],  # "$1,000,000"
+                         ["ded", "Liquor Liability Endorsement", "Deductible", "No Deductible, 500"],  # a list
+                         ["odd", "Liquor Liability Endorsement", "Limit", "750,000"],  # not an option
+                         ["med", "Medical Payments", "Limit", "9,999"]],  # only a disabled row reaches it
+            # an API payload's shape: its values are not dropdown labels, so it is not compared
+            "CovTerm": [["Code", "Name", "PatternCode", "ChosenTerm"], ["api", "Limit", "GLLiquorLimit", "1000"]]})
+        make_xlsx(os.path.join(root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {
+            "DataCombination": [["Code", "#Coverage", "#CovTerm", "Disabled"],
+                                ["Default", "lim,ded", "api", ""], ["Odd", "odd", "", ""], ["Off", "med", "", "true"]]})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_options_chosen_and_values_that_are_not_an_option(self):
+        gl = eir_products.product_coverage(self.root, self.resources)[0]
+        liquor = next(c for c in gl["named"] if c["name"] == "Liquor Liability Endorsement")
+        self.assertEqual(liquor["options"], [
+            {"term": "Deductible", "options": ["No Deductible", "500"], "chosen": ["No Deductible", "500"],
+             "not_offered": []},
+            {"term": "Limit", "options": ["$500,000", "$1,000,000", "$2,000,000"], "chosen": ["$1,000,000"],
+             "not_offered": ["750,000"]}])
+        self.assertNotIn("Medical Payments", [c["name"] for c in gl["named"]])
+        self.assertEqual((gl["option_terms"], gl["options_chosen"], gl["options_total"]), (2, 3, 5))
+        self.assertEqual([(n["coverage"], n["term"], n["value"]) for n in gl["not_offered"]],
+                         [("Liquor Liability Endorsement", "Limit", "750,000")])
+
+    def test_shown_in_terminal_panel_and_excel(self):
+        import contextlib
+        import io
+        lines = eir_products.product_coverage(self.root, self.resources)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            eir_products.print_products(lines)
+        self.assertIn("options 3/5 of 2 option terms", out.getvalue())
+        self.assertIn("Liquor Liability Endorsement / Limit = 750,000   (options: $500,000, $1,000,000, $2,000,000)",
+                      out.getvalue())
+        html = eir_report._products_panel_html(lines)
+        self.assertIn("2 option terms set, 3 of their 5 options used", html)
+        self.assertIn("Term values that are not an option in the product model", html)
+        row = next(r for r in eir_products.excel_rows(lines) if r[1] == "Liquor Liability Endorsement")
+        self.assertEqual(row[6], "Deductible: No Deductible, 500 (2 of 2); "
+                                 "Limit: $1,000,000, 750,000 NOT AN OPTION (1 of 3)")
+
+
 if __name__ == "__main__":
     unittest.main()

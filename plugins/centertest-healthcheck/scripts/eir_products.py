@@ -10,6 +10,11 @@ is listed apart. A term counts only under an exercised coverage, so a generic te
 as "Limit" does not make every coverage look tested. Coverage names repeat across sub-lines
 (the same exclusion on several parts); each name is counted once per line.
 
+Option terms (a term with covTermChoices: a limit, a deductible) list which of their options the
+scenarios set (eir_uses.term_values: Coverage / CovTerm / CovtermValue rows they reach), matched by
+name or code ignoring $, commas and spaces (a cell may list several options, comma-separated); a value that is none of the options is listed as
+"not an option" in the product model -- the dropdown offers no such value.
+
 Naming a coverage is a floor for "the suite selects it": a disabled row is skipped, but a row
 in a workbook no suite runs still counts (the Test data panel lists those workbooks).
 """
@@ -76,6 +81,44 @@ def java_names(repo_dir: str, source_root: str = "src") -> set[str]:
     return names
 
 
+def _squeeze(value: str) -> str:
+    """'$1,000 ' -> '1000': how a term option and a data cell are compared."""
+    return re.sub(r"[\s$,]", "", str(value or "").lower())
+
+
+def term_options(entries: list[dict], set_values: dict) -> list[dict]:
+    """[{term, options, chosen, not_offered}] for the option terms of one coverage that the scenarios set."""
+    keys = {str(c.get(k) or "").strip().lower() for c in entries for k in ("name", "codeIdentifier")} - {""}
+    out = {}
+    for c in entries:
+        for t in c.get("covTerms") or []:
+            choices = [ch for ch in t.get("covTermChoices") or [] if ch.get("name")]
+            name = str(t.get("name") or "").strip()
+            if not choices or not name or name in out:
+                continue
+            tkeys = {name.lower(), str(t.get("codeIdentifier") or "").strip().lower()} - {""}
+            values = set().union(*(v for (cov, term), v in set_values.items() if cov in keys and term in tkeys))
+            if not values:
+                continue
+            by_key = {}
+            for ch in choices:
+                for k in (ch.get("name"), ch.get("codeIdentifier")):
+                    if k:
+                        by_key.setdefault(_squeeze(k), ch["name"].strip())
+            options = list(dict.fromkeys(ch["name"].strip() for ch in choices))
+            chosen, not_offered = set(), []
+            for v in values:
+                # the whole cell ("$1,000,000"), else a list of options ("No Coverage, Split Limit")
+                parts = [v] if _squeeze(v) in by_key else [p for p in v.split(",") if p.strip()]
+                if all(_squeeze(p) in by_key for p in parts):
+                    chosen |= {by_key[_squeeze(p)] for p in parts}
+                else:
+                    not_offered.append(v)
+            out[name] = {"term": name, "options": options, "chosen": [o for o in options if o in chosen],
+                         "not_offered": sorted(not_offered)}
+    return [out[n] for n in sorted(out, key=str.lower)]
+
+
 def _named(entry: dict, names: set[str]) -> bool:
     return any(str(entry.get(k) or "").strip().lower() in names for k in ("name", "codeIdentifier"))
 
@@ -88,9 +131,10 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
         return None
     data, java = data_names(repo_dir), java_names(repo_dir, source_root)
     in_suites = None
-    by_value, readers = {}, {}
+    by_value, readers, set_values = {}, {}, {}
     try:
-        from eir_uses import reached_values, rows_by_value, suite_rows
+        from eir_uses import reached_values, rows_by_value, suite_rows, term_values
+        set_values = term_values(repo_dir)
         exercised = reached_values(repo_dir, coverage_only=True)
         by_value = rows_by_value(repo_dir, coverage_only=True)
         # tests that read each workbook: @DataDriven, a DDTHelper getter or the DC class (rule 14003's readers)
@@ -130,7 +174,8 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
                     for test in readers.get(dc, ()):
                         tests[test] = tests.get(test, 0) + 1
                 named.append({"name": name, "code": entries[0].get("codeIdentifier"),
-                              "terms": len(terms), "terms_set": done, "tests": tests})
+                              "terms": len(terms), "terms_set": done, "tests": tests,
+                              "options": term_options(entries, set_values)})
             elif any(_named(c, data) for c in entries):
                 unused.append(name)
             elif any(_named(c, java) for c in entries):
@@ -142,7 +187,12 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
             c["name"] for c in named if not any(_named(e, in_suites) for e in by_name[c["name"]]))
         lines.append({"line": line, "coverages": len(by_name), "named": named, "unused": unused, "java": in_java,
                       "outside_suites": outside,
-                      "missing": missing, "terms": terms_total, "terms_set": terms_set})
+                      "missing": missing, "terms": terms_total, "terms_set": terms_set,
+                      "option_terms": sum(len(c["options"]) for c in named),
+                      "options_chosen": sum(len(o["chosen"]) for c in named for o in c["options"]),
+                      "options_total": sum(len(o["options"]) for c in named for o in c["options"]),
+                      "not_offered": [{"coverage": c["name"], "term": o["term"], "value": v, "options": o["options"]}
+                                      for c in named for o in c["options"] for v in o["not_offered"]]})
     return lines
 
 
@@ -153,7 +203,15 @@ def print_products(lines: list[dict]) -> None:
             + (f" +{len(l['unused'])} in rows no scenario reaches" if l.get("unused") else "") \
             + (f" +{len(l['java'])} only in Java" if l["java"] else "")
         terms = f"   terms {l['terms_set']}/{l['terms']}" if l["terms"] else ""
-        print(f"  {l['line']:<24} coverages {len(l['named']):>4}/{l['coverages']:<4}{extra}{terms}")
+        options = (f"   options {l['options_chosen']}/{l['options_total']} of {l['option_terms']} option terms"
+                   if l.get("option_terms") else "")
+        print(f"  {l['line']:<24} coverages {len(l['named']):>4}/{l['coverages']:<4}{extra}{terms}{options}")
+    off = [(l["line"], n) for l in lines for n in l.get("not_offered", [])]
+    if off:
+        print("  Term values that are not an option in the product model:")
+        for line, n in off:
+            shown = ", ".join(n["options"][:8]) + (", ..." if len(n["options"]) > 8 else "")
+            print(f"    {line}: {n['coverage']} / {n['term']} = {n['value']}   (options: {shown})")
 
 
 def _tests(c: dict) -> str:
@@ -162,15 +220,22 @@ def _tests(c: dict) -> str:
     return ", ".join(f"{t} ({n} row{'s' if n != 1 else ''})" for t, n in tests)
 
 
+def options_text(c: dict) -> str:
+    """'Medical Limit: 15,000 (1 of 5); Deductible: 9999 NOT AN OPTION (0 of 6)'."""
+    return "; ".join(f"{o['term']}: " + ", ".join(o["chosen"] + [f"{v} NOT AN OPTION" for v in o["not_offered"]])
+                     + f" ({len(o['chosen'])} of {len(o['options'])})" for o in c.get("options") or [])
+
+
 def excel_rows(lines: list[dict]) -> list[list]:
-    """Line, coverage, status, terms set — every coverage of every line."""
+    """Line, coverage, status, terms set, term options chosen — every coverage of every line."""
     rows = []
     for l in lines:
         outside = set(l.get("outside_suites") or [])
         rows += [[l["line"], c["name"],
                   "Selected only by scenarios no suite runs" if c["name"] in outside else "Selected by a scenario",
-                  f"{len(c['terms_set'])}/{c['terms']}", ", ".join(c["terms_set"]), _tests(c)] for c in l["named"]]
-        rows += [[l["line"], n, "In a data row no scenario reaches", "", "", ""] for n in l.get("unused", [])]
-        rows += [[l["line"], n, "Only in Java", "", "", ""] for n in l["java"]]
-        rows += [[l["line"], n, "Not named", "", "", ""] for n in l["missing"]]
+                  f"{len(c['terms_set'])}/{c['terms']}", ", ".join(c["terms_set"]), _tests(c), options_text(c)]
+                 for c in l["named"]]
+        rows += [[l["line"], n, "In a data row no scenario reaches", "", "", "", ""] for n in l.get("unused", [])]
+        rows += [[l["line"], n, "Only in Java", "", "", "", ""] for n in l["java"]]
+        rows += [[l["line"], n, "Not named", "", "", "", ""] for n in l["missing"]]
     return rows

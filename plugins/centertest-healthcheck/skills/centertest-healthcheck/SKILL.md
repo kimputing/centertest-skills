@@ -43,7 +43,10 @@ The terminal summary ends with the trust blockers, the test data, the screens an
    do not list suggestions one by one.
 3. **Test data and suites**: scenario runs, unread workbooks, unused codes, scenarios no suite runs.
    **What the suite exercises**: wizards no test opens, and per line of business how many of the
-   product's coverages the test data names (lowest first; name the coverages a well-covered line misses).
+   product's coverages the test data names (lowest first; name the coverages a well-covered line misses),
+   how many of their option terms' options (limits, deductibles) the scenarios use, and every **term value
+   that is not an option in the product model** (`Coverage / Term = value (options: ...)`) — the dropdown
+   offers no such value, so say which data row to correct.
 4. **Offer the next step that fits** (and run it only when asked):
    discarded `.equals()` → `--fix 15018` (diff first); suite entries that run nothing → the
    `suite-builder` skill's `doctor`; unused codes → `ddt-tools` cleanup report; a branch to merge →

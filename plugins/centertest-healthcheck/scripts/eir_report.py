@@ -197,14 +197,15 @@ def generate_excel(results: list[RuleResult], output_dir: str, total_files: int 
     if products:
         from eir_products import excel_rows
         ws = wb.create_sheet(title="Product coverage")
-        for col, header in enumerate(["Line", "Coverage", "Status", "Terms set", "Terms", "Selected by"], 1):
+        for col, header in enumerate(["Line", "Coverage", "Status", "Terms set", "Terms", "Selected by",
+                                      "Term options set"], 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.font = header_font
             cell.fill = header_fill
         for r, values in enumerate(excel_rows(products), 2):
             for col, value in enumerate(values, 1):
                 ws.cell(row=r, column=col, value=value)
-        for letter, width in zip("ABCDEF", (22, 60, 20, 10, 60, 80)):
+        for letter, width in zip("ABCDEFG", (22, 60, 20, 10, 60, 80, 80)):
             ws.column_dimensions[letter].width = width
         ws.auto_filter.ref = ws.dimensions
 
@@ -659,9 +660,10 @@ def _products_panel_html(lines) -> str:
         # the shorter list says more: what a thin line covers, or what a well-covered line still misses
         if len(l["named"]) <= len(l["missing"]) or not l["missing"]:
             label = "Selected by a scenario"
-            from eir_products import _tests
+            from eir_products import _tests, options_text
             chips = [f'<span class="chip on" title="{_html_escape(c["code"] or "")}: terms set '
-                     f'{len(c["terms_set"])}/{c["terms"]}. Selected by: {_html_escape(_tests(c)) or "–"}">'
+                     f'{len(c["terms_set"])}/{c["terms"]}. Selected by: {_html_escape(_tests(c)) or "–"}'
+                     f'{". Options: " + _html_escape(options_text(c)) if c.get("options") else ""}">'
                      f'{_html_escape(c["name"])}</span>' for c in l["named"]]
         else:
             label = "No scenario selects"
@@ -677,12 +679,19 @@ def _products_panel_html(lines) -> str:
         if len(l.get("unused", [])) > 12:
             unused += f'<span class="chip">+{len(l["unused"]) - 12} in Excel</span>'
         terms = f'{l["terms_set"]} of {l["terms"]} terms of those coverages set' if l["terms"] else "no terms on those coverages"
+        if l.get("option_terms"):
+            terms += (f'; {l["option_terms"]} option terms set, {l["options_chosen"]} of their '
+                      f'{l["options_total"]} options used')
+        off = "".join(f'<span class="chip warn" title="Options: {_html_escape(", ".join(n["options"]))}">'
+                      f'{_html_escape(n["coverage"])} / {_html_escape(n["term"])} = {_html_escape(n["value"])}</span>'
+                      for n in l.get("not_offered", []))
         cards.append(
             f'<div class="app-card"><div class="app-name">{_html_escape(l["line"])}</div>'
             f'<div class="app-big">{len(l["named"])}<small> of {l["coverages"]} coverages</small></div>'
             f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
             f'<div class="app-sub">{terms}</div>'
             + (f'<div class="chips-label">{label}</div><div class="chips">{named}</div>' if named else "")
+            + (f'<div class="chips-label">Term values that are not an option in the product model</div><div class="chips">{off}</div>' if off else "")
             + (f'<div class="chips-label">Selected only by scenarios no suite runs</div><div class="chips">{outside}</div>' if outside else "")
             + (f'<details class="more"><summary>{len(l.get("unused", []))} in data rows no scenario reaches</summary>'
                f'<div class="chips">{unused}</div></details>' if unused else "")
@@ -877,6 +886,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .chips {{ display: flex; flex-wrap: wrap; gap: 4px; }}
   .chip {{ font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-muted); overflow-wrap: anywhere; }}
   .chip.on {{ color: var(--text); border-color: var(--accent); }}
+  .chip.warn {{ color: var(--text); border-color: var(--amber); }}
   details.more {{ width: 100%; }}
   details.more summary {{ cursor: pointer; font-size: 12px; color: var(--accent); margin: 4px 0; }}
   .trust-dormant {{ color: var(--text-muted); font-size: 13px; margin-top: 10px; }}
