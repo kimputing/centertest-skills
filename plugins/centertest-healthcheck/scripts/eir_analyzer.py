@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exclude-file", help="File patterns to exclude, comma-separated")
     p.add_argument("--source-root", help="Source root relative to project (default: src/main/java)")
     p.add_argument("--files", help="Analyze specific files only, comma-separated paths")
-    p.add_argument("--output", help="Output formats: excel,markdown,terminal (default: excel,terminal)")
+    p.add_argument("--output", help="Output formats: html,excel,markdown,json,terminal (default: html,excel,terminal)")
     p.add_argument("--max-commits", type=int, help="Max commits to analyze (default: 24)")
 
     # Git options
@@ -352,6 +352,13 @@ def main():
         if filepath:
             generated.append(filepath)
             print(f"  HTML:     {filepath}")
+
+    if "json" in config.output_formats:
+        from eir_json import health_json, write
+        filepath = write(health_json(results, project_name, total_files, data, screens, products, since),
+                         output_dir, "HealthCheck")
+        generated.append(filepath)
+        print(f"  JSON:     {filepath}")
 
     if "markdown" in config.output_formats:
         filepath = generate_markdown(results, output_dir)

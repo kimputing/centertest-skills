@@ -544,8 +544,11 @@ def run_review(config, base_rev: str, head_rev: str, suppressions, cssids: str |
     path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(render_markdown(changes, meta))
+    from eir_json import review_json
+    with open(path[:-3] + ".json", "w", encoding="utf-8") as fh:
+        json.dump(review_json(changes, meta), fh, indent=1, ensure_ascii=False)
     print_review(changes, meta)
-    print(f"  PR comment: {path}\n")
+    print(f"  PR comment: {path}  (JSON beside it)\n")
     return verdict(changes)[1]
 
 
