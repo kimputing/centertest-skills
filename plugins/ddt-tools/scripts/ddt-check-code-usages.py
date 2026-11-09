@@ -243,4 +243,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        print(__doc__.strip())  # usage only: no check, no pr-review report
+        sys.exit(0)
     run_with_pr_review_report("ddt-check-code-usages", main)
