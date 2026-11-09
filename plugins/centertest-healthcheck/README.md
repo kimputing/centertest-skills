@@ -35,6 +35,7 @@ python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip insta
 - **Excel + HTML + Markdown reports** — summary sheet with one detail sheet per rule, plus a scored HTML dashboard
 - **Branch review** — `--review main feature/x` lists only what the branch introduced or fixed, writes a PR comment, exits 1 on a new trust blocker
 - **Screens the suite opens** — wizards and screens per application, and the wizards no test opens
+- **Portfolio** — `--portfolio <projects...>` compares every client suite on one page
 - **Health trend** — `--trend 6` charts score, trust blockers and test cases month by month from git history
 - **Git history analysis** — date range, monthly sampling, PR diff, specific commits
 - **Local-first** — analyzes working directory instantly, no clone needed

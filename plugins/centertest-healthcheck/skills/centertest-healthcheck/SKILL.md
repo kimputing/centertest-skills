@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "how many scenarios do we run", "what is not covered", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "how many scenarios do we run", "compare my clients", "all my suites", "portfolio", "what is not covered", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -68,6 +68,17 @@ and lists only the findings that changed, trust blockers first:
   use them) — and the `bootRun` commands to run them when the project's `build.gradle` forwards
   `-PcenterTest` and `-Pfilter` (a `Code=^(...)$` row filter). Offer to run them against the user's
   environment; never run them unasked.
+
+### Portfolio (every client suite on one page)
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --portfolio /path/to/client-a /path/to/client-b ...
+```
+
+Runs `CenterTestFull` on each project's working tree — read only, nothing is written into them — and
+writes `~/.centertest/reports/Portfolio_<timestamp>.html`: per suite the score, trust blockers by kind,
+scenarios per full run, broken data that tests run, unread workbooks, wizards opened per application
+and the last commit date. About 4 s per suite. Ask the user which projects to include.
 
 ### Health trend (for a status report)
 

@@ -13,6 +13,7 @@ Usage:
     eir_analyzer.py --show-path
     eir_analyzer.py --review main [feature/branch]
     eir_analyzer.py --trend [MONTHS]
+    eir_analyzer.py --portfolio <project> [<project> ...]
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/centertest-healthcheck/scripts/eir_analyzer.py
 """
@@ -95,6 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--trend", nargs="?", const=6, type=int, metavar="MONTHS",
                    help="Health trend: score, trust blockers and test cases for the last mainline "
                         "commit of each of the last MONTHS months (default 6), as an HTML page")
+    p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
+                   help="Compare several CenterTest projects on one page (score, trust blockers, "
+                        "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
     p.add_argument("--review", nargs="+", metavar="REV",
                    help="Branch review: BASE [HEAD] (HEAD defaults to HEAD). Lists only the findings "
                         "the branch introduced or fixed since its merge-base, writes a PR comment and "
@@ -166,6 +170,13 @@ def main():
 
     # Build config from all layers
     config = EirConfig(args)
+
+    if args.portfolio:
+        from eir_portfolio import run_portfolio
+        if not args.ruleset and not args.rules:
+            config.ruleset = "CenterTestFull"  # a portfolio compares complete verdicts
+        print(f"\n  CenterTest portfolio: {len(args.portfolio)} project(s), rules {config.ruleset}")
+        sys.exit(run_portfolio(config, args.portfolio))
 
     if args.trend:
         from eir_trend import run_trend
