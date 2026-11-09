@@ -151,6 +151,22 @@ class SuiteTest(unittest.TestCase):
         doc, _ = suite.load_suites(self.path)
         self.assertEqual(suite.resolve_suite(doc, "agr", tests)["unmatched_packages"], ["com.acme.tests.agr.*"])
 
+    def test_doctor_says_what_a_dead_entry_probably_meant(self):
+        tests = suite.scan(self.p)
+        self.assertEqual(suite.diagnose("PA_SubmisionTest run tx_Austin", tests),
+                         {"part": "class", "value": "PA_SubmisionTest", "suggestions": ["PA_SubmissionTest run tx_Austin"]})
+        self.assertEqual(suite.diagnose("LoginTest runAsAdmn", tests)["suggestions"][0], "LoginTest runAsAdmin")
+        self.assertEqual(suite.diagnose("PA_SubmissionTest run tx_austn", tests)["suggestions"][0], "PA_SubmissionTest run tx_Austin")
+        self.assertEqual(suite.diagnose("LoginTest run tx_Austin", tests)["suggestions"],
+                         ["PA_SubmissionTest run tx_Austin", "LoginTest run"])  # moved, or a method with no data
+
+    def test_replace_and_drop_take_entries_exactly_as_written(self):
+        code, out = self.run_cli("replace", "Stale", "--old", "PA_SubmissionTest run atv", "--new", "PA_SubmissionTest run tx_Austin", "--write")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(suite.find(self.doc()[0], "Stale")["List"], ["PA_SubmissionTest run tx_Austin"])
+        code, _ = self.run_cli("drop", "Stale", "--entry", "no such entry")
+        self.assertEqual(code, 2)
+
     def test_dry_run_writes_nothing(self):
         before = self.doc()[1]
         code, out = self.run_cli("delete", "Stale")

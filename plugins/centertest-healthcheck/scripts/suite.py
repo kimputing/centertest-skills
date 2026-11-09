@@ -12,6 +12,9 @@ Commands (run in the project, or pass --project):
     suite.py delete NAME                       delete a suite
     suite.py rename OLD NEW                    rename (composite suites that name it follow)
     suite.py set NAME --entries-file F         replace a suite's List with entries from a file ("-" = stdin)
+    suite.py doctor [NAME]                     entries that run nothing, why, and what they probably meant
+    suite.py replace NAME --old E --new E      replace one entry (written exactly as in the file)
+    suite.py drop NAME --entry E               drop entries written exactly so (e.g. a dead one)
 
 Selectors (case-insensitive regular expressions, searched -- "Submission" matches WC_SubmissionTest):
     --class R  --method R  --code R  --desc R  --package R   (combine: all must match)
@@ -505,6 +508,50 @@ def remove_from(suite: dict, selection: set, tests: list[dict]) -> tuple[list[st
 
 
 # ---------------------------------------------------------------------------
+# Repairing dead entries
+# ---------------------------------------------------------------------------
+
+def _near(word: str, options, n: int = 4) -> list[str]:
+    """Closest names to word: same text ignoring case first, then contains, then difflib."""
+    import difflib
+    opts = sorted(set(options))
+    low = word.lower().strip("^$.*()")
+    exact = [o for o in opts if o.lower() == low]
+    contains = [o for o in opts if low and low in o.lower() and o not in exact]
+    fuzzy = difflib.get_close_matches(word, opts, n=n, cutoff=0.6)
+    out = []
+    for o in exact + contains + fuzzy:
+        if o not in out:
+            out.append(o)
+    return out[:n]
+
+
+def diagnose(entry: str, tests: list[dict]) -> dict:
+    """Why an entry runs nothing and what it probably meant:
+    {part: class|method|code, value, suggestions: [entries]}."""
+    parts = str(entry).split()
+    scen = scenarios_of(tests)
+    classes = {c for c, _m, _k in scen}
+    cls_hit = [c for c in classes if _full(parts[0], c)]
+    if not cls_hit:
+        return {"part": "class", "value": parts[0],
+                "suggestions": [" ".join([_lit(c)] + parts[1:]) for c in _near(parts[0], classes)]}
+    methods = {m for c, m, _k in scen if c in cls_hit}
+    if len(parts) > 1 and not [m for m in methods if _full(parts[1], m)]:
+        return {"part": "method", "value": parts[1],
+                "suggestions": [" ".join([parts[0], _lit(m)] + parts[2:]) for m in _near(parts[1], methods)]}
+    codes = {k for c, m, k in scen if c in cls_hit and (len(parts) < 2 or _full(parts[1], m)) and k}
+    wanted = " ".join(parts[2:])
+    # The same code under another test: the row may have moved to a different class or method.
+    elsewhere = sorted({f"{_lit(c)} {_lit(m)} {_lit(k)}" for c, m, k in scen
+                        if c not in cls_hit and k and k.lower() == wanted.lower()})
+    if not codes:  # the method has no data: the code part can only be dropped
+        return {"part": "code", "value": wanted, "suggestions": (elsewhere + [" ".join(parts[:2])])[:4]}
+    same_class = [" ".join(parts[:2] + [_lit(k)]) for k in _near(wanted, codes)]
+    return {"part": "code", "value": wanted, "suggestions": (elsewhere + same_class)[:4]}
+
+
+# ---------------------------------------------------------------------------
 # The picker page
 # ---------------------------------------------------------------------------
 
@@ -584,6 +631,11 @@ def main(argv=None) -> int:
         sp = sub.add_parser(cmd); sp.add_argument("name"); selectors(sp); sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("delete"); sp.add_argument("name"); sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("rename"); sp.add_argument("old"); sp.add_argument("new"); sp.add_argument("--write", action="store_true")
+    sp = sub.add_parser("doctor"); sp.add_argument("name", nargs="?")
+    sp = sub.add_parser("replace"); sp.add_argument("name"); sp.add_argument("--old", required=True)
+    sp.add_argument("--new", required=True); sp.add_argument("--write", action="store_true")
+    sp = sub.add_parser("drop"); sp.add_argument("name"); sp.add_argument("--entry", action="append", required=True)
+    sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("picker"); sp.add_argument("--suite", help="suite to open for editing")
     sp.add_argument("--out", help="where to write the page (default ~/.centertest/reports/)")
     sp.add_argument("--open", action="store_true", help="open the page in the default browser")
@@ -652,6 +704,25 @@ def main(argv=None) -> int:
             print(f"  ! package pattern matches no test class: {e}")
         return 0
 
+    if args.cmd == "doctor":
+        report = []
+        for s_ in doc["CenterTestSuites"]:
+            if args.name and str(s_.get("Name", "")).lower() != args.name.lower():
+                continue
+            scen = scenarios_of(tests)
+            for e in s_.get("List", []) or []:
+                if not resolve_entry(e, scen):
+                    report.append({"suite": s_.get("Name", ""), "entry": e, **diagnose(e, tests)})
+        if args.json:
+            print(json.dumps(report, indent=1))
+            return 0
+        for r in report:
+            print(f"{r['suite']}: '{r['entry']}' -- no test {r['part']} matches '{r['value']}'")
+            for sug in r["suggestions"] or ["(nothing close: drop it?)"]:
+                print(f"    try: {sug}")
+        print(f"{len(report)} entries run nothing" + ("" if report else " -- every entry matches a test"))
+        return 0
+
     if args.cmd == "picker":
         out = write_picker(project, args.source_root, tests, path, doc, args.suite, args.out)
         print(f"Suite picker: {out}")
@@ -689,6 +760,25 @@ def main(argv=None) -> int:
         suite = {"Name": args.name, "List": compact(chosen, tests)}
         doc["CenterTestSuites"].append(suite)
         _print_change(args.name, [], suite["List"], set(), chosen, write, path)
+    elif args.cmd in ("replace", "drop"):
+        if not suite:
+            print(f"No suite named {name}", file=sys.stderr)
+            return 2
+        before = list(suite.get("List", []) or [])
+        before_scen = resolve_suite(doc, suite["Name"], tests)["scenarios"]
+        if args.cmd == "replace":
+            if args.old not in before:
+                print(f"{suite['Name']} has no entry written exactly '{args.old}'", file=sys.stderr)
+                return 2
+            suite["List"] = [args.new if e == args.old else e for e in before]
+        else:
+            missing = [e for e in args.entry if e not in before]
+            if missing:
+                print(f"{suite['Name']} has no entry written exactly: {', '.join(missing)}", file=sys.stderr)
+                return 2
+            suite["List"] = [e for e in before if e not in args.entry]
+        after_scen = resolve_suite(doc, suite["Name"], tests)["scenarios"]
+        _print_change(suite["Name"], before, suite["List"], before_scen, after_scen, write, path)
     elif args.cmd in ("add", "remove", "set"):
         if not suite:
             print(f"No suite named {name}; create it first.", file=sys.stderr)
