@@ -1,6 +1,6 @@
 {
   "name": "ddt-tools",
-  "description": "Validate DC references, diff xlsx, report unused codes",
+  "description": "Validate DC references, diff xlsx, report unused codes — interactive or as JSON",
   "author": { "name": "Kimputing" },
   "homepage": "https://github.com/Kimputing/centertest-skills",
   "repository": "https://github.com/Kimputing/centertest-skills",

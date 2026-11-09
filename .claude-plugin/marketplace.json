@@ -11,7 +11,7 @@
     {
       "name": "centertest-healthcheck",
       "source": "./plugins/centertest-healthcheck",
-      "description": "Java code quality analysis for CenterTest projects — 27 rules, HTML+Excel reports",
+      "description": "Suite health for QA architects: trust verdict, what the regression covers (coverages, options, jurisdictions, flows, suites), branch review, trend, portfolio, weekly, release plans, client coverage statement — HTML, Excel, PR comment, JSON",
       "category": "code-quality",
       "keywords": [
         "centertest",
@@ -23,7 +23,7 @@
     {
       "name": "cssid-finder",
       "source": "./plugins/cssid-finder",
-      "description": "Find Java getter chains for Guidewire UI CSS IDs",
+      "description": "Find Java getter chains for Guidewire UI CSS IDs, or by the words on screen",
       "category": "developer-tools",
       "keywords": [
         "centertest",
@@ -46,7 +46,7 @@
     {
       "name": "ddt-tools",
       "source": "./plugins/ddt-tools",
-      "description": "Validate DC references, diff xlsx, report unused codes",
+      "description": "Validate DC references, diff xlsx, report unused codes — interactive or as JSON",
       "category": "test-data",
       "keywords": [
         "centertest",

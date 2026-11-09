@@ -1,6 +1,6 @@
 {
   "name": "centertest-healthcheck",
-  "description": "Java code quality analysis for CenterTest projects — 27 rules, HTML+Excel reports",
+  "description": "Suite health for QA architects: trust verdict, what the regression covers (coverages, options, jurisdictions, flows, suites), branch review, trend, portfolio, weekly, release plans, client coverage statement — HTML, Excel, PR comment, JSON",
   "author": { "name": "Kimputing" },
   "homepage": "https://github.com/Kimputing/centertest-skills",
   "repository": "https://github.com/Kimputing/centertest-skills",

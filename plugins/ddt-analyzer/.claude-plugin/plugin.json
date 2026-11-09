@@ -1,6 +1,6 @@
 {
   "name": "ddt-analyzer",
-  "description": "Analyze CenterTest Data-Driven Testing structure — 15-sheet Excel report",
+  "description": "Analyze CenterTest Data-Driven Testing structure — 28-sheet Excel report (17 without Data Studio)",
   "author": { "name": "Kimputing" },
   "homepage": "https://github.com/Kimputing/centertest-skills",
   "repository": "https://github.com/Kimputing/centertest-skills",
