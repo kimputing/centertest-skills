@@ -3,7 +3,8 @@ Portfolio: every client suite on one page.
 
 Runs the active rules on each project's working tree (read-only: nothing is written into the
 projects) and compares what a QA architect looks at first: the health score, trust blockers by
-kind, the scenarios a full run executes, the wizards the suite opens per application, broken
+kind, the scenarios a full run executes, the wizards the suite opens per application, the product
+coverages its scenarios select (from the generated product model), broken
 data that tests run, and when the suite last changed. The page goes to
 ~/.centertest/reports/Portfolio_<timestamp>.html.
 """
@@ -44,13 +45,15 @@ def analyze_project(path: str, config) -> dict:
         data = data_overview(cfg.repository_dir, cfg.source_root, results)
         cssids = find_cssids_dir(cfg.repository_dir)
         screens = screen_coverage(cfg.repository_dir, cfg.source_root, cssids) if cssids else []
+        from eir_products import product_coverage
+        products = product_coverage(cfg.repository_dir, cssids, cfg.source_root) if cssids else None
     except Exception as e:  # one broken project must not hide the others
         return {"path": cfg.repository_dir, "error": f"{type(e).__name__}: {e}"}
     return {
         "path": cfg.repository_dir, "name": suite_name(cfg.repository_dir),
         "score": health_score(results, len(files)), "files": len(files),
         "blockers": blockers, "not_checked": not_checked,
-        "data": data, "screens": screens, "changed": _last_change(cfg.repository_dir),
+        "data": data, "screens": screens, "products": products, "changed": _last_change(cfg.repository_dir),
     }
 
 
@@ -80,12 +83,31 @@ def _wizards(p: dict) -> str:
     return " · ".join(parts) if parts else "–"
 
 
+def _products(p: dict, lines: int = 4) -> str:
+    """'35/2135 (2%) · CA7 8/568 · GL7 7/432 ...': coverages the scenarios select, overall and per biggest line."""
+    if not p.get("products"):
+        return "not measured (no product model in the generated project)"
+    total = sum(l["coverages"] for l in p["products"])
+    chosen = sum(len(l["named"]) for l in p["products"])
+    biggest = sorted(p["products"], key=lambda l: -l["coverages"])[:lines]
+    short = lambda name: name[:-4] if name.endswith("Line") else name
+    head = f"{chosen}/{total} ({round(100 * chosen / total) if total else 0}%)"
+    return " · ".join([head] + [f'{short(l["line"])} {len(l["named"])}/{l["coverages"]}' for l in biggest])
+
+
+def _products_cell(p: dict) -> str:
+    if not p.get("products"):
+        return '<span class="err">not measured</span>'
+    head, *lines = _products(p).split(" · ")
+    return _html_escape(head) + "".join(f'<div class="kind">{_html_escape(l)}</div>' for l in lines)
+
+
 def render_html(projects: list[dict]) -> str:
     rows = []
     for p in projects:
         if p.get("error"):
             rows.append(f'<tr><td class="name">{_html_escape(suite_name(p["path"]))}</td>'
-                        f'<td colspan="7" class="err">Not analysed: {_html_escape(p["error"])}</td></tr>')
+                        f'<td colspan="8" class="err">Not analysed: {_html_escape(p["error"])}</td></tr>')
             continue
         total = sum(b["count"] for b in p["blockers"])
         kinds = "".join(f'<div class="kind">{b["count"]} × {_html_escape(b["title"])}</div>' for b in p["blockers"])
@@ -98,6 +120,7 @@ def render_html(projects: list[dict]) -> str:
             f'<td class="num">{"–" if d.get("broken_live") is None else d["broken_live"]}</td>'
             f'<td class="num">{len(d.get("unread", [])) if d else "–"}</td>'
             f'<td>{_wizards(p)}</td>'
+            f'<td class="num">{_products_cell(p)}</td>'
             f'<td class="num">{_html_escape(p["changed"])}</td></tr>')
     analysed = [p for p in projects if not p.get("error")]
     at_risk = sum(1 for p in analysed if p["blockers"])
@@ -116,7 +139,8 @@ def render_html(projects: list[dict]) -> str:
   .table {{ overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:12px; }}
   table {{ border-collapse:collapse; width:100%; font-size:14px; }}
   th, td {{ padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }}
-  th {{ color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }}
+  th {{ color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+  th.num {{ white-space:normal; }}
   .num {{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }}
   .name {{ font-weight:600; }} .path {{ font-weight:400; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }}
   .score {{ font-size:20px; font-weight:800; }}
@@ -129,7 +153,8 @@ def render_html(projects: list[dict]) -> str:
 or cannot run). Same rules for every suite; projects were only read. Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <div class="table"><table>
 <thead><tr><th>Suite</th><th class="num">Score</th><th class="num">Trust blockers</th><th class="num">Scenarios per run</th>
-<th class="num">Broken data tests run</th><th class="num">Unread workbooks</th><th>Wizards opened</th><th class="num">Last change</th></tr></thead>
+<th class="num">Broken data tests run</th><th class="num">Unread workbooks</th><th>Wizards opened</th>
+<th class="num">Coverages selected</th><th class="num">Last change</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
 </div></body></html>
 """
@@ -147,6 +172,7 @@ def print_portfolio(projects: list[dict]) -> None:
         d = p["data"] or {}
         print(f"  {name:<28} {p['score']:>5} {sum(b['count'] for b in p['blockers']):>8} "
               f"{d.get('scenarios', '-'):>9} {'-' if d.get('broken_live') is None else d['broken_live']:>5}  {_wizards(p)}")
+        print(f"  {'':<28} coverages selected: {_products(p)}")
     print("=" * 92)
 
 

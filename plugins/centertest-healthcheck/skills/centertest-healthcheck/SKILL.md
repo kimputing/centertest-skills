@@ -128,8 +128,8 @@ changes or an upgrade touches a wizard. Offer the suite through `suite-builder`,
 
 Runs `CenterTestFull` on each project's working tree — read only, nothing is written into them — and
 writes `~/.centertest/reports/Portfolio_<timestamp>.html`: per suite the score, trust blockers by kind,
-scenarios per full run, broken data that tests run, unread workbooks, wizards opened per application
-and the last commit date. About 4 s per suite. Ask the user which projects to include.
+scenarios per full run, broken data that tests run, unread workbooks, wizards opened per application,
+product coverages the scenarios select (overall and the four biggest lines) and the last commit date. About 4 s per suite. Ask the user which projects to include.
 
 ### Health trend (for a status report)
 

@@ -26,5 +26,16 @@ class PortfolioRenderTest(unittest.TestCase):
         self.assertEqual(eir_portfolio.suite_name("/p/exavalu/CenterTest"), "exavalu/CenterTest")
 
 
+class ProductsColumnTest(unittest.TestCase):
+    def test_overall_then_the_biggest_lines(self):
+        from eir_portfolio import _products, _products_cell
+        lines = [{"line": "GL7Line", "coverages": 432, "named": [{}] * 7},
+                 {"line": "CA7Line", "coverages": 568, "named": [{}] * 8},
+                 {"line": "IMLine", "coverages": 14, "named": []}]
+        self.assertEqual(_products({"products": lines}, lines=2), "15/1014 (1%) · CA7 8/568 · GL7 7/432")
+        self.assertIn('<div class="kind">CA7 8/568</div>', _products_cell({"products": lines}))
+        self.assertIn("not measured", _products({"products": None}))
+
+
 if __name__ == "__main__":
     unittest.main()
