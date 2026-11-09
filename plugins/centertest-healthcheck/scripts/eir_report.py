@@ -208,6 +208,20 @@ def generate_markdown(results: list[RuleResult], output_dir: str) -> str:
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
 
+    blockers, not_checked = trust_blockers(results)
+    lines.append("## Can these tests be trusted?")
+    lines.append("")
+    if blockers:
+        for b in blockers:
+            lines.append(f"- **{b['count']} × {b['title']}** ({b['rule_id']}): {b['consequence']}")
+            for x in b["samples"]:
+                lines.append(f"  - `{x}`")
+    else:
+        lines.append("No trust blockers.")
+    if not_checked:
+        lines.append(f"\nNot checked in this run: {', '.join(not_checked)}.")
+    lines.append("")
+
     # Summary table
     lines.append("## Summary")
     lines.append("")
@@ -294,9 +308,103 @@ def _count_items(result: RuleResult) -> int:
     return len(result.rows)
 
 
+# ---------------------------------------------------------------------------
+# Trust blockers
+# ---------------------------------------------------------------------------
+
+# Findings that mean a test can pass while the application is broken, or cannot run its data
+# at all. Any of them makes the suite untrustworthy however clean the rest is, so they are
+# listed first and cap the score below "Healthy". Rules whose findings are style or risk
+# (complexity, naming, 15017 heuristics) are deliberately not here.
+TRUST_RULES = {
+    "15018": ("Checks that can never fail",
+              "the result of .equals() is thrown away, so the verification passes whatever the app shows"),
+    "15005": ("Failures swallowed",
+              "an empty catch block hides the exception, so the step reports success"),
+    "14002": ("Datasources that do not exist",
+              "the @DataDriven workbook is missing, so the test cannot load its data"),
+    "14003": ("Test data codes that do not exist",
+              "a row references a code no sheet in its scope has, so that scenario fails on load"),
+    "14004": ("Related test data rows that do not exist",
+              "an @-relationship points at a DC row or file that is not there"),
+}
+
+# A blocker caps the score here: one notch below "Healthy" (80) and "Needs Attention" (60).
+TRUST_SCORE_CAP = 59
+
+
+def _finding_label(headers: list, row: list) -> str:
+    """One readable line for a finding row, from whichever columns the rule has."""
+    cell = {str(h): row[i] for i, h in enumerate(headers) if i < len(row)}
+    if "File" in cell:
+        where = os.path.basename(str(cell["File"]))
+        row_no = cell.get("Row")
+        if row_no not in (None, "", "-"):
+            where += f" row {row_no}"
+        col, code = cell.get("Column", ""), cell.get("Code", "")
+        what = f"{col} '{code}'" if code not in (None, "", "-") else str(col or cell.get("Issue", ""))
+        return f"{where}: {what}"
+    label = ".".join(str(cell[k]) for k in ("Class", "Method") if cell.get(k))
+    detail = cell.get("Line") or cell.get("Datasource Path") or ""
+    return f"{label}: {detail}" if detail else label
+
+
+def trust_blockers(results: list[RuleResult], sample_size: int = 5) -> tuple[list[dict], list[str]]:
+    """(blockers, not_checked) for the trust rules.
+
+    blockers: [{rule_id, title, consequence, count, samples}] for trust rules with findings;
+    not_checked: trust rule ids that were not part of this run (or errored), so the report
+    never presents an unchecked suite as trustworthy.
+    """
+    by_id = {r.rule_id: r for r in results}
+    blockers, not_checked = [], []
+    for rule_id, (title, consequence) in TRUST_RULES.items():
+        r = by_id.get(rule_id)
+        if r is None or r.error:
+            not_checked.append(rule_id)
+            continue
+        count = _count_items(r)
+        if count:
+            samples = [_finding_label(r.headers, row) for row in r.rows[:sample_size]]
+            blockers.append({"rule_id": rule_id, "title": title, "consequence": consequence,
+                             "count": count, "samples": samples})
+    return blockers, not_checked
+
+
 def _html_escape(text: str) -> str:
     """Escape HTML special characters."""
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def _trust_panel_html(blockers: list[dict], not_checked: list[str]) -> str:
+    """The 'Can these tests be trusted?' panel shown under the score."""
+    unchecked = ""
+    if not_checked:
+        unchecked = (f'    <div class="trust-unchecked">Not checked in this run: rules {", ".join(not_checked)}. '
+                     'Run the CenterTestFull ruleset for a complete verdict.</div>\n')
+    if not blockers:
+        return ('  <div class="trust ok">\n    <h2>Can these tests be trusted?</h2>\n'
+                '    <div class="trust-sub">No trust blockers: every check can fail, no failure is swallowed, '
+                'and all test data resolves.</div>\n' + unchecked + '  </div>\n')
+    total = sum(b["count"] for b in blockers)
+    out = ['  <div class="trust">', '    <h2>Can these tests be trusted? Not yet.</h2>',
+           f'    <div class="trust-sub">{total} finding{"s" if total != 1 else ""} below mean tests can pass while '
+           'the application is broken, or cannot run at all. Fix these before anything else; '
+           'until then the score is capped below Healthy.</div>']
+    for b in blockers:
+        more = b["count"] - len(b["samples"])
+        items = "".join(f"<li>{_html_escape(x)}</li>" for x in b["samples"])
+        if more > 0:
+            items += f"<li>… and {more} more</li>"
+        out.append(
+            f'    <div class="blocker" onclick="navigateTo(\'rule-{b["rule_id"]}\')">'
+            f'<div class="blocker-count">{b["count"]}</div>'
+            f'<div><div class="blocker-title">{_html_escape(b["title"])} <span class="badge-cat">{b["rule_id"]}</span></div>'
+            f'<div class="blocker-why">{_html_escape(b["consequence"])}</div></div>'
+            f'<ul>{items}</ul></div>')
+    out.append(unchecked.rstrip("\n")) if unchecked else None
+    out.append('  </div>')
+    return "\n".join(out) + "\n"
 
 
 def generate_html(results: list[RuleResult], output_dir: str,
@@ -370,8 +478,15 @@ def generate_html(results: list[RuleResult], output_dir: str,
     total_rules = len(results)
     health_score = round(score_earned / score_possible * 100) if score_possible > 0 else 0
 
+    blockers, trust_not_checked = trust_blockers(results)
+    if blockers:
+        health_score = min(health_score, TRUST_SCORE_CAP)
+
     # Determine score color
-    if health_score >= 80:
+    if blockers:
+        score_color = "#ef4444"  # red
+        score_label = "At risk"
+    elif health_score >= 80:
         score_color = "#22c55e"  # green
         score_label = "Healthy"
     elif health_score >= 60:
@@ -443,6 +558,20 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .stat-blue {{ color: var(--accent); }}
 
   /* Category bars */
+  .trust {{ margin: 28px 0 0; background: var(--surface); border: 1px solid var(--border);
+    border-left: 4px solid var(--red); border-radius: 12px; padding: 18px 22px; }}
+  .trust.ok {{ border-left-color: var(--green); }}
+  .trust h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 4px; }}
+  .trust .trust-sub {{ color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }}
+  .blocker {{ display: grid; grid-template-columns: 56px 1fr; gap: 4px 14px; padding: 12px 0;
+    border-top: 1px solid var(--surface2); cursor: pointer; }}
+  .blocker-count {{ font-size: 28px; font-weight: 800; color: var(--red); line-height: 1;
+    font-variant-numeric: tabular-nums; }}
+  .blocker-title {{ font-weight: 600; }}
+  .blocker-why {{ color: var(--text-muted); font-size: 14px; }}
+  .blocker ul {{ grid-column: 2; margin: 4px 0 0 18px; font-size: 13px; color: var(--text);
+    font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }}
+  .trust-unchecked {{ color: var(--amber); font-size: 13px; margin-top: 10px; }}
   .categories {{ margin: 32px 0; }}
   .categories h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 16px; }}
   .cat-row {{
@@ -584,6 +713,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
     </div>
   </div>
 """
+
+    html += _trust_panel_html(blockers, trust_not_checked)
 
     # Category breakdown
     html += '  <div class="categories">\n    <h2>By Category</h2>\n'
@@ -817,4 +948,16 @@ def print_terminal_summary(results: list[RuleResult], suppressed_count: int = 0)
     print("-" * 60)
     sup_text = f"  |  Suppressed: {suppressed_count}" if suppressed_count > 0 else ""
     print(f"  Total issues: {total_issues}{sup_text}  |  Errors: {errors}  |  Rules: {len(results)}")
+    print("=" * 60)
+    blockers, not_checked = trust_blockers(results, sample_size=3)
+    if blockers:
+        print("  TRUST BLOCKERS: tests can pass while the app is broken, or cannot run")
+        for b in blockers:
+            print(f"  !! {b['count']:>3} x {b['title']} ({b['rule_id']})")
+            for x in b["samples"]:
+                print(f"         {x}")
+    else:
+        print("  No trust blockers.")
+    if not_checked:
+        print(f"  Not checked in this run: {', '.join(not_checked)}")
     print("=" * 60)

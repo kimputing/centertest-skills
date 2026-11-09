@@ -43,6 +43,7 @@ scripts/
 - **Package from directory path**, not `package` statement — matches original Eir behavior
 - **`.*datadriven.*`** excluded by default — generated code, not actionable
 - **Method body extraction** via brace-balanced source-position slicing from javalang's `position.line` — javalang doesn't store method body text
+- **Trust blockers** (`TRUST_RULES` in `eir_report.py`: 15018, 15005, 14002-14004) are listed first in HTML, Markdown and terminal and cap the score at `TRUST_SCORE_CAP` (59). Only add a rule there when a finding means a test can pass while the app is broken, or cannot run.
 - **Score calculation** uses severity weights (Security/Quality=3x, CenterTest=2x, ClassNames=1x) with proportional penalty (few findings in big project = partial credit)
 
 ## Running
