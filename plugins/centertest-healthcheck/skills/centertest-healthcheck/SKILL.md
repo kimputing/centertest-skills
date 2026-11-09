@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "how many scenarios do we run", "compare my clients", "all my suites", "portfolio", "what is not covered", "health trend", "is the suite getting better", "fix the silent assertions", "fix checks that cannot fail", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "which tests use this coverage", "what exercises <coverage/product/state>", "the product changed <coverage>, what do I rerun", "how many scenarios do we run", "compare my clients", "all my suites", "portfolio", "what is not covered", "health trend", "is the suite getting better", "fix the silent assertions", "fix checks that cannot fail", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -93,6 +93,20 @@ and lists only the findings that changed, trust blockers first:
   run exactly the plan's scenarios (a whole test, or `Class method (codeA|codeB)` for changed rows) and
   the one command to start it. Offer to add it with the `suite-builder` skill (`create Rerun-<sha>
   --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run.
+
+### Which scenarios use a coverage (or any data value)
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --uses "Liquor Liability Endorsement"
+```
+
+Finds every test data row whose value cell matches the pattern (whole cell, case-insensitive regex:
+`"Hired Auto.*|HiredAuto"`), follows references to it (`#Ref`, `#A<>#B` joins, `@Rel` — scoped as the
+reference check scopes them) and prints per DC workbook the rows, the tests that run them, rows that are
+disabled, and a suite `Uses-<Pattern>` that runs exactly those scenarios plus its command. Use it when a
+product change (a coverage, a form, a state) needs a targeted rerun. "No scenario exercises it" is an
+answer too: say so and point at the product coverage panel. Offer to add the suite with the
+`suite-builder` skill (`create … --entry`, dry run first).
 
 ### Portfolio (every client suite on one page)
 

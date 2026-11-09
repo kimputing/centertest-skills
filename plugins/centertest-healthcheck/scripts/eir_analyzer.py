@@ -103,6 +103,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
+    p.add_argument("--uses", metavar="PATTERN",
+                   help="Which scenarios exercise a coverage, product, state ... : test data rows whose cell "
+                        "matches PATTERN (whole cell, case-insensitive regex), followed through references; "
+                        "prints the tests and a suite that runs exactly them")
     p.add_argument("--review", nargs="+", metavar="REV",
                    help="Branch review: BASE [HEAD] (HEAD defaults to HEAD). Lists only the findings "
                         "the branch introduced or fixed since its merge-base, writes a PR comment and "
@@ -181,6 +185,14 @@ def main():
             config.ruleset = "CenterTestFull"  # a portfolio compares complete verdicts
         print(f"\n  CenterTest portfolio: {len(args.portfolio)} project(s), rules {config.ruleset}")
         sys.exit(run_portfolio(config, args.portfolio))
+
+    if args.uses:
+        from eir_impact import suite_command
+        from eir_uses import print_uses, suite_name, uses_report
+        name = suite_name(args.uses)
+        print_uses(uses_report(config.repository_dir, config.source_root, args.uses), name,
+                   suite_command(config.repository_dir, name))
+        sys.exit(0)
 
     if args.trend:
         from eir_trend import run_trend
