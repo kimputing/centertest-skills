@@ -181,6 +181,33 @@ def verdict(changes: list[dict]) -> tuple[str, int]:
     return f"Clean: no new findings; {fixed} fixed.", 0
 
 
+GROUP_FROM = 10  # above this many tests the plan is read by cause, not test by test
+
+
+def _rerun_by_cause(rerun: list[dict], limit: int) -> list[str]:
+    """The plan grouped by the change that reaches it, biggest first, with the tests that only that
+    change reaches (they leave the plan if it is reverted); row-level reruns listed on their own."""
+    causes: dict[str, list[str]] = {}
+    for e in rerun:
+        for reason in e["reasons"]:
+            causes.setdefault(reason, []).append(e["test"])
+    ranked = sorted(causes.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    only = {reason: sum(1 for e in rerun if e["reasons"] == [reason]) for reason in causes}
+    out = ["By change (a test reached by several changes is under each):", ""]
+    for reason, tests in ranked[:limit]:
+        names = ", ".join(tests[:8]) + (f" +{len(tests) - 8}" if len(tests) > 8 else "")
+        alone = f", {only[reason]} only through it" if only[reason] else ""
+        out.append(f"- **{reason}** → {len(tests)} test{'s' if len(tests) != 1 else ''}{alone}: {names}")
+    if len(ranked) > limit:
+        out.append(f"- … and {len(ranked) - limit} more changes")
+    rows = [e for e in rerun if e["codes"]]
+    if rows:
+        out += ["", "Only some rows:"] + [f"- **{e['test']}** — rows {', '.join(e['codes'])}" for e in rows[:limit * 2]]
+        if len(rows) > limit * 2:
+            out.append(f"- … and {len(rows) - limit * 2} more")
+    return out
+
+
 def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
     """The review as Markdown for a pull-request comment."""
     line, _ = verdict(changes)
@@ -250,11 +277,12 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         out += ["### Rerun to verify", "",
                 f"{len(rerun)} test{'s' if len(rerun) != 1 else ''} reach this branch's {meta.get('changed', 0)} changed "
                 "files (code they call, rows they run, reference data those rows use).", ""]
-        for entry in rerun[:limit * 2]:
-            rows = f" — rows {', '.join(entry['codes'])}" if entry["codes"] else " — all rows"
-            out.append(f"- **{entry['test']}**{rows} ({'; '.join(entry['reasons'])})")
-        if len(rerun) > limit * 2:
-            out.append(f"- … and {len(rerun) - limit * 2} more")
+        if len(rerun) > GROUP_FROM:
+            out += _rerun_by_cause(rerun, limit)
+        else:
+            for entry in rerun:
+                rows = f" — rows {', '.join(entry['codes'])}" if entry["codes"] else " — all rows"
+                out.append(f"- **{entry['test']}**{rows} ({'; '.join(entry['reasons'])})")
         one = meta.get("rerun_suite")
         if one:
             body = json.dumps({"Name": one["name"], "List": one["entries"]}, indent=2)

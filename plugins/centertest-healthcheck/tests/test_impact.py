@@ -169,6 +169,22 @@ public final class OtherTest {
         self.assertIn("./gradlew bootRun -PsuiteFilter=Rerun-2", md)
         self.assertNotIn("One test at a time", md)  # five commands: the suite replaces them
 
+    def test_a_large_plan_reads_by_cause(self):
+        from eir_review import render_markdown
+        plan = [{"test": f"T{i:02}Test", "codes": [], "reasons": ["PC.java changed"]} for i in range(9)]
+        plan += [{"test": "BillTest", "codes": [], "reasons": ["PC.java changed", "BC.java changed"]},
+                 {"test": "OnlyBcTest", "codes": [], "reasons": ["BC.java changed"]},
+                 {"test": "RowTest", "codes": ["AZ"], "reasons": ["WC_SubmissionDC.xlsx rows changed"]}]
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": plan, "forwards": (True, True), "changed": 3,
+                "data": [], "suites": []}
+        md = render_markdown([], meta)
+        self.assertIn("- **PC.java changed** → 10 tests, 9 only through it: T00Test", md)
+        self.assertIn("- **BC.java changed** → 2 tests, 1 only through it: BillTest, OnlyBcTest", md)
+        self.assertLess(md.index("PC.java changed"), md.index("BC.java changed"))  # biggest first
+        self.assertIn("Only some rows:\n- **RowTest** — rows AZ", md)
+        self.assertNotIn("- **T00Test**", md)  # not listed test by test
+
 
 class DataRowsTest(unittest.TestCase):
     """Changed DataCombination rows filter only the test whose own datasource is that workbook."""
