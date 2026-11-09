@@ -33,7 +33,7 @@ python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip insta
 
 - **20+ analysis rules** — code statistics, naming conventions, complexity, security, CenterTest compliance
 - **Excel + HTML + Markdown reports** — summary sheet with one detail sheet per rule, plus a scored HTML dashboard
-- **Branch review** — `--review main feature/x` lists only what the branch introduced or fixed, writes a PR comment, exits 1 on a new trust blocker
+- **Branch review** — `--review main feature/x` lists only what the branch introduced or fixed, writes a PR comment, exits 1 on a new trust blocker; its rerun plan comes as one suite (`Rerun-<sha>`, changed rows only) and one command
 - **Screens the suite opens** — wizards and screens per application, and the wizards no test opens
 - **Product coverages the test data names** — per line of business, from the generated product model (`<Line>_coverage_structure.json`): which coverages enabled test data rows name, their terms set, and (Excel sheet "Product coverage") every coverage no row names
 - **Portfolio** — `--portfolio <projects...>` compares every client suite on one page

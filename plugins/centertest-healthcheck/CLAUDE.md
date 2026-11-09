@@ -14,7 +14,7 @@ scripts/
 ├── eir_trend.py         # --trend: month-end mainline commits via git archive -> score/blockers/tests chart page
 ├── eir_locate.py        # Adds Location (path:line) to rows with a Class column; HTML renders idea:// links
 ├── eir_fix.py           # --fix 15018: discarded .equals() -> widget assertEquals / Assertions.assertThat (same rule as the MCP fixer)
-├── eir_impact.py        # Rerun plan for --review: per-method Java reach, changed DC rows, changed reference codes
+├── eir_impact.py        # Rerun plan for --review: per-method Java reach, changed DC rows, changed reference codes; rerun_suite() = the plan as suite entries (vendored suite.compact)
 ├── eir_data.py          # Test data panel: scenarios per full run, unread DCs, unused codes (= xlsx-cleanup-unused), broken refs live/dormant
 ├── eir_screens.py       # Screens/wizards the suite's own code opens (generated cssids/ -> page classes)
 ├── eir_products.py      # Product coverages (generated <Line>_coverage_structure.json) named in enabled testdata rows

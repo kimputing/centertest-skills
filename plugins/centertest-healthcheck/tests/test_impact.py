@@ -4,7 +4,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
-from eir_impact import command_for, tests_reaching
+from eir_impact import command_for, rerun_suite, suite_command, tests_reaching
+
+PLUGINS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(PLUGINS, "suite-builder", "tests"))
 
 SOURCES = {
     # A facade every test uses: only the method that builds the changed step passes the change on.
@@ -50,3 +53,85 @@ class CommandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RerunSuiteTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from xlsx_fixture import make_xlsx
+        self.tmp = tempfile.TemporaryDirectory()
+        root = self.root = self.tmp.name
+        src = os.path.join(root, "src", "main", "java", "com", "x", "tests")
+        os.makedirs(src)
+        with open(os.path.join(src, "PolicyTest.java"), "w") as fh:
+            fh.write("""package com.x.tests;
+@CenterTest
+public final class PolicyTest {
+    @CenterTestCase()
+    @DataDriven(datasource = "testdata/PolicyDC.xlsx")
+    public void run(ScenarioContext scenarioContext) { }
+}""")
+        with open(os.path.join(src, "AccountTest.java"), "w") as fh:
+            fh.write("""package com.x.tests;
+@CenterTest
+public final class AccountTest {
+    @CenterTestCase()
+    public void run(ScenarioContext scenarioContext) { }
+}""")
+        with open(os.path.join(src, "OtherTest.java"), "w") as fh:
+            fh.write("""package com.x.tests;
+@CenterTest
+public final class OtherTest {
+    @CenterTestCase()
+    public void run(ScenarioContext scenarioContext) { }
+}""")
+        os.makedirs(os.path.join(root, "testdata"))
+        make_xlsx(os.path.join(root, "testdata", "PolicyDC.xlsx"),
+                  {"DataCombination": [["Code", "Disabled"], ["A", ""], ["B", ""], ["C", ""], ["D", ""]]})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_entries_run_exactly_the_planned_scenarios(self):
+        import suite as suites
+        plan = [{"test": "AccountTest", "codes": [], "reasons": []},
+                {"test": "PolicyTest", "codes": ["B", "D"], "reasons": []}]
+        entries, idle = rerun_suite(self.root, plan, "src")
+        self.assertEqual((entries, idle), (["AccountTest", "PolicyTest run (B|D)"], []))
+        tests = suites.scan(self.root, "src")
+        ran = set()
+        for e in entries:
+            ran |= set(suites.resolve_entry(e, suites.scenarios_of(tests)))
+        self.assertEqual(ran, {("AccountTest", "run", ""), ("PolicyTest", "run", "B"), ("PolicyTest", "run", "D")})
+
+    def test_a_whole_data_driven_test_is_its_class(self):
+        self.assertEqual(rerun_suite(self.root, [{"test": "PolicyTest", "codes": [], "reasons": []}], "src"),
+                         (["PolicyTest"], []))
+
+    def test_a_test_whose_rows_are_all_disabled_is_named_not_dropped(self):
+        from xlsx_fixture import make_xlsx
+        make_xlsx(os.path.join(self.root, "testdata", "PolicyDC.xlsx"),
+                  {"DataCombination": [["Code", "Disabled"], ["A", "true"], ["B", "true"]]})
+        plan = [{"test": "PolicyTest", "codes": [], "reasons": []}, {"test": "AccountTest", "codes": [], "reasons": []}]
+        self.assertEqual(rerun_suite(self.root, plan, "src"), (["AccountTest"], ["PolicyTest"]))
+
+    def test_command_follows_what_the_build_forwards(self):
+        self.assertEqual(suite_command(self.root, "Rerun-1"), "CENTERTESTFILTERCENTERTESTSUITE=Rerun-1 ./gradlew bootRun")
+        with open(os.path.join(self.root, "build.gradle"), "w") as fh:
+            fh.write("if (project.hasProperty('suiteFilter')) { args = [\"--suiteFilter=${project.suiteFilter}\"] }")
+        self.assertEqual(suite_command(self.root, "Rerun-1"), "./gradlew bootRun -PsuiteFilter=Rerun-1")
+
+    def test_pr_comment_offers_the_suite(self):
+        from eir_review import render_markdown
+        plan = [{"test": f"T{i}Test", "codes": [], "reasons": ["test changed"]} for i in range(5)]
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": plan, "forwards": (True, True), "changed": 5,
+                "data": [], "suites": [],
+                "rerun_suite": {"name": "Rerun-2", "entries": [p["test"] for p in plan],
+                                "command": "./gradlew bootRun -PsuiteFilter=Rerun-2"}}
+        md = render_markdown([], meta)
+        self.assertIn("**All of it in one run**", md)
+        self.assertIn('"Name": "Rerun-2"', md)
+        self.assertIn("./gradlew bootRun -PsuiteFilter=Rerun-2", md)
+        self.assertNotIn("One test at a time", md)  # five commands: the suite replaces them
+

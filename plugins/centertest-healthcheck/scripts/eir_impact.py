@@ -342,6 +342,30 @@ def run_commands(repo_dir: str) -> tuple[bool, bool]:
             "centertest.runtime.filter.column" in text)
 
 
+def rerun_suite(head_tree: str, rerun: list[dict], source_root: str) -> tuple[list[str], list[str]]:
+    """(suite entries that run exactly the rerun plan's scenarios -- a whole test, or only its changed
+    rows -- written by the vendored suite-builder engine, so one bootRun replaces one per test;
+    planned tests that run no scenario, e.g. every row disabled)."""
+    import suite as suites
+    plan = {e["test"]: e for e in rerun}
+    tests = [t for t in suites.scan(head_tree, source_root) if t["class"] in plan]
+    selected = {(cls, method, code) for cls, method, code in suites.scenarios_of(tests)
+                if not plan[cls]["codes"] or code in plan[cls]["codes"]}
+    idle = sorted(set(plan) - {cls for cls, _, _ in selected})
+    return suites.compact(selected, tests), idle
+
+
+def suite_command(repo_dir: str, name: str) -> str:
+    """How to run one suite: -PsuiteFilter when build.gradle forwards it, else CenterTest's variable."""
+    try:
+        with open(os.path.join(repo_dir, "build.gradle"), encoding="utf-8", errors="replace") as fh:
+            forwards = "suiteFilter" in fh.read()
+    except OSError:
+        forwards = False
+    return (f"./gradlew bootRun -PsuiteFilter={name}" if forwards
+            else f"CENTERTESTFILTERCENTERTESTSUITE={name} ./gradlew bootRun")
+
+
 def command_for(entry: dict, forwards: tuple[bool, bool]) -> str | None:
     """The bootRun command for a plan entry, when the project's build forwards what it needs."""
     test_ok, filter_ok = forwards

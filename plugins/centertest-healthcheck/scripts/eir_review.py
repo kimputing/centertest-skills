@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import io
+import json
 import os
 import re
 import subprocess
@@ -254,9 +255,18 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
             out.append(f"- **{entry['test']}**{rows} ({'; '.join(entry['reasons'])})")
         if len(rerun) > limit * 2:
             out.append(f"- … and {len(rerun) - limit * 2} more")
+        one = meta.get("rerun_suite")
+        if one:
+            body = json.dumps({"Name": one["name"], "List": one["entries"]}, indent=2)
+            out += ["", f"**All of it in one run**: add this suite to `CenterTestSuiteList.json` (it runs exactly "
+                        f"these scenarios: {len(one['entries'])} entr{'y' if len(one['entries']) == 1 else 'ies'}) "
+                        "and start it once:", "", "```json", body, "```", "", "```bash", one["command"], "```"]
+            if one.get("idle"):
+                out += ["", f"Not in it: {', '.join(one['idle'])} — every row the plan names is disabled, so "
+                            "the test runs nothing (rule 9011)."]
         commands = [c for c in (command_for(e, meta.get("forwards", (False, False))) for e in rerun) if c]
-        if commands:
-            out += ["", "```bash"] + commands[:limit * 2] + ["```"]
+        if commands and (not one or len(commands) <= 3):
+            out += ([""] + (["One test at a time:"] if one else []) + ["```bash"] + commands[:limit * 2] + ["```"])
         out.append("")
     errored = [c for c in changes if c.get("error")]
     if errored:
@@ -327,6 +337,10 @@ def print_review(changes: list[dict], meta: dict) -> None:
         print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
             e["test"] + (f" [{len(e['codes'])} rows]" if e["codes"] else "") for e in rerun[:6])
               + (" ..." if len(rerun) > 6 else ""))
+        one = meta.get("rerun_suite")
+        if one:
+            print(f"  >> all in one run: suite {one['name']} ({len(one['entries'])} entries, in the PR comment): "
+                  f"{one['command']}")
     fixed = sum(len(c["fixed"]) for c in changes)
     if fixed:
         print(f"  -  {fixed:>3} fixed in "
@@ -362,9 +376,13 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
             export_tree(repo, sha, tree, paths)
             print(f"  Analyzing {side} {sha[:8]}...")
             results[side] = analyze_tree(tree, config, suppressions)
-        from eir_impact import changed_files, data_changes, rerun_plan, run_commands
+        from eir_impact import changed_files, data_changes, rerun_plan, rerun_suite, run_commands, suite_command
         changed = changed_files(repo, start, head_sha)
         rerun = rerun_plan(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed, config.source_root)
+        suite_name = f"Rerun-{head_sha[:8]}"
+        # one test is one command already; a suite pays off from two
+        suite_entries, idle = (rerun_suite(os.path.join(tmp, "head"), rerun, config.source_root)
+                               if len(rerun) > 1 else ([], []))
         data = data_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed)
         from eir_impact import suite_changes
         suites_changed = (suite_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), suite_rel, config.source_root)
@@ -375,7 +393,9 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
             "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
-            "suites": suites_changed}
+            "suites": suites_changed,
+            "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
+                            "command": suite_command(repo, suite_name)} if suite_entries else None}
     out_dir = os.path.join(repo, "healthcheck")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
