@@ -118,6 +118,15 @@ class UsesTest(unittest.TestCase):
         self.assertIn('"Name": "Uses-Liquor"', out.getvalue())
         self.assertIn("not run (disabled): Off", out.getvalue())
 
+    def test_several_patterns_keep_the_rows_that_use_all_of_them(self):
+        from eir_uses import uses_report
+        # ViaPackage's Bar package selects Liquor Liability and Pollution; Direct, Change only Liquor, Plain only Pollution
+        report = uses_report(self.root, "src", ["Liquor Liability", "Pollution"])
+        self.assertEqual(report["entries"], ["GL_SubmissionTest run ViaPackage"])
+        self.assertEqual(report["scenarios"], 1)
+        self.assertEqual(report["pattern"], "Liquor Liability & Pollution")
+        self.assertEqual(uses_report(self.root, "src", ["Liquor Liability", "Collision"])["scenarios"], 0)
+
     def test_touches_a_page_or_one_widget(self):
         from eir_uses import touches_report
         step = os.path.join(self.root, "src", "main", "java", "com", "x", "CreateGL.java")

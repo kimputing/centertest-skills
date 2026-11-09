@@ -294,10 +294,16 @@ def _print_suites(report: dict) -> None:
           + (f"; {s['none']} scenario(s) no suite runs" if s["none"] else "; every one is in a suite"))
 
 
-def uses_report(repo_dir: str, source_root: str, pattern: str) -> dict:
-    """The rows, the tests that run them, and suite entries for exactly those scenarios."""
+def uses_report(repo_dir: str, source_root: str, pattern) -> dict:
+    """The rows, the tests that run them, and suite entries for exactly those scenarios. Several patterns
+    (a list) keep the rows that use every one of them ("Liquor Liability" and "TX")."""
     import suite as suites
-    rows = scenarios_using(repo_dir, pattern)
+    patterns = [pattern] if isinstance(pattern, str) else list(pattern)
+    rows = scenarios_using(repo_dir, patterns[0])
+    for more in patterns[1:]:
+        other = scenarios_using(repo_dir, more)
+        rows = {dc: codes & other.get(dc, set()) for dc, codes in rows.items() if codes & other.get(dc, set())}
+    pattern = " & ".join(patterns)
     tests = suites.scan(repo_dir, source_root)
     runnable = set(suites.scenarios_of(tests))
     selected = set()

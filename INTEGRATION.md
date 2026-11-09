@@ -16,7 +16,7 @@ document is the only thing on stdout.
 |---|---|---|
 | Health check: trust verdict, findings at `path:line`, data/screens/product panels | `plugins/centertest-healthcheck/scripts/eir_analyzer.py --path P --json [--cssids GEN_RESOURCES]` | 0 |
 | Branch review: verdict, new/fixed findings, rerun plan and suite, run scope, coverage delta, attribution | `eir_analyzer.py --path P --review BASE [HEAD] --json` | 1 when the branch adds a trust blocker |
-| Scenarios that use a data value (coverage, state, product) | `eir_analyzer.py --path P --uses "REGEX" --json` | 0 |
+| Scenarios that use a data value (coverage, state, product) | `eir_analyzer.py --path P --uses "REGEX" [--uses "REGEX2" ...] --json` (rows using every value) | 0 |
 | Tests that reach a screen, widget getter or widget id | `eir_analyzer.py --path P --touches "PageRegex[.getX]" \| "Widget-Id" --json` | 0 |
 | What landed in several suites | `eir_analyzer.py --weekly P1 P2 ... --days 7 --json` | 0 |
 | Monthly trend | `eir_analyzer.py --path P --trend 6 --json` | 0 |

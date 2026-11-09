@@ -104,10 +104,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
-    p.add_argument("--uses", metavar="PATTERN",
+    p.add_argument("--uses", metavar="PATTERN", action="append",
                    help="Which scenarios exercise a coverage, product, state ... : test data rows whose cell "
                         "matches PATTERN (whole cell, case-insensitive regex), followed through references; "
-                        "prints the tests and a suite that runs exactly them")
+                        "prints the tests and a suite that runs exactly them; repeat it for rows that use every value")
     p.add_argument("--touches", metavar="PAGE",
                    help="Which tests touch a screen: regex over the generated page classes the project uses "
                         "(e.g. PolicyChangeWizard), or Page.getWidget for one widget; prints the tests and a "
@@ -208,7 +208,7 @@ def main():
     if args.uses:
         from eir_impact import suite_command
         from eir_uses import print_uses, suite_name, uses_report
-        name = suite_name(args.uses)
+        name = suite_name(" ".join(args.uses))
         from eir_json import emit
         report = uses_report(config.repository_dir, config.source_root, args.uses)
         emit(dict(report, suite=name, command=suite_command(config.repository_dir, name)))
