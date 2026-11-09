@@ -89,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monthly", action="store_true", help="Sample one commit per month")
     p.add_argument("--pr", nargs=2, metavar=("TARGET", "SOURCE"),
                    help="PR diff mode: analyze diff between branches")
+    p.add_argument("--cssids", metavar="DIR",
+                   help="Generated project's src/main/resources (or its cssids/) for the screens panel; "
+                        "default: <project>-generated next to the project, then the cssid-finder config")
     p.add_argument("--trend", nargs="?", const=6, type=int, metavar="MONTHS",
                    help="Health trend: score, trust blockers and test cases for the last mainline "
                         "commit of each of the last MONTHS months (default 6), as an HTML page")
@@ -262,6 +265,12 @@ def main():
             generated.append(filepath)
             print(f"  Excel:    {filepath}")
 
+    screens = None
+    if not config.has_git_options():
+        from eir_screens import find_cssids_dir, screen_coverage
+        cssids = find_cssids_dir(config.repository_dir, args.cssids)
+        screens = screen_coverage(config.repository_dir, config.source_root, cssids) if cssids else []
+
     # HTML (primary report)
     if "html" in config.output_formats:
         filepath = generate_html(
@@ -271,6 +280,7 @@ def main():
             elapsed=elapsed,
             excel_filename=excel_filename,
             suppressed_count=suppressed_count,
+            screens=screens,
         )
         if filepath:
             generated.append(filepath)
@@ -284,6 +294,9 @@ def main():
 
     if "terminal" in config.output_formats:
         print_terminal_summary(results, suppressed_count)
+        if screens:
+            from eir_screens import print_screens
+            print_screens(screens)
 
     print(f"\n  Completed in {elapsed:.1f}s")
     if generated:

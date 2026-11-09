@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "what is not covered", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -164,6 +164,14 @@ reads, or in rows marked `Disabled`, are listed as cleanup, not blockers. Any bl
 score at 59 ("At risk"). Trust rules that were not
 part of the run are listed as *not checked*, never as passed — use `CenterTestFull` for a complete
 verdict. When reporting results to the user, lead with these blockers.
+
+## Screens the suite opens
+
+The dashboard shows, per application, how many wizards (business transactions) and screens the
+suite's own code opens, and lists the wizards no test opens — the gaps to plan against. It reads the
+generated project's `cssids/` (found as `<project>-generated` next to the project, else the
+cssid-finder config, else pass `--cssids <generated src/main/resources>`). Screens opened only inside
+framework-provided steps are not seen, so the numbers are floors; say so when quoting them.
 
 ## Finding locations
 

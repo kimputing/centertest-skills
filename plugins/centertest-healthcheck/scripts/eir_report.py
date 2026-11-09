@@ -488,11 +488,45 @@ def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int
     return "\n".join(out) + "\n"
 
 
+def _screens_panel_html(coverage) -> str:
+    """'Screens the suite opens': per application, wizards opened and not, and the screen count."""
+    if coverage is None:
+        return ""
+    if not coverage:
+        return ('  <div class="screens"><h2>Screens the suite opens</h2><p class="screens-note">Not measured: '
+                'the generated project\'s cssids/ folder was not found. Pass --cssids &lt;generated src/main/resources&gt;.</p></div>\n')
+    cards = []
+    for c in coverage:
+        total_w = len(c["wizards"]) + len(c["unused_wizards"])
+        pct = (len(c["wizards"]) / total_w * 100) if total_w else 0
+        opened = "".join(f'<span class="chip on" title="{_html_escape(", ".join(users[:8]))}">{_html_escape(w)}</span>'
+                         for w, users in c["wizards"])
+        shown = 12 if len(c["unused_wizards"]) > 15 else 15  # never fold away just a few
+        missing = "".join(f'<span class="chip">{_html_escape(w)}</span>' for w in c["unused_wizards"][:shown])
+        if len(c["unused_wizards"]) > shown:
+            rest = "".join(f'<span class="chip">{_html_escape(w)}</span>' for w in c["unused_wizards"][12:])
+            missing += (f'<details class="more"><summary>+{len(c["unused_wizards"]) - 12} more</summary>'
+                        f'<div class="chips">{rest}</div></details>')
+        cards.append(
+            f'<div class="app-card"><div class="app-name">{_html_escape(c["name"])}</div>'
+            f'<div class="app-big">{len(c["wizards"])}<small> of {total_w} wizards</small></div>'
+            f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
+            f'<div class="app-sub">{c["used"]} of {c["screens"]} screens</div>'
+            + (f'<div class="chips-label">Opened</div><div class="chips">{opened}</div>' if opened else "")
+            + (f'<div class="chips-label">No test opens</div><div class="chips">{missing}</div>' if missing else "")
+            + "</div>")
+    return ('  <div class="screens"><h2>Screens the suite opens</h2>'
+            '<p class="screens-note">Wizards are the business transactions. Counted from the page objects your own code '
+            'uses; screens opened only inside framework steps are not seen, so these are floors.</p>'
+            f'<div class="app-grid">{"".join(cards)}</div></div>\n')
+
+
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
-                  suppressed_count: int = 0) -> str:
-    """Generate a dashboard-style HTML health check report."""
+                  suppressed_count: int = 0, screens=None) -> str:
+    """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
+    output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -616,6 +650,23 @@ def generate_html(results: list[RuleResult], output_dir: str,
     font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }}
   a.ide {{ color: inherit; text-decoration: underline; text-decoration-color: var(--border); }}
   a.ide:hover {{ text-decoration-color: var(--accent); }}
+  .screens {{ margin: 28px 0 0; }}
+  .screens h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 4px; }}
+  .screens-note {{ color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }}
+  .app-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; }}
+  .app-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; min-width: 0; }}
+  .app-name {{ font-weight: 600; }}
+  .app-big {{ font-size: 32px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }}
+  .app-big small {{ font-size: 14px; font-weight: 500; color: var(--text-muted); }}
+  .app-bar {{ height: 6px; border-radius: 4px; background: var(--surface2); margin: 8px 0 6px; overflow: hidden; }}
+  .app-bar i {{ display: block; height: 100%; background: var(--accent); }}
+  .app-sub {{ color: var(--text-muted); font-size: 13px; }}
+  .chips-label {{ font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }}
+  .chips {{ display: flex; flex-wrap: wrap; gap: 4px; }}
+  .chip {{ font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-muted); overflow-wrap: anywhere; }}
+  .chip.on {{ color: var(--text); border-color: var(--accent); }}
+  details.more {{ width: 100%; }}
+  details.more summary {{ cursor: pointer; font-size: 12px; color: var(--accent); margin: 4px 0; }}
   .trust-dormant {{ color: var(--text-muted); font-size: 13px; margin-top: 10px; }}
   .trust-unchecked {{ color: var(--amber); font-size: 13px; margin-top: 10px; }}
   .categories {{ margin: 32px 0; }}
@@ -762,6 +813,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
     repo_root = os.path.dirname(os.path.abspath(output_dir))
     html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
+    html += _screens_panel_html(screens)
 
     # Category breakdown
     html += '  <div class="categories">\n    <h2>By Category</h2>\n'
