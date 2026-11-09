@@ -28,16 +28,16 @@ plugins/<plugin-name>/
 - SKILL.md frontmatter must have `name` and `description`. The description must include trigger phrases.
 - Inside `SKILL.md`, scripts must be referenced as `"${CLAUDE_PLUGIN_ROOT}/scripts/<file>.py"` — never via `~/.claude/skills/...` (that path doesn't exist in plugin install).
 - Config pattern (unchanged): skills store user config in `~/.centertest/<skill-name>.json`. Resolution order: env var > config file > interactive prompt.
-- Python detection: use `python3` first, fall back to `python`. Never use `command -v` (breaks on Windows Git Bash).
+- Python detection: skills that need packages pick the first interpreter that can import them — `~/.centertest/venv` (bin/ or Scripts/), then `python3`, then `python` — in one line, since every Bash call is a new shell (see the healthcheck SKILL.md). Skills with no packages use `python3`, falling back to `python`. Never use `command -v` (breaks on Windows Git Bash).
 
 ## Plugins
 
 | Plugin | Purpose | Scripts |
 |--------|---------|---------|
-| **centertest-healthcheck** | Java code quality analysis — 27 rules, HTML+Excel reports | 8 modules + 10 rule files |
+| **centertest-healthcheck** | Trust verdict, rules, `--review` (PR verdict + rerun plan), `--trend`, screens panel; HTML+Excel+MD | analyzer + report/review/trend/impact/locate/screens modules + 10 rule files; vendors ddt-tools' engine |
 | **cssid-finder** | Find getter chains for Guidewire CSS IDs | 1 script |
-| **ddt-analyzer** | DDT structure analysis, 28-sheet Excel report (17 without Data Studio) | 1 script |
-| **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + shared config |
+| **ddt-analyzer** | DDT structure analysis, 28-sheet Excel report (17 without Data Studio) | 1 script; vendors ddt-tools' engine |
+| **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + `ddt_refcheck.py` engine (source of the vendored copies) |
 | **recording-to-test** | Scenario wizard: recording, request, story or Jira issue → CenterTest test in the project's structure | `ct.py` engine + vendored find_getter.py + 8 phase files |
 
 ## Running scripts during development
@@ -61,8 +61,8 @@ python3 plugins/ddt-tools/scripts/xlsx-validate-refs.py
 python3 plugins/recording-to-test/scripts/parse_recording.py <recording.zip> --cssids <generated src/main/resources>
 python3 plugins/recording-to-test/scripts/scan_project.py /path/to/project
 
-# recording-to-test unit tests
-python3 -m unittest discover -s plugins/recording-to-test/tests -v
+# every plugin's unit tests (as CI runs them)
+for d in plugins/*/tests; do python3 -m unittest discover -s "$d"; done
 ```
 
 ## Validating the marketplace

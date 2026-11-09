@@ -8,10 +8,10 @@ A Claude Code plugin marketplace distributing skills for CenterTest test automat
 
 | Plugin | Description | Status |
 |--------|-------------|--------|
-| [centertest-healthcheck](plugins/centertest-healthcheck/) | Java code quality analysis — 27 rules, HTML dashboard + Excel reports | Active |
+| [centertest-healthcheck](plugins/centertest-healthcheck/) | Suite health for QA architects: a trust verdict (checks that can never fail, data that cannot load), findings at `path:line`, branch review with a PR verdict and what to rerun, monthly trend, screens and wizards the suite opens | Active |
 | [cssid-finder](plugins/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs | Active |
-| [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure and generate 15-sheet Excel report | Active |
-| [ddt-tools](plugins/ddt-tools/) | Validate DC references, diff xlsx, report unused codes | Active |
+| [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure — 28-sheet Excel report via Data Studio (17 from the fallback script) | Active |
+| [ddt-tools](plugins/ddt-tools/) | Validate DC references (relationship hops included), diff xlsx, report codes nothing uses | Active |
 | [recording-to-test](plugins/recording-to-test/) | Generate a CenterTest test from a CenterTest Recorder recording | Active |
 
 ## Installation
@@ -28,6 +28,12 @@ Inside Claude Code, add the marketplace and install the plugins you want:
 ```
 
 Each plugin is independent — install only the ones you need.
+
+The healthcheck and DDT plugins need `openpyxl` (and `javalang` for the healthcheck). Where `pip install` is refused (Homebrew and other "externally managed" Pythons), create the shared environment once and every skill uses it:
+
+```bash
+python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang
+```
 
 ## Updating
 
