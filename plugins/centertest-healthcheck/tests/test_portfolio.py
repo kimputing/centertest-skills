@@ -37,5 +37,23 @@ class ProductsColumnTest(unittest.TestCase):
         self.assertIn("not measured", _products({"products": None}))
 
 
+class CleanHeadTest(unittest.TestCase):
+    def test_only_a_clean_tree_is_its_commit(self):
+        import subprocess
+        import tempfile
+        from eir_portfolio import _clean_head
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+        with tempfile.TemporaryDirectory() as repo:
+            os.makedirs(os.path.join(repo, "src"))
+            with open(os.path.join(repo, "src", "A.java"), "w") as fh:
+                fh.write("class A {}")
+            for cmd in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "a"]):
+                subprocess.run(["git", *cmd], cwd=repo, env=env, check=True, capture_output=True)
+            self.assertTrue(_clean_head(repo, "src"))
+            with open(os.path.join(repo, "src", "A.java"), "w") as fh:
+                fh.write("class A { int x; }")
+            self.assertIsNone(_clean_head(repo, "src"))  # uncommitted work: analysed fresh
+
+
 if __name__ == "__main__":
     unittest.main()

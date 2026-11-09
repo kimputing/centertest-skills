@@ -27,6 +27,17 @@ def _last_change(path: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def _clean_head(repo: str, source_root: str) -> str | None:
+    """HEAD's sha when the tree's source and test data match it (nothing modified or untracked), else None."""
+    import subprocess
+    run = lambda *a: subprocess.run(["git", "-C", repo, *a], capture_output=True, text=True)
+    head = run("rev-parse", "HEAD")
+    if head.returncode != 0:
+        return None
+    status = run("status", "--porcelain", "--", source_root, "testdata")
+    return head.stdout.strip() if status.returncode == 0 and not status.stdout.strip() else None
+
+
 def analyze_project(path: str, config) -> dict:
     """Summary of one project, or {'path', 'error'} when it cannot be analysed."""
     from eir_data import data_overview
@@ -35,12 +46,20 @@ def analyze_project(path: str, config) -> dict:
     cfg = copy.copy(config)
     cfg.repository_dir = os.path.abspath(path)
     try:
-        files = parse_directory(cfg.repository_dir, cfg.source_root, cfg.exclude_packages,
-                                cfg.exclude_files, cfg.compat_comment_lines, None)
+        head = _clean_head(cfg.repository_dir, cfg.source_root)
+        if head:  # committed content: the per-commit analysis cache applies (dirty trees are analysed fresh)
+            from eir_review import analyze_commit
+            results, n_files = analyze_commit(cfg.repository_dir, head, cfg.repository_dir, cfg, None)
+            files = [None] * n_files
+        else:
+            files = parse_directory(cfg.repository_dir, cfg.source_root, cfg.exclude_packages,
+                                    cfg.exclude_files, cfg.compat_comment_lines, None)
+            if not files:
+                return {"path": cfg.repository_dir, "error": f"no Java files under {cfg.source_root}"}
+            results = run_rules({LOCAL_COMMIT: files}, cfg)
+            annotate_locations(results, {LOCAL_COMMIT: files}, cfg.repository_dir)
         if not files:
             return {"path": cfg.repository_dir, "error": f"no Java files under {cfg.source_root}"}
-        results = run_rules({LOCAL_COMMIT: files}, cfg)
-        annotate_locations(results, {LOCAL_COMMIT: files}, cfg.repository_dir)
         blockers, not_checked, dormant = trust_blockers(results)
         data = data_overview(cfg.repository_dir, cfg.source_root, results)
         cssids = find_cssids_dir(cfg.repository_dir)
