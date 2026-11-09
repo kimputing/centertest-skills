@@ -1,6 +1,6 @@
 ---
 name: suite-builder
-description: Build and edit CenterTest test suites in CenterTestSuiteList.json — create a suite, add or remove tests, methods or DataCombination (DDT) rows, delete or rename suites, see what a suite really runs and which entries match nothing. Use when the user says "create a suite", "build a suite", "add these tests to the smoke suite", "remove the Texas rows from Regression", "delete the suite", "what does the Sanity suite run", "which suites are broken", "suite for all WC submissions", or works with CenterTestSuiteList.json.
+description: Build and edit CenterTest test suites in CenterTestSuiteList.json — create a suite, add or remove tests, methods or DataCombination (DDT) rows, delete or rename suites, see what a suite really runs and which entries match nothing. Use when the user says "create a suite", "build a suite", "add these tests to the smoke suite", "remove the Texas rows from Regression", "delete the suite", "what does the Sanity suite run", "which suites are broken", "let me pick the tests", "open the suite picker", "suite for all WC submissions", or works with CenterTestSuiteList.json.
 ---
 
 # suite-builder
@@ -36,6 +36,7 @@ Run it from the project or pass `--project`. `--suites <file>` points at another
 | `delete NAME` | delete the suite (warns when a composite suite names it) |
 | `rename OLD NEW` | rename; composite suites that name it follow |
 | `set NAME --entries-file F` | replace the List with the lines of F (`-` = stdin) |
+| `picker [--suite NAME] [--open]` | a page to tick classes, methods and rows, showing the suite before → after; it produces the `suite.py` command that applies the change |
 
 **Selectors** — case-insensitive regexes, *searched* in the name, all must match: `--class`, `--method`,
 `--code`, `--desc` (the row's Description), `--package`. Or `--entry "Class method code"`, read exactly as
@@ -46,6 +47,16 @@ CenterTest reads an entry (repeatable). `--include-disabled` also selects rows m
 touch stay exactly as written (patterns stay patterns). Entries it writes are compact: `Class` for a
 whole class, `Class method` for a whole method, `Class method (a|b)` for some rows (codes escaped so
 they match only themselves).
+
+## Picking visually
+
+When the user wants to browse and tick rather than describe, run
+`suite.py --project <project> picker --suite <NAME> --open` (omit `--suite` for a new one). The page lists
+package → class → method → DataCombination rows with checkboxes and a filter; the right side shows the
+scenarios the suite runs before → after and its entries marked + / −. **Copy command for Claude** copies the
+`suite.py set` (or `create`) command; when the user pastes it, run it **without** `--write` first, show the
+diff, then run it with `--write` after they confirm. The page is written to
+`~/.centertest/reports/suite-picker_<project>.html`; re-run `picker` after the suites change.
 
 ## How to work with the user
 

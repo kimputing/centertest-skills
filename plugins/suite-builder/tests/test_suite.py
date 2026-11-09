@@ -112,6 +112,31 @@ class SuiteTest(unittest.TestCase):
         self.run_cli("create", "Two", "--entry", "LoginTest runAsAdmin", "--entry", "PA_SubmissionTest run tx_Austin", "--write")
         self.assertEqual(suite.find(self.doc()[0], "Two")["List"], ["LoginTest runAsAdmin", "PA_SubmissionTest run tx_Austin"])
 
+    def test_all_rows_but_a_few_is_written_as_an_exclusion(self):
+        code, out = self.run_cli("create", "MostRows", "--class", "PA_Submission", "--code", "tx_|CA", "--write")
+        self.assertEqual(code, 0, out)
+        doc = self.doc()[0]
+        # 3 enabled rows, 3 chosen -> whole class
+        self.assertEqual(suite.find(doc, "MostRows")["List"], ["PA_SubmissionTest"])
+        self.run_cli("remove", "MostRows", "--code", "Dallas", "--write")
+        entry = suite.find(self.doc()[0], "MostRows")["List"]
+        self.assertEqual(entry, ["PA_SubmissionTest run (?!(?:tx_Dallas)$).*"])
+        tests = suite.scan(self.p)
+        self.assertEqual(sorted(k for _, _, k in suite.resolve_entry(entry[0], suite.scenarios_of(tests))),
+                         ["CA.LA (2)", "tx_Austin"])
+
+    def test_picker_page_embeds_the_scan_safely(self):
+        out = os.path.join(self.p, "picker.html")
+        code, _ = self.run_cli("picker", "--suite", "Smoke", "--out", out)
+        self.assertEqual(code, 0)
+        with open(out, encoding="utf-8") as fh:
+            page = fh.read()
+        self.assertNotIn("/*__DATA__*/", page)
+        blob = page.split('<script id="data" type="application/json">', 1)[1].split("</script>", 1)[0]
+        data = json.loads(blob.replace("<\\/", "</"))
+        self.assertEqual(data["preselect"], "Smoke")
+        self.assertEqual([t["class"] for t in data["tests"]], ["LoginTest", "PA_SubmissionTest"])
+
     def test_dry_run_writes_nothing(self):
         before = self.doc()[1]
         code, out = self.run_cli("delete", "Stale")

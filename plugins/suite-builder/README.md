@@ -18,7 +18,10 @@ In a CenterTest project: "which suites do we have?", "create a Smoke suite with 
 the Texas submission rows", "remove the disabled vehicle types from Regression1", "delete the Old
 suite". The skill shows the selection and a dry-run diff before it writes anything.
 
-Engine: `scripts/suite.py` (`list`, `show`, `scan`, `pick`, `create`, `add`, `remove`, `delete`,
+Prefer ticking boxes? "Open the suite picker" writes a page with the class → method → row tree; it shows
+the suite before → after and copies the command for Claude to apply.
+
+Engine: `scripts/suite.py` (`picker` included) (`list`, `show`, `scan`, `pick`, `create`, `add`, `remove`, `delete`,
 `rename`, `set`); see `skills/suite-builder/SKILL.md`.
 
 ## Prerequisites

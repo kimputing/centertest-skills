@@ -435,7 +435,12 @@ def compact(selected: set, tests: list[dict]) -> list[str]:
                 entries.append(f"{_lit(t['class'])} {_lit(name)}")
             else:
                 codes = sorted(chosen - {""})
-                alt = _lit(codes[0]) if len(codes) == 1 else "(" + "|".join(_lit(c) for c in codes) + ")"
+                left_out = sorted(runnable - chosen - {""})
+                if len(left_out) < len(codes):
+                    # "every row except these": shorter to read, and new rows are included too
+                    alt = "(?!(?:" + "|".join(_lit(c) for c in left_out) + ")$).*"
+                else:
+                    alt = _lit(codes[0]) if len(codes) == 1 else "(" + "|".join(_lit(c) for c in codes) + ")"
                 entries.append(f"{_lit(t['class'])} {_lit(name)} {alt}")
     return entries
 
@@ -469,6 +474,32 @@ def remove_from(suite: dict, selection: set, tests: list[dict]) -> tuple[list[st
         else:
             new += compact(hit - selection, tests)
     return new, kept_unmatched
+
+
+# ---------------------------------------------------------------------------
+# The picker page
+# ---------------------------------------------------------------------------
+
+def write_picker(project, source_root, tests, suite_path, doc, preselect=None, out=None) -> str:
+    """A self-contained page to tick classes, methods and rows; it shows the suite's entries
+    before -> after and the suite.py command that applies the change."""
+    data = {
+        "project": project, "projectName": os.path.basename(project), "sourceRoot": source_root,
+        "suiteFile": os.path.relpath(suite_path, project).replace("\\", "/"),
+        "engine": os.path.abspath(__file__), "tests": tests,
+        "suites": doc["CenterTestSuites"], "preselect": preselect or "",
+    }
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "picker.html"), encoding="utf-8") as fh:
+        page = fh.read()
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    page = page.replace("/*__DATA__*/", blob, 1)
+    if not out:
+        folder = os.path.expanduser("~/.centertest/reports")
+        os.makedirs(folder, exist_ok=True)
+        out = os.path.join(folder, f"suite-picker_{os.path.basename(project)}.html")
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write(page)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +556,9 @@ def main(argv=None) -> int:
         sp = sub.add_parser(cmd); sp.add_argument("name"); selectors(sp); sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("delete"); sp.add_argument("name"); sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("rename"); sp.add_argument("old"); sp.add_argument("new"); sp.add_argument("--write", action="store_true")
+    sp = sub.add_parser("picker"); sp.add_argument("--suite", help="suite to open for editing")
+    sp.add_argument("--out", help="where to write the page (default ~/.centertest/reports/)")
+    sp.add_argument("--open", action="store_true", help="open the page in the default browser")
     sp = sub.add_parser("set"); sp.add_argument("name"); sp.add_argument("--entries-file", required=True)
     sp.add_argument("--write", action="store_true")
     args = p.parse_args(argv)
@@ -584,6 +618,15 @@ def main(argv=None) -> int:
             print(f"  ! matches nothing (CenterTest reports it as a failed scenario): {e}")
         for e in r["missing_suites"]:
             print(f"  ! names a suite that does not exist: {e}")
+        return 0
+
+    if args.cmd == "picker":
+        out = write_picker(project, args.source_root, tests, path, doc, args.suite, args.out)
+        print(f"Suite picker: {out}")
+        if args.open:
+            opener = {"darwin": ["open"], "win32": ["cmd", "/c", "start", ""]}.get(sys.platform, ["xdg-open"])
+            import subprocess
+            subprocess.run(opener + [out], check=False)
         return 0
 
     if args.cmd == "pick":

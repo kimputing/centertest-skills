@@ -12,6 +12,7 @@ entries the way CenterTest does, and edits suites.
   part a case-insensitive full-match regex; `Packages` regexes on the package; `Suites` recursively),
   `select()` (selectors are regex *searches*), `compact()` (`Class` / `Class method` /
   `Class method (a|b)`), `add_to()` / `remove_from()`, `serialize()` (keeps indent, EOL, trailing newline).
+- `scripts/picker.html` — the picker template; `suite.py picker` embeds the scan as JSON (`</` escaped). Its JS `resolveEntry`/`compact`/`newList` mirror `resolve_entry`/`compact`/`add_to`+`remove_from` — change both together (including the `(?!(?:a|b)$).*` all-but form).
 - `scripts/xlsx_read.py` — **vendored, byte-identical** copy of `plugins/recording-to-test/scripts/xlsx_read.py`
   (stdlib xlsx reader). Change it there and copy it over; `tests/test_suite.py` fails when they differ.
 
