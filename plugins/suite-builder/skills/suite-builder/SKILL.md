@@ -76,7 +76,8 @@ that a code found under another test means the row probably moved.
    what each suite really runs. Point out entries that match nothing — CenterTest fails on them — and,
    for a code that no longer exists, offer the closest codes from `scan --json`.
 2. **Turn the user's words into selectors** ("all workers comp submissions in Texas" →
-   `--class "WC_.*Submission" --code "TX|Texas"` or `--desc Texas`), run **`pick`** and show the
+   `--class "WC_.*Submission" --code "TX|Texas"`, `--desc Texas`, or `--data "State=TX"` over the row's own
+   cells such as `#Vehicle=Truck`), run **`pick`** and show the
    scenarios. Adjust until the user agrees. For many separate picks, collect `--entry` lines.
 3. **Dry run** the edit (`create` / `add` / `remove` …) and show the printed diff: entries added and
    removed, and scenarios before → after.

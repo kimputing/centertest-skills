@@ -68,6 +68,20 @@ class SuiteTest(unittest.TestCase):
             code = suite.main(["--project", self.p, *args])
         return code, out.getvalue()
 
+    def test_pick_by_the_rows_own_data(self):
+        make_xlsx(os.path.join(self.p, "testdata", "PA_SubmissionDC.xlsx"), {"DataCombination": [
+            ["Code", "Description", "Disabled", "#Vehicle", "State"],
+            ["tx_Austin", "Texas, Austin", "", "Truck", "TX"], ["tx_Dallas", "Texas, Dallas", "", "Sedan", "TX"],
+            ["ca_LA", "California", "", "Truck", "CA"]]})
+        tests = suite.scan(self.p)
+        codes = {c["code"]: c["data"] for t in tests for m in t["methods"] for c in m["codes"]}
+        self.assertEqual(codes["tx_Austin"], "#Vehicle=Truck · State=TX")  # reserved columns left out
+        code, out = self.run_cli("pick", "--data", "#Vehicle=Truck")
+        self.assertEqual(code, 0)
+        self.assertIn("2 scenarios:\n  PA_SubmissionTest run ca_LA\n  PA_SubmissionTest run tx_Austin", out)
+        code, out = self.run_cli("pick", "--data", "State=TX", "--code", "Dallas")
+        self.assertIn("PA_SubmissionTest run tx_Dallas", out)
+
     def doc(self):
         with open(self.path, newline="") as fh:
             text = fh.read()

@@ -18,7 +18,7 @@ Commands (run in the project, or pass --project):
     suite.py drop NAME --entry E               drop entries written exactly so (e.g. a dead one)
 
 Selectors (case-insensitive regular expressions, searched -- "Submission" matches WC_SubmissionTest):
-    --class R  --method R  --code R  --desc R  --package R   (combine: all must match)
+    --class R  --method R  --code R  --desc R  --package R  --data R   (combine: all must match)
     --entry "Class method code"   a suite entry, read exactly as CenterTest reads it
     --include-disabled            also select DataCombination rows marked Disabled
 
@@ -79,8 +79,12 @@ def parse_test(source: str) -> dict | None:
     return {"class": cls.group(1), "package": pkg.group(1) if pkg else "", "methods": methods}
 
 
+_RESERVED = {"code", "description", "disabled", "multiplier", "testcaseid"}
+
+
 def _codes(path: str) -> list[dict]:
-    """[{code, desc, disabled}] from a workbook's DataCombination sheet, in sheet order, unique."""
+    """[{code, desc, disabled, data}] from a workbook's DataCombination sheet, in sheet order, unique; data is
+    the row's own cells ("State=TX · #Coverage=Liquor,Pollution"), reserved columns left out."""
     sheets = read_workbook(path, "(?i)^datacombination$")
     rows = next(iter(sheets.values()), None)
     if rows is None:
@@ -92,8 +96,11 @@ def _codes(path: str) -> list[dict]:
         if not code or code in seen:
             continue
         seen.add(code)
+        values = [f"{k}={str(v).strip()}" for k, v in row.items()
+                  if str(k).strip().lower() not in _RESERVED and v not in (None, "") and str(v).strip()]
         out.append({"code": code, "desc": str(low.get("description", "") or "").strip(),
-                    "disabled": str(low.get("disabled", "") or "").strip().lower() in _TRUTHY})
+                    "disabled": str(low.get("disabled", "") or "").strip().lower() in _TRUTHY,
+                    "data": " · ".join(values)[:400]})
     return out
 
 
@@ -457,16 +464,18 @@ def select(tests: list[dict], args) -> set[tuple[str, str, str]]:
     if getattr(args, "entry", None):
         return {s for e in args.entry for s in resolve_entry(e, scen)}
     desc = {(t["class"], m["name"], c["code"]): c["desc"] for t in tests for m in t["methods"] for c in m["codes"]}
+    data = {(t["class"], m["name"], c["code"]): c.get("data", "") for t in tests for m in t["methods"] for c in m["codes"]}
     pkg = {t["class"]: t["package"] for t in tests}
 
     def ok(pattern, value):
         return pattern is None or re.search(pattern, value or "", re.I) is not None
 
-    if not any(getattr(args, k, None) for k in ("cls", "method", "code", "desc", "package")):
+    if not any(getattr(args, k, None) for k in ("cls", "method", "code", "desc", "package", "data")):
         return set()
     return {(c, m, k) for c, m, k in scen
             if ok(args.cls, c) and ok(args.method, m) and ok(args.code, k)
-            and ok(args.desc, desc.get((c, m, k), "")) and ok(args.package, pkg.get(c, ""))}
+            and ok(args.desc, desc.get((c, m, k), "")) and ok(args.package, pkg.get(c, ""))
+            and ok(getattr(args, "data", None), data.get((c, m, k), ""))}
 
 
 def _lit(value: str) -> str:
@@ -663,6 +672,7 @@ def main(argv=None) -> int:
         sp.add_argument("--method")
         sp.add_argument("--code")
         sp.add_argument("--desc")
+        sp.add_argument("--data", help="regex over the DataCombination row's own cells (State=TX, #Vehicle=Truck ...)")
         sp.add_argument("--package")
         sp.add_argument("--entry", action="append")
         sp.add_argument("--include-disabled", action="store_true")
@@ -828,7 +838,7 @@ def main(argv=None) -> int:
             return 2
         chosen = select(tests, args)
         if not chosen:
-            print("The selection is empty: give --class/--method/--code/--desc/--package or --entry.", file=sys.stderr)
+            print("The selection is empty: give --class/--method/--code/--desc/--package/--data or --entry.", file=sys.stderr)
             return 2
         suite = {"Name": args.name, "List": compact(chosen, tests)}
         doc["CenterTestSuites"].append(suite)

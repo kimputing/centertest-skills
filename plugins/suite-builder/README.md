@@ -19,7 +19,9 @@ the Texas submission rows", "remove the disabled vehicle types from Regression1"
 suite". The skill shows the selection and a dry-run diff before it writes anything.
 
 Prefer ticking boxes? "Open the suite picker" writes a page with the class → method → row tree; it shows
-the suite before → after and copies the command for Claude to apply.
+the suite before → after and copies the command for Claude to apply. Its filter also searches each row's
+own data (type `Truck`, `TX`, `Motorcarrier`) and shows the matching cells; on the command line that is
+`pick --data "State=TX"`.
 
 Engine: `scripts/suite.py` (`picker` included) (`list`, `show`, `scan`, `pick`, `create`, `add`, `remove`, `delete`,
 `rename`, `set`); see `skills/suite-builder/SKILL.md`.

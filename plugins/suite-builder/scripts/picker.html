@@ -97,7 +97,7 @@ pre.cmd { margin: 0; font-family: var(--mono); font-size: 12px; background: var(
 <main class="layout">
   <section class="tests" aria-label="Tests">
     <div class="tools">
-      <input type="search" id="q" placeholder="Filter by class, method, code or description" aria-label="Filter tests">
+      <input type="search" id="q" placeholder="Filter by class, method, code, description or data (TX, Truck, Liquor…)" aria-label="Filter tests">
       <label><input type="checkbox" id="showDisabled"> Show disabled rows</label>
       <label><input type="checkbox" id="onlyGaps"> Only tests no suite runs</label>
     </div>
@@ -232,7 +232,8 @@ function render() {
       let rows = m.datasource && !m.error ? m.codes.filter(c => showDisabled || !c.disabled) : [];
       if (onlyGaps) rows = rows.filter(c => c.disabled || gap(t.class, m.name, c.code));
       const hitCls = !q || t.class.toLowerCase().includes(q), hitM = hitCls || m.name.toLowerCase().includes(q);
-      const rowsShown = hitM ? rows : rows.filter(c => c.code.toLowerCase().includes(q) || (c.desc || "").toLowerCase().includes(q));
+      const rowsShown = hitM ? rows : rows.filter(c => c.code.toLowerCase().includes(q) || (c.desc || "").toLowerCase().includes(q)
+        || (c.data || "").toLowerCase().includes(q));
       const methodGap = !(m.datasource && !m.error) && gap(t.class, m.name, "");
       const visible = (hitM || rowsShown.length) && (!onlyGaps || rows.length || methodGap);
       return { m, rows, rowsShown, visible };
@@ -256,12 +257,19 @@ function render() {
       html += row("method", t.class, m.name, "", m.name, file, rows.length ? `${rows.length}` : "", mKeys, rows.length ? mOpen : null);
       if (m.error) html += `<div class="err">${esc(m.error)}</div>`;
       if (rows.length && mOpen) for (const c of rowsShown)
-        html += row("code" + (c.disabled ? " disabled" : ""), t.class, m.name, c.code, c.code, c.desc || "", c.disabled ? "disabled" : "", [KEY(t.class, m.name, c.code)], null);
+        html += row("code" + (c.disabled ? " disabled" : ""), t.class, m.name, c.code, c.code, c.desc || "", c.disabled ? "disabled" : "", [KEY(t.class, m.name, c.code)], null, dataHit(c.data, q));
     }
   }
   $("tree").innerHTML = shown ? html : `<div class="empty">${DATA.tests.length ? "No tests match the filter." : "No @CenterTest classes were found under " + esc(DATA.sourceRoot) + "."}</div>`;
   for (const box of $("tree").querySelectorAll("input[data-state]")) box.indeterminate = box.dataset.state === "some";
   ledger();
+}
+
+function dataHit(data, q) {
+  // the row's cells that match the filter, so a scenario found by its data shows why
+  if (!q || !data) return "";
+  const cells = data.split(" · ").filter(c => c.toLowerCase().includes(q)).slice(0, 3);
+  return cells.length ? `<span class="desc">${esc(cells.join(" · "))}</span>` : "";
 }
 
 function row(level, cls, method, code, label, desc, count, keys, open, extra = "") {
