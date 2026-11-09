@@ -104,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
+    p.add_argument("--plan", metavar="FILE",
+                   help="One rerun suite for a release's change list: a file of 'coverage: X', 'value: X', "
+                        "'page: X', 'widget: X' lines, each answered as --uses / --touches, all scenarios together")
     p.add_argument("--model-diff", nargs="+", metavar="REV",
                    help="OLD [NEW]: two revisions of the generated project's product model (NEW: the files on disk) - "
                         "coverages and options removed/added/renamed, the scenarios that would break, a suite to rerun")
@@ -221,6 +224,22 @@ def main():
             config.ruleset = "CenterTestFull"
         print(f"\n  CenterTest weekly: {len(args.weekly)} project(s), last {args.days} days")
         sys.exit(run_weekly(config, args.weekly, args.days, args.cssids))
+
+    if args.plan:
+        from eir_impact import suite_command
+        from eir_json import emit
+        from eir_plan import plan_name, plan_report, print_plan
+        from eir_screens import find_cssids_dir
+        if not os.path.isfile(args.plan):
+            print(f"  No plan file {args.plan}")
+            sys.exit(2)
+        report = plan_report(config.repository_dir, config.source_root, args.plan,
+                             find_cssids_dir(config.repository_dir, args.cssids))
+        name = plan_name(args.plan)
+        command = suite_command(config.repository_dir, name)
+        emit(dict(report, suite_name=name, command=command))
+        print_plan(report, name, command)
+        sys.exit(1 if any(not it["scenarios"] for it in report["items"]) or report["not_understood"] else 0)
 
     if args.model_diff:
         from eir_impact import suite_command

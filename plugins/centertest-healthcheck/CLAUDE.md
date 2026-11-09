@@ -27,6 +27,7 @@ scripts/
 │                        # + option terms: options the scenarios set (eir_uses.term_values: Coverage/CovTerm/CovtermValue rows) and values that are not an option
 ├── eir_cover.py         # --cover [SUITE --of SUITE]: greedy set cover over test methods, product coverages, line/jurisdiction pairs -> suite;
 │                        # suite_breadth(): each suite's share of the full run (dashboard "Suites" panel)
+├── eir_plan.py          # --plan FILE: release change list (coverage/value/page/widget lines) -> union of --uses/--touches scenarios -> one suite
 ├── eir_modeldiff.py     # --model-diff OLD [NEW]: product model revisions of the generated project (git) -> removed/renamed/added coverages and options, scenarios that break
 ├── eir_statement.py     # --statement: client-facing one-page coverage summary (flows, coverages/options, jurisdictions, suites, gaps)
 ├── eir_states.py        # Jurisdictions per line (DC prefix): State/Jurisdiction cells of rows enabled scenarios reach, by generated TC_Jurisdiction code/name

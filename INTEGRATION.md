@@ -18,6 +18,7 @@ document is the only thing on stdout.
 | Branch review: verdict, new/fixed findings, rerun plan and suite, run scope, coverage delta, attribution | `eir_analyzer.py --path P --review BASE [HEAD] --json` | 1 when the branch adds a trust blocker |
 | Scenarios that use a data value (coverage, state, product) | `eir_analyzer.py --path P --uses "REGEX" [--uses "REGEX2" ...] --json` (rows using every value) | 0 |
 | Fewest scenarios with the full run's breadth (every test method, coverage, line/jurisdiction) | `eir_analyzer.py --path P --cover [SUITE [--of SUITE2]] [--deep] --json` (a suite: what it misses, what to add) | 0; 2 when a suite name is unknown |
+| One rerun suite for a release's change list | `eir_analyzer.py --path P --plan FILE --json` | 1 when an item selects nothing or a line is not an item |
 | What a regenerated product model breaks | `eir_analyzer.py --path P --model-diff OLD [NEW] --json` | 0; 2 without the generated project or a revision |
 | Client coverage statement (page + the measures behind it) | `eir_analyzer.py --path P --statement --json` | 0 |
 | Everything one scenario enters (its row and every row it references, as a tree) | `eir_analyzer.py --path P --scenario TEST CODE --json` | 1 when there is no such row |

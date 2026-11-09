@@ -127,6 +127,27 @@ and lists only the findings that changed, trust blockers first:
   --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run. To trim it
   first, save the `--json` result and open `suite.py picker --from <file>`: the plan comes pre-ticked.
 
+### One rerun suite for a release's change list
+
+Write the release's changes into a text file, one item per line, then:
+
+```text
+coverage: Sewer Back-Up
+value: ON|Ontario
+page: SubmissionWizardPage.getPolicyInfoStep
+widget: SubmissionWizard-...-PolicyInfoInputSet-EffectiveDate
+```
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --plan release.txt
+```
+
+Each item is answered as `--uses` (coverage:/value:, whole-cell regex) or `--touches` (page: a generated page
+class regex, `Page.getStep` for a wizard step; widget: a widget id) answers it; all their scenarios together
+become a suite `Plan-<file>` with its command. Items that select nothing are marked `!!` and make the exit
+code 1 — say them first: a misspelled coverage, or a change no scenario exercises yet (offer `--cover`-style
+additions or new data). Lines that are not items are listed with `??`.
+
 ### What a regenerated product model breaks
 
 ```bash
