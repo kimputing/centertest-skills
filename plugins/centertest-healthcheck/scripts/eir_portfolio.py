@@ -186,6 +186,8 @@ def run_portfolio(config, paths: list[str]) -> int:
     out = os.path.join(out_dir, f"Portfolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(render_html(projects))
+    from eir_json import emit
+    emit({"projects": projects})
     print_portfolio(projects)
     print(f"  Portfolio page: {out}\n")
     return 0

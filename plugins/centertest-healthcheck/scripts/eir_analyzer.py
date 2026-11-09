@@ -117,6 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "blockers, coverages lost, data rows, tests to rerun; reads the projects only; page in "
                         "~/.centertest/reports/")
     p.add_argument("--days", type=int, default=7, help="With --weekly: how many days back (default 7)")
+    p.add_argument("--json", action="store_true",
+                   help="Print the result of any mode as one JSON document on stdout (progress goes to stderr)")
     p.add_argument("--review", nargs="+", metavar="REV",
                    help="Branch review: BASE [HEAD] (HEAD defaults to HEAD). Lists only the findings "
                         "the branch introduced or fixed since its merge-base, writes a PR comment and "
@@ -207,8 +209,10 @@ def main():
         from eir_impact import suite_command
         from eir_uses import print_uses, suite_name, uses_report
         name = suite_name(args.uses)
-        print_uses(uses_report(config.repository_dir, config.source_root, args.uses), name,
-                   suite_command(config.repository_dir, name))
+        from eir_json import emit
+        report = uses_report(config.repository_dir, config.source_root, args.uses)
+        emit(dict(report, suite=name, command=suite_command(config.repository_dir, name)))
+        print_uses(report, name, suite_command(config.repository_dir, name))
         sys.exit(0)
 
     if args.touches:
@@ -218,6 +222,8 @@ def main():
         from eir_screens import find_cssids_dir
         report = touches_report(config.repository_dir, config.source_root, args.touches,
                                 find_cssids_dir(config.repository_dir, args.cssids))
+        from eir_json import emit
+        emit(dict(report, suite=name, command=suite_command(config.repository_dir, name)))
         print_touches(report, name,
                       suite_command(config.repository_dir, name))
         sys.exit(0)
@@ -353,10 +359,11 @@ def main():
             generated.append(filepath)
             print(f"  HTML:     {filepath}")
 
+    from eir_json import emit, health_json, write
+    doc = health_json(results, project_name, total_files, data, screens, products, since)
+    emit(doc)
     if "json" in config.output_formats:
-        from eir_json import health_json, write
-        filepath = write(health_json(results, project_name, total_files, data, screens, products, since),
-                         output_dir, "HealthCheck")
+        filepath = write(doc, output_dir, "HealthCheck")
         generated.append(filepath)
         print(f"  JSON:     {filepath}")
 
@@ -387,5 +394,26 @@ def main():
     print()
 
 
+def _main_json():
+    """--json: progress to stderr, the mode's result as one JSON document on stdout (for the MCP server, CI)."""
+    import json
+    import eir_json
+    real = sys.stdout
+    sys.stdout = sys.stderr
+    code = 0
+    try:
+        main()
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+    finally:
+        sys.stdout = real
+    print(json.dumps(eir_json.LAST[0] if eir_json.LAST else {"error": "no result", "exit_code": code},
+                     ensure_ascii=False))
+    sys.exit(code)
+
+
 if __name__ == "__main__":
-    main()
+    if "--json" in sys.argv[1:]:
+        _main_json()
+    else:
+        main()

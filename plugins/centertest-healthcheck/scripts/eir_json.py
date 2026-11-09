@@ -19,6 +19,12 @@ import os
 from datetime import datetime
 
 SCHEMA = 1
+LAST: list = []  # the result of the mode that ran, printed on stdout by --json
+
+
+def emit(doc) -> None:
+    """Record a mode's result for --json (the last one wins)."""
+    LAST[:] = [_plain(doc)]
 
 
 def _plain(value):

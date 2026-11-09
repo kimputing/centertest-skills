@@ -223,6 +223,8 @@ def run_trend(config, months: int, suppressions, cssids: str | None = None) -> i
     path = os.path.join(out_dir, f"Trend_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(render_html(points, os.path.basename(os.path.abspath(config.repository_dir))))
+    from eir_json import emit
+    emit({"page": path, "months": points})
     print_trend(points)
     print(f"  Trend page: {path}\n")
     return 0

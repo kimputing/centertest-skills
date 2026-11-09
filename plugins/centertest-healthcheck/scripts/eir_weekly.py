@@ -167,6 +167,8 @@ def run_weekly(config, paths: list[str], days: int, cssids: str | None = None) -
     page = os.path.join(out_dir, f"Weekly_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
     with open(page, "w", encoding="utf-8") as fh:
         fh.write(render_html(weeks, days))
+    from eir_json import emit
+    emit({"days": days, "page": page, "suites": weeks})
     print_weekly(weeks, days)
     print(f"  Weekly page: {page}\n")
     return 0

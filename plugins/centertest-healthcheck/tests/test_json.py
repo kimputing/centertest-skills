@@ -33,5 +33,24 @@ class JsonOutputTest(unittest.TestCase):
         json.dumps(doc)
 
 
+class JsonStdoutTest(unittest.TestCase):
+    def test_json_flag_prints_one_document_on_stdout(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "p", "src", "main", "java", "com", "x")
+            os.makedirs(src)
+            with open(os.path.join(src, "ATest.java"), "w") as fh:
+                fh.write("package com.x;\n@CenterTest\npublic final class ATest {\n    @CenterTestCase()\n"
+                         "    public void run(ScenarioContext s) {\n        page.getName().getValue().equals(\"b\");\n    }\n}\n")
+            script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "eir_analyzer.py")
+            run = subprocess.run([sys.executable, script, "--path", os.path.join(tmp, "p"), "--json"],
+                                 capture_output=True, text=True, env={**os.environ, "HOME": tmp})
+        self.assertEqual(run.returncode, 0, run.stderr[-500:])
+        doc = json.loads(run.stdout)  # nothing but the document on stdout
+        self.assertEqual(doc["tool"], "centertest-healthcheck")
+        self.assertEqual(doc["trust"]["blockers"][0]["rule_id"], "15018")
+        self.assertIn("Running rule", run.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
