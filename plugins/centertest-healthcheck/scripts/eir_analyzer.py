@@ -104,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
+    p.add_argument("--statement", action="store_true",
+                   help="A one-page coverage statement for the client: flows, scenarios, coverages and options "
+                        "selected, jurisdictions, suites and known gaps (healthcheck/Coverage_Statement_*.html)")
     p.add_argument("--cover", nargs="?", const="", metavar="SUITE",
                    help="The fewest scenarios that still run every test method, select every product coverage and run "
                         "every line in every jurisdiction the full regression does: a suite and its command. With a "
@@ -215,6 +218,14 @@ def main():
             config.ruleset = "CenterTestFull"
         print(f"\n  CenterTest weekly: {len(args.weekly)} project(s), last {args.days} days")
         sys.exit(run_weekly(config, args.weekly, args.days, args.cssids))
+
+    if args.statement:
+        from eir_screens import find_cssids_dir
+        from eir_statement import write as write_statement
+        path = write_statement(config.repository_dir, config.source_root,
+                               find_cssids_dir(config.repository_dir, args.cssids))
+        print(f"  Coverage statement: {path}")
+        sys.exit(0)
 
     if args.cover is not None:
         from eir_cover import cover_report, print_cover

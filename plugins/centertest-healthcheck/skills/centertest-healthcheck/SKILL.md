@@ -123,6 +123,18 @@ and lists only the findings that changed, trust blockers first:
   --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run. To trim it
   first, save the `--json` result and open `suite.py picker --from <file>`: the plan comes pre-ticked.
 
+### A coverage statement for the client
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --statement
+```
+
+Writes `healthcheck/Coverage_Statement_<timestamp>.html`, a one-page, client-facing summary without the code
+findings: flows run in a full regression, distinct scenarios, product coverages and limit/deductible options
+the scenarios select (per line), jurisdictions per line, the suites that run most of it, and known gaps
+(coverages not selected, values that are not an option, flows in no suite). Use it for a client review or a
+release sign-off; it needs the generated product model for coverages and jurisdictions.
+
 ### The smallest suite with the full run's breadth
 
 ```bash
