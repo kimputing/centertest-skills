@@ -235,3 +235,46 @@ def print_uses(report: dict, name: str, command: str | None) -> None:
     print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))
     if command:
         print(f"\n  Then: {command}")
+
+
+_PAGE_IMPORT = re.compile(r"^import\s+[\w.]+\.generated\.pages\.[\w.]*?\.?(\w+)\s*;", re.M)
+
+
+def touches_report(repo_dir: str, source_root: str, pattern: str) -> dict:
+    """Tests that reach a generated page (regex over the page classes the project imports) or one
+    widget getter ("SubmissionWizardPage.getPolicyInfoStep"), and a suite that runs them whole.
+    Reach is the --review rerun reach: per method, a static call must name its class."""
+    import suite as suites
+    from eir_impact import _java_sources, tests_reaching
+    sources = _java_sources(repo_dir, source_root)
+    page_rx, _, getter = pattern.partition(".")
+    rx = re.compile(page_rx, re.I)
+    pages = sorted({p for _path, text in sources.values() for p in _PAGE_IMPORT.findall(text) if rx.search(p)})
+    start = {p: {getter} for p in pages} if getter else None
+    per_page, reached = [], set()
+    for page in pages:
+        tests = tests_reaching({page}, sources, start)
+        per_page.append({"page": page + (f".{getter}" if getter else ""), "tests": sorted(tests)})
+        reached |= set(tests)
+    scanned = [t for t in suites.scan(repo_dir, source_root) if t["class"] in reached]
+    selected = set(suites.scenarios_of(scanned))
+    return {"pattern": pattern, "pages": per_page, "tests": sorted(reached), "scenarios": len(selected),
+            "entries": suites.compact(selected, scanned)}
+
+
+def print_touches(report: dict, name: str, command: str | None) -> None:
+    print(f"\n  TESTS THAT TOUCH /{report['pattern']}/")
+    if not report["pages"]:
+        print("  No generated page the project imports matches it.")
+        return
+    for p in report["pages"]:
+        names = ", ".join(p["tests"][:8]) + (f" +{len(p['tests']) - 8}" if len(p["tests"]) > 8 else "")
+        print(f"  {p['page']}: {len(p['tests'])} test(s)" + (f"  ->  {names}" if names else ""))
+    if not report["entries"]:
+        print("\n  No test reaches it (or its tests have no enabled rows).")
+        return
+    import json
+    print(f"\n  {len(report['tests'])} test(s), {report['scenarios']} scenario(s). As a suite for CenterTestSuiteList.json:\n")
+    print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))
+    if command:
+        print(f"\n  Then: {command}")

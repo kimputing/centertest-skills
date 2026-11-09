@@ -37,6 +37,7 @@ python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip insta
 - **Screens the suite opens** — wizards and screens per application, and the wizards no test opens
 - **Product coverages the scenarios select** — per line of business, from the generated product model (`<Line>_coverage_structure.json`): which coverages a row an enabled scenario reaches names (its DataCombination row and what it references), their terms set, those only in data rows no scenario reaches, and (Excel sheet "Product coverage") every coverage with its status
 - **Which scenarios use a coverage** — `--uses "Liquor Liability Endorsement"` follows test data references to the DataCombination rows that use it and prints the tests and a suite that runs exactly them
+- **Which tests touch a screen** — `--touches PolicyChangeWizard` (or `Page.getWidget`) lists the tests that reach a generated page or one widget, and a suite that runs them
 - **Portfolio** — `--portfolio <projects...>` compares every client suite on one page
 - **Health trend** — `--trend 6` charts score, trust blockers and test cases month by month from git history
 - **Git history analysis** — date range, monthly sampling, PR diff, specific commits

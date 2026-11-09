@@ -76,6 +76,34 @@ public final class BillingTest {
         self.assertEqual(set(tests_reaching({"BC"}, self.SRC)), {"BillingTest", "SmokeTest"})  # BC.java changed
 
 
+class InheritedFieldTest(unittest.TestCase):
+    SRC = {
+        "AbstractSubmission": ("AbstractSubmission.java", """import com.x.generated.pages.pc.SubmissionWizardPage;
+public abstract class AbstractSubmission extends BaseScenarioPC {
+    protected SubmissionWizardPage wizardPage;
+    void open() { this.wizardPage = new SubmissionWizardPage(getContext()); }
+}"""),
+        "CreatePaSubmission": ("CreatePaSubmission.java", """public class CreatePaSubmission extends AbstractSubmission {
+    public void offering() { wizardPage.getOfferingStep().getOfferingSelection().set("Standard"); }
+    public void other() { log("no wizard here"); }
+}"""),
+        "PaTest": ("PaTest.java", """@CenterTest
+public final class PaTest {
+    @CenterTestCase()
+    public void run(ScenarioContext s) { new CreatePaSubmission().offering(); }
+}"""),
+        "OtherTest": ("OtherTest.java", """@CenterTest
+public final class OtherTest {
+    @CenterTestCase()
+    public void run(ScenarioContext s) { new CreatePaSubmission().other(); }
+}"""),
+    }
+
+    def test_a_widget_used_through_a_superclass_field_is_reached(self):
+        reached = tests_reaching({"SubmissionWizardPage"}, self.SRC, {"SubmissionWizardPage": {"getOfferingStep"}})
+        self.assertEqual(set(reached), {"PaTest"})  # other() never uses wizardPage
+
+
 class CommandTest(unittest.TestCase):
     def test_rows_become_a_code_filter_only_when_the_build_forwards_it(self):
         entry = {"test": "WC_ClaimTest", "codes": ["CA-Claim", "Default"]}

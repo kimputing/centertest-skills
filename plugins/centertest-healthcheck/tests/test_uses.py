@@ -118,6 +118,26 @@ class UsesTest(unittest.TestCase):
         self.assertIn('"Name": "Uses-Liquor"', out.getvalue())
         self.assertIn("not run (disabled): Off", out.getvalue())
 
+    def test_touches_a_page_or_one_widget(self):
+        from eir_uses import touches_report
+        step = os.path.join(self.root, "src", "main", "java", "com", "x", "CreateGL.java")
+        with open(step, "w") as fh:
+            fh.write("""import com.x.generated.pages.pc.SubmissionWizardPage;
+public class CreateGL { void go() { var w = new SubmissionWizardPage(getContext()); w.getOfferingStep().click(); } }""")
+        test = os.path.join(self.root, "src", "main", "java", "com", "x", "tests", "GL_SubmissionTest.java")
+        with open(test) as fh:
+            text = fh.read()
+        with open(test, "w") as fh:
+            fh.write(text.replace("{ }\n}", "{ new CreateGL().go(); }\n}"))
+        page = touches_report(self.root, "src", "submissionwizard")
+        self.assertEqual([p["page"] for p in page["pages"]], ["SubmissionWizardPage"])
+        self.assertEqual(page["tests"], ["GL_SubmissionTest"])
+        self.assertEqual(page["entries"], ["GL_SubmissionTest"])
+        self.assertEqual(touches_report(self.root, "src", "SubmissionWizardPage.getOfferingStep")["tests"],
+                         ["GL_SubmissionTest"])
+        self.assertEqual(touches_report(self.root, "src", "SubmissionWizardPage.getQuoteStep")["tests"], [])
+        self.assertEqual(touches_report(self.root, "src", "NoSuchPage")["pages"], [])
+
     def test_nothing_uses_it(self):
         from eir_uses import print_uses, uses_report
         out = io.StringIO()

@@ -79,7 +79,21 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
     workbook); a class missing from it is changed as a whole.
     """
     methods = {name: _methods(text) for name, (_p, text) in sources.items()}
-    words = {name: set(_WORD.findall(text)) for name, (_p, text) in sources.items()}
+    own_words = {name: set(_WORD.findall(text)) for name, (_p, text) in sources.items()}
+    parent = {}
+    for name, (_p, text) in sources.items():
+        m = re.search(r"\bclass\s+" + re.escape(name) + r"\b[^{]*?\bextends\s+(\w+)", text)
+        if m and m.group(1) in sources:
+            parent[name] = m.group(1)
+
+    def lineage(name):  # the class and its project superclasses: an inherited field counts as its own
+        seen = [name]
+        while parent.get(seen[-1]) and parent[seen[-1]] not in seen:
+            seen.append(parent[seen[-1]])
+        return seen
+
+    words = {name: set().union(*(own_words[c] for c in lineage(name))) for name in sources}
+    texts = {name: "\n".join(sources[c][1] for c in lineage(name)) for name in sources}
     reached: dict[str, str] = {}
     for begin in classes:
         # affected[class] = None (the whole class) or the set of its affected method names
@@ -103,9 +117,13 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
                 if re.search(r"\b(?:extends|implements)\s+[\w\s,<>]*\b" + re.escape(current) + r"\b", text):
                     hit = None
                 else:
-                    typed = bool(instance.search(text))
+                    typed = bool(instance.search(texts[other]))
+                    # held in a superclass field: the methods that use that field
+                    fields = set() if current in own_words[other] else set(re.findall(
+                        r"\b" + re.escape(current) + r"(?:<[^>]*>)?\s+(\w+)\s*[;=]", texts[other]))
+                    uses = re.compile(r"\b(?:" + "|".join(map(re.escape, [current, *sorted(fields)])) + r")\b")
                     hit = {name for name, body in methods[other]
-                           if re.search(r"\b" + re.escape(current) + r"\b", body)
+                           if uses.search(body)
                            and (calls is None or static.search(body) or (typed and calls.search(body)))}
                     if not hit:
                         continue
