@@ -128,7 +128,7 @@ _ref_file_cache = {}
 
 def find_all_xlsx_files():
     """Find all xlsx files in testdata/."""
-    files = glob.glob("testdata/**/*.xlsx", recursive=True) + glob.glob("testdata/*.xlsx")
+    files = [f.replace(os.sep, "/") for f in glob.glob("testdata/**/*.xlsx", recursive=True) + glob.glob("testdata/*.xlsx")]
     files = [f for f in files if not os.path.basename(f).startswith("~$")]
     return sorted(set(files))
 

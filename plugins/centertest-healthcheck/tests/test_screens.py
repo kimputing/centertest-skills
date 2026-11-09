@@ -96,7 +96,7 @@ class ConfiguredCssidsTest(unittest.TestCase):
             for name, pkg in (("acme-suite", "com.acme"), ("other-suite", "com.other")):
                 write(os.path.join(tmp, name, "src", "main", "java", "T.java"),
                       f"import {pkg}.generated.pages.pc.NewAccountPage;\nclass T {{}}")
-            with mock.patch.dict(os.environ, {"HOME": home}):
+            with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}):
                 self.assertEqual(eir_screens.find_cssids_dir(os.path.join(tmp, "acme-suite")),
                                  os.path.join(gen, "src", "main", "resources", "cssids"))
                 self.assertIsNone(eir_screens.find_cssids_dir(os.path.join(tmp, "other-suite")))

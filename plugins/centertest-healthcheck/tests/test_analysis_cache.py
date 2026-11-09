@@ -15,7 +15,7 @@ class AnalysisCacheTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        home = mock.patch.dict(os.environ, {"HOME": self.tmp.name})
+        home = mock.patch.dict(os.environ, {"HOME": self.tmp.name, "USERPROFILE": self.tmp.name})
         home.start()
         self.addCleanup(home.stop)
         self.addCleanup(self.tmp.cleanup)

@@ -52,7 +52,8 @@ class HealthScoreTest(unittest.TestCase):
 
     def score(self, results):
         path = eir_report.generate_html(results, self.out, project_name="p", total_files=400)
-        html = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as fh:
+            html = fh.read()
         number = int(re.search(r'class="score-number">(\d+)<', html).group(1))
         label = re.search(r'class="score-badge">([^<]+)<', html).group(1)
         return number, label, html
@@ -86,6 +87,7 @@ class VerdictSheetTest(unittest.TestCase):
             wb = openpyxl.load_workbook(path, read_only=True)
             self.assertEqual(wb.sheetnames[:2], ["Verdict", "Summary"])
             rows = [tuple(c for c in r if c is not None) for r in wb["Verdict"].iter_rows(values_only=True)]
+            wb.close()  # a read-only workbook keeps the file open: Windows cannot delete it
             self.assertIn(("Health score", eir_report.TRUST_SCORE_CAP, "At risk"), rows)
             self.assertIn(("A.validate: x.equals(y);", "src/A.java:7"), rows)
         finally:

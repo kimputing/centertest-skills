@@ -19,7 +19,7 @@ except ImportError:
 @unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
 class JsonOutputTest(unittest.TestCase):
     def run_tool(self, root, script):
-        env = {**os.environ, "CENTERTEST_PROJECT_DIR": root, "HOME": root}
+        env = {**os.environ, "CENTERTEST_PROJECT_DIR": root, "HOME": root, "USERPROFILE": root}
         return subprocess.run([sys.executable, os.path.join(SCRIPTS, script), "--json"],
                               capture_output=True, text=True, env=env)
 
@@ -53,7 +53,7 @@ class DiffJsonTest(unittest.TestCase):
             old, new = os.path.join(root, "old.xlsx"), os.path.join(root, "new.xlsx")
             make_xlsx(old, {"DataCombination": [["Code", "State"], ["A", "TX"], ["B", "CA"]]})
             make_xlsx(new, {"DataCombination": [["Code", "State", "City"], ["A", "AZ", ""], ["C", "NV", "Reno"]]})
-            env = {**os.environ, "CENTERTEST_PROJECT_DIR": root, "HOME": root}
+            env = {**os.environ, "CENTERTEST_PROJECT_DIR": root, "HOME": root, "USERPROFILE": root}
             run = subprocess.run([sys.executable, os.path.join(SCRIPTS, "xlsx-diff.py"), old, new, "--json"],
                                  capture_output=True, text=True, env=env)
         self.assertEqual(run.returncode, 0, run.stderr[-300:])

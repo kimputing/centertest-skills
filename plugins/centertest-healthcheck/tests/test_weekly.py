@@ -36,7 +36,8 @@ class WeeklyTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         from unittest import mock
-        home = mock.patch.dict(os.environ, {"HOME": os.path.join(self.tmp.name, "home")})  # analysis cache
+        home_dir = os.path.join(self.tmp.name, "home")
+        home = mock.patch.dict(os.environ, {"HOME": home_dir, "USERPROFILE": home_dir})  # analysis cache
         home.start()
         self.addCleanup(home.stop)
         self.repo = os.path.join(self.tmp.name, "suite")

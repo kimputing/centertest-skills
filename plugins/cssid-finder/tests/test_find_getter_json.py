@@ -13,7 +13,7 @@ FIXTURES = os.path.join(os.path.dirname(os.path.dirname(HERE)), "recording-to-te
 class FindGetterJsonTest(unittest.TestCase):
     def run_json(self, app, css_id):
         with tempfile.TemporaryDirectory() as home:
-            env = {**os.environ, "HOME": home, "CENTERTEST_CSSIDS_DIR": FIXTURES}
+            env = {**os.environ, "HOME": home, "USERPROFILE": home, "CENTERTEST_CSSIDS_DIR": FIXTURES}
             return subprocess.run([sys.executable, SCRIPT, app, css_id, "--json"], capture_output=True, text=True, env=env)
 
     def test_a_known_widget(self):
@@ -33,7 +33,7 @@ class FindGetterJsonTest(unittest.TestCase):
 class WordSearchTest(unittest.TestCase):
     def run_words(self, *args):
         with tempfile.TemporaryDirectory() as home:
-            env = {**os.environ, "HOME": home, "CENTERTEST_CSSIDS_DIR": FIXTURES}
+            env = {**os.environ, "HOME": home, "USERPROFILE": home, "CENTERTEST_CSSIDS_DIR": FIXTURES}
             return subprocess.run([sys.executable, SCRIPT, "pc", "--words", *args], capture_output=True, text=True, env=env)
 
     def test_the_element_named_by_those_words_first(self):

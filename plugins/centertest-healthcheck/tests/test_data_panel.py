@@ -66,7 +66,7 @@ class DataOverviewTest(unittest.TestCase):
     def test_unused_codes_agree_with_the_cleanup_report(self):
         from eir_data import data_overview
         d = data_overview(self.tmp, "src/main/java")
-        env = {**os.environ, "CENTERTEST_PROJECT_DIR": self.tmp, "HOME": self.tmp}
+        env = {**os.environ, "CENTERTEST_PROJECT_DIR": self.tmp, "HOME": self.tmp, "USERPROFILE": self.tmp}
         run = subprocess.run([sys.executable, os.path.join(PLUGINS, "ddt-tools", "scripts", "xlsx-cleanup-unused.py")],
                              capture_output=True, text=True, env=env, cwd=self.tmp)
         found = re.search(r"Found (\d+) unused", run.stdout)

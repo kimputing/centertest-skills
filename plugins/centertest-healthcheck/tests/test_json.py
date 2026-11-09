@@ -44,7 +44,7 @@ class JsonStdoutTest(unittest.TestCase):
                          "    public void run(ScenarioContext s) {\n        page.getName().getValue().equals(\"b\");\n    }\n}\n")
             script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "eir_analyzer.py")
             run = subprocess.run([sys.executable, script, "--path", os.path.join(tmp, "p"), "--json"],
-                                 capture_output=True, text=True, env={**os.environ, "HOME": tmp})
+                                 capture_output=True, text=True, env={**os.environ, "HOME": tmp, "USERPROFILE": tmp})
         self.assertEqual(run.returncode, 0, run.stderr[-500:])
         doc = json.loads(run.stdout)  # nothing but the document on stdout
         self.assertEqual(doc["tool"], "centertest-healthcheck")

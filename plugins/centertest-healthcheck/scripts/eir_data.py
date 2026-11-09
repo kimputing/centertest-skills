@@ -59,7 +59,8 @@ def data_overview(repo_dir: str, source_root: str, results=None) -> dict | None:
         dcs = ddt_refcheck.find_all_dc_files()
         used = ddt_refcheck.used_codes(dcs, source_root)
         # The same Data files xlsx-cleanup-unused reports on, so the two counts agree.
-        data_files = sorted(f for f in glob.glob("testdata/*Data.xlsx") if not os.path.basename(f).startswith("~$"))
+        data_files = sorted(f.replace(os.sep, "/") for f in glob.glob("testdata/*Data.xlsx")
+                            if not os.path.basename(f).startswith("~$"))
         total_codes = unused_codes = 0
         for path in data_files:
             for sheet, (_headers, codes) in _codes_by_sheet(path).items():

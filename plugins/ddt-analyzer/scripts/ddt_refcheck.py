@@ -153,7 +153,7 @@ def load_reference_codes(dc_path):
     wb.close()
 
     for location in locations:
-        ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
+        ref_path = slash(os.path.normpath(os.path.join(os.path.dirname(dc_path), location)))
         if not os.path.isfile(ref_path):
             ref_path = location
         if os.path.isfile(ref_path):
@@ -241,7 +241,7 @@ def _collect_ref_file_locations(dc_path):
 
     resolved = []
     for location in locations:
-        ref_path = os.path.normpath(os.path.join(os.path.dirname(dc_path), location))
+        ref_path = slash(os.path.normpath(os.path.join(os.path.dirname(dc_path), location)))
         if not os.path.isfile(ref_path):
             ref_path = location
         if os.path.isfile(ref_path):
@@ -625,11 +625,17 @@ def validate_dc(dc_path):
     return errors
 
 
+def slash(path):
+    """A path with "/" separators: DataDrivenHierarchy patterns and @DataDriven datasources are written with
+    "/", so a Windows path ("testdata\\wc\\X.xlsx") would match neither."""
+    return path.replace(os.sep, "/") if os.sep != "/" else path
+
+
 def find_all_dc_files():
     """Find all DC xlsx files in testdata/."""
     import glob
     files = glob.glob("testdata/**/*DC.xlsx", recursive=True) + glob.glob("testdata/*DC.xlsx")
-    files = [f for f in files if not os.path.basename(f).startswith("~$")]
+    files = [slash(f) for f in files if not os.path.basename(f).startswith("~$")]
     return sorted(set(files))
 
 
@@ -664,7 +670,7 @@ def used_codes(dc_files=None, source_root="src/main/java"):
 
     if dc_files is None:
         dc_files = find_all_dc_files()
-    workbooks = sorted(set(dc_files) | set(glob.glob("testdata/**/*.xlsx", recursive=True)))
+    workbooks = sorted(set(dc_files) | {slash(p) for p in glob.glob("testdata/**/*.xlsx", recursive=True)})
     for path in workbooks:
         if os.path.basename(path).startswith("~$"):
             continue

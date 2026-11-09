@@ -44,6 +44,18 @@ public final class PolicyChangeTest {
 """
 
 
+def remove_repo(path):
+    """shutil.rmtree for a git repository: Windows refuses to delete git's read-only object files."""
+    import stat
+    def writable_then_retry(func, target, _exc):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=writable_then_retry)
+    else:
+        shutil.rmtree(path, onerror=writable_then_retry)
+
+
 def git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
                    env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
@@ -103,13 +115,13 @@ class BranchReviewTest(unittest.TestCase):
         self.out = tempfile.mkdtemp()
 
     def tearDown(self):
-        shutil.rmtree(self.repo)
+        remove_repo(self.repo)
         shutil.rmtree(self.out)
 
     def review(self, base, head):
         cmd = [sys.executable, os.path.join(PLUGIN, "scripts", "eir_analyzer.py"), "--path", self.repo,
                "--rules", "14002,14003,14004,15005,15018", "--review", base, head]
-        env = {**os.environ, "HOME": self.out}  # keep ~/.centertest out of the user's home
+        env = {**os.environ, "HOME": self.out, "USERPROFILE": self.out}  # keep ~/.centertest out of the user's home
         return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
     def test_branch_that_adds_blockers_is_sent_back(self):

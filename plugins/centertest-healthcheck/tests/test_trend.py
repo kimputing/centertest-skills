@@ -10,6 +10,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 import eir_trend
 
 
+def remove_repo(path):
+    """shutil.rmtree for a git repository: Windows refuses to delete git's read-only object files."""
+    import stat
+    def writable_then_retry(func, target, _exc):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=writable_then_retry)
+    else:
+        shutil.rmtree(path, onerror=writable_then_retry)
+
+
 def commit(repo, name, date):
     with open(os.path.join(repo, name), "w") as fh:
         fh.write(name)
@@ -26,7 +38,7 @@ class MonthlyCommitsTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=self.repo, check=True)
 
     def tearDown(self):
-        shutil.rmtree(self.repo)
+        remove_repo(self.repo)
 
     def test_last_commit_of_each_month_oldest_first(self):
         commit(self.repo, "a", "2026-04-02T10:00:00")
