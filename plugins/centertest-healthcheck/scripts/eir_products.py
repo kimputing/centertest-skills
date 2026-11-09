@@ -114,14 +114,20 @@ def _offered(models: list) -> dict[tuple, set]:
 def option_index(cssids_dir: str | None) -> dict[tuple, list]:
     """{(coverage, term) lower-cased, by name or code: [(line, coverage name, term name, {squeezed key: option})]}
     over every line's option terms: what a Coverage / CovTerm / CovtermValue row can select."""
-    index: dict[tuple, list] = {}
+    models = {}
     for path in structure_files(cssids_dir):
-        line = os.path.basename(path)[:-len("_coverage_structure.json")]
         try:
             with open(path, encoding="utf-8") as fh:
-                coverages = json.load(fh)
+                models[os.path.basename(path)[:-len("_coverage_structure.json")]] = json.load(fh)
         except (OSError, ValueError):
             continue
+    return option_index_from(models)
+
+
+def option_index_from(models: dict[str, list]) -> dict[tuple, list]:
+    """option_index() of {line: coverages} already loaded (another revision of the model, eir_modeldiff)."""
+    index: dict[tuple, list] = {}
+    for line, coverages in models.items():
         for c in coverages if isinstance(coverages, list) else []:
             if not isinstance(c, dict) or not c.get("name"):
                 continue

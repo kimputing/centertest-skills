@@ -104,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
+    p.add_argument("--model-diff", nargs="+", metavar="REV",
+                   help="OLD [NEW]: two revisions of the generated project's product model (NEW: the files on disk) - "
+                        "coverages and options removed/added/renamed, the scenarios that would break, a suite to rerun")
     p.add_argument("--statement", action="store_true",
                    help="A one-page coverage statement for the client: flows, scenarios, coverages and options "
                         "selected, jurisdictions, suites and known gaps (healthcheck/Coverage_Statement_*.html)")
@@ -218,6 +221,23 @@ def main():
             config.ruleset = "CenterTestFull"
         print(f"\n  CenterTest weekly: {len(args.weekly)} project(s), last {args.days} days")
         sys.exit(run_weekly(config, args.weekly, args.days, args.cssids))
+
+    if args.model_diff:
+        from eir_impact import suite_command
+        from eir_json import emit
+        from eir_modeldiff import model_diff, print_model_diff
+        from eir_screens import find_cssids_dir
+        cssids = find_cssids_dir(config.repository_dir, args.cssids)
+        if not cssids or len(args.model_diff) > 2:
+            print("  --model-diff OLD [NEW] needs the generated project (--cssids or <project>-generated) and one or two revisions")
+            sys.exit(2)
+        diff = model_diff(config.repository_dir, config.source_root, cssids, args.model_diff[0],
+                          args.model_diff[1] if len(args.model_diff) > 1 else None)
+        name = "Model-" + re.sub(r"[^A-Za-z0-9]+", "", (args.model_diff[-1] if len(args.model_diff) > 1 else "current"))[:20]
+        command = suite_command(config.repository_dir, name)
+        emit(dict(diff, suite_name=name, command=command))
+        print_model_diff(diff, name, command)
+        sys.exit(2 if diff.get("error") else 0)
 
     if args.statement:
         from eir_screens import find_cssids_dir

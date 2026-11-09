@@ -25,9 +25,16 @@ import os
 def _option_items(repo_dir: str, cssids_dir: str | None) -> dict[tuple, set]:
     """{("dc", workbook, code) of an enabled row: ("option", line, "Coverage / Term = Option") items it selects}:
     the limit and deductible options its reached Coverage / CovTerm / CovtermValue rows set (eir_products)."""
-    from eir_products import option_index, options_of
+    from eir_products import option_index
+    return _option_items_with(repo_dir, None, option_index(cssids_dir))
+
+
+def _option_items_with(repo_dir: str, models: dict | None, index: dict | None = None) -> dict[tuple, set]:
+    """_option_items() against a given product model ({line: coverages}) or a prebuilt option index."""
+    from eir_products import option_index_from, options_of
     from eir_uses import _DISABLED, _graph, _key, term_cells
-    index = option_index(cssids_dir)
+    if index is None:
+        index = option_index_from(models or {})
     if not index:
         return {}
     cells = term_cells(repo_dir)

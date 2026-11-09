@@ -124,6 +124,19 @@ and lists only the findings that changed, trust blockers first:
   --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run. To trim it
   first, save the `--json` result and open `suite.py picker --from <file>`: the plan comes pre-ticked.
 
+### What a regenerated product model breaks
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --model-diff <old-rev> [<new-rev>]
+```
+
+Revisions of the **generated** project's git (NEW defaults to the files on disk, e.g. right after
+regenerating). Compares the product model per line: coverages removed, added, renamed (same
+codeIdentifier, new name) and term options removed/added; then names the scenarios that select a removed
+or renamed coverage by its old name, or set an option the new model no longer offers - they fail at that
+step - as a suite `Model-<rev>` to rerun, and the added coverages no scenario selects. Use it before
+merging a regenerated project or after a Guidewire product change; say the breaks first.
+
 ### A coverage statement for the client
 
 ```bash
