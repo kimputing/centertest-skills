@@ -726,7 +726,7 @@ def _data_panel_html(d) -> str:
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
-                  suppressed_count: int = 0, screens=None, data=None, products=None) -> str:
+                  suppressed_count: int = 0, screens=None, data=None, products=None, since=None) -> str:
     """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
     output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -860,6 +860,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .data-big small {{ font-size: 14px; font-weight: 500; color: var(--text-muted); }}
   .data-label {{ font-weight: 600; font-size: 14px; margin-top: 2px; }}
   .data-sub {{ color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }}
+  ul.since {{ margin: 6px 0 12px 18px; padding: 0; font-size: 13px; color: var(--text-muted); }}
+  ul.since code {{ font-size: 12px; overflow-wrap: anywhere; }}
   .screens {{ margin: 28px 0 0; }}
   .screens h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 4px; }}
   .screens-note {{ color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }}
@@ -1035,6 +1037,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
 """
 
     repo_root = os.path.dirname(os.path.abspath(output_dir))
+    from eir_since import panel_html as _since_panel
+    html += _since_panel(since, _html_escape)
     html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
     html += _data_panel_html(data)
     html += _screens_panel_html(screens)

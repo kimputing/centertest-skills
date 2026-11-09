@@ -39,6 +39,7 @@ python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip insta
 - **Which scenarios use a coverage** — `--uses "Liquor Liability Endorsement"` follows test data references to the DataCombination rows that use it and prints the tests and a suite that runs exactly them
 - **Which tests touch a screen** — `--touches PolicyChangeWizard` (or `Page.getWidget`) lists the tests that reach a generated page or one widget, and a suite that runs them
 - **Weekly** — `--weekly <projects...> --days 7` runs what landed in each suite through the branch review: verdict, new trust blockers, coverages lost, data rows changed, tests to rerun — one page
+- **Since your last check** — every local run compares itself with the previous one (`healthcheck/last-run.json`): score, trust blockers, scenarios, coverages, findings added and fixed
 - **Portfolio** — `--portfolio <projects...>` compares every client suite on one page, product coverage the scenarios select included
 - **Health trend** — `--trend 6` charts score, trust blockers, test cases and product coverages selected month by month from git history
 - **Git history analysis** — date range, monthly sampling, PR diff, specific commits

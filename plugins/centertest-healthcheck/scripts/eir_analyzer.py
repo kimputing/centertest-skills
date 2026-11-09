@@ -314,7 +314,7 @@ def main():
     elapsed = time.time() - start_time
     project_name = os.path.basename(config.repository_dir)
 
-    screens = data = products = None
+    screens = data = products = since = None
     if not config.has_git_options():
         from eir_data import data_overview
         data = data_overview(config.repository_dir, config.source_root, results)
@@ -323,6 +323,8 @@ def main():
         screens = screen_coverage(config.repository_dir, config.source_root, cssids) if cssids else []
         from eir_products import product_coverage
         products = product_coverage(config.repository_dir, cssids, config.source_root)
+        from eir_since import since_last, snapshot
+        since = since_last(output_dir, snapshot(results, total_files, data, products))
 
     # Excel first (appendix — referenced by HTML)
     excel_filename = ""
@@ -345,6 +347,7 @@ def main():
             screens=screens,
             data=data,
             products=products,
+            since=since,
         )
         if filepath:
             generated.append(filepath)
@@ -367,6 +370,9 @@ def main():
         if products:
             from eir_products import print_products
             print_products(products)
+        if since:
+            from eir_since import print_since
+            print_since(since)
 
     print(f"\n  Completed in {elapsed:.1f}s")
     if generated:
