@@ -98,6 +98,7 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 
 - `--review` keys findings without position columns (`Row`) and with digits in grouped items replaced by `#`, so a moved row or a count going from 2x to 3x is not "new". Rules that error on either side are listed as not compared; an uncompared trust rule makes the verdict "Not verified" (exit 1).
 - `eir_analyzer.py` name is historical — the skill is centertest-healthcheck
+- Rerun reach (`eir_impact.tests_reaching`): a static call must name its class (`BC.createAccount(`, never `PC.createAccount(`); a bare `.name(` counts only where the class is used as an instance. A changed workbook starts from its readers' methods that name it (`_reading_methods`, declaration line included; `rule_ddt._workbook_tokens` gives the names). Changed row codes filter only a test whose own `@DataDriven` datasource is that workbook; any other test reaching it reruns whole.
 - Rule 9005 checks method-level `@DataDriven` (not just class-level)
 - Rules 9001, 9003, 9005, 9007 and 9008 scan the main class **and its inner classes** (tests often keep flow steps there). Inner-class findings are labelled `Outer.Inner`. The parser only collects direct inner classes, so a class nested inside an inner class is still not scanned.
 - Rule 1001 has `suffix_exceptions` set for `CheckEnvironmentAvailability`

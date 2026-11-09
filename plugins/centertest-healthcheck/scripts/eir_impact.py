@@ -52,50 +52,61 @@ _METHOD_DECL = re.compile(
     r"(?:public|protected|private|static|final|synchronized|abstract|default|\s)+[\w<>\[\],.? ]+?\s+(\w+)\s*\([^;{)]*\)\s*(?:throws[^{;]*)?\{")
 
 
+_NOT_METHODS = ("if", "for", "while", "switch", "catch", "synchronized", "return", "new")
+
+
+def _body_end(text: str, start: int) -> int:
+    depth, k = 1, start
+    while k < len(text) and depth:
+        depth += {"{": 1, "}": -1}.get(text[k], 0)
+        k += 1
+    return k
+
+
 def _methods(text: str) -> list[tuple[str, str]]:
     """[(method name, body)] by declaration regex and brace matching (good enough for reach)."""
-    out = []
-    for m in _METHOD_DECL.finditer(text):
-        name = m.group(1)
-        if name in ("if", "for", "while", "switch", "catch", "synchronized", "return", "new"):
-            continue
-        depth, k = 1, m.end()
-        while k < len(text) and depth:
-            depth += {"{": 1, "}": -1}.get(text[k], 0)
-            k += 1
-        out.append((name, text[m.end():k]))
-    return out
+    return [(m.group(1), text[m.end():_body_end(text, m.end())])
+            for m in _METHOD_DECL.finditer(text) if m.group(1) not in _NOT_METHODS]
 
 
-def tests_reaching(classes: set[str], sources: dict) -> dict[str, str]:
+def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) -> dict[str, str]:
     """{test class: the changed class it reaches} for tests that reach any of `classes`.
 
     Reach is followed per method, so a hub everyone uses (a facade like PC or BC) only passes
     the change on through the facade methods that use the changed class, and on to the
     classes that call those methods. A subclass of a changed class is changed as a whole.
+    `start` gives, per class, only the methods that changed (e.g. the ones that read a changed
+    workbook); a class missing from it is changed as a whole.
     """
     methods = {name: _methods(text) for name, (_p, text) in sources.items()}
     words = {name: set(_WORD.findall(text)) for name, (_p, text) in sources.items()}
     reached: dict[str, str] = {}
-    for start in classes:
+    for begin in classes:
         # affected[class] = None (the whole class) or the set of its affected method names
-        affected: dict[str, set | None] = {start: None}
-        frontier = [start]
+        affected: dict[str, set | None] = {begin: (start or {}).get(begin)}
+        frontier = [begin]
         while frontier:
             current = frontier.pop()
             names = affected[current]
             if current in sources and _is_test(sources[current][1]):
-                reached.setdefault(current, start)
-            calls = None if names is None else re.compile(r"\.(" + "|".join(map(re.escape, names)) + r")\s*\(")
+                reached.setdefault(current, begin)
+            alts = None if names is None else "|".join(map(re.escape, names))
+            # a static call names its class (BC.createAccount, not PC.createAccount); a bare .name( counts
+            # only where the class is used as an instance (new X(...), a variable or parameter of type X)
+            static = None if names is None else re.compile(r"\b" + re.escape(current) + r"\s*\.\s*(?:" + alts + r")\s*\(")
+            calls = None if names is None else re.compile(r"\.(?:" + alts + r")\s*\(")
+            instance = re.compile(r"\bnew\s+" + re.escape(current) + r"\b|\b" + re.escape(current)
+                                  + r"(?:<[^>]*>)?\s+\w+\s*[=;,)]")
             for other, (_p, text) in sources.items():
                 if other == current or current not in words[other]:
                     continue
                 if re.search(r"\b(?:extends|implements)\s+[\w\s,<>]*\b" + re.escape(current) + r"\b", text):
                     hit = None
                 else:
+                    typed = bool(instance.search(text))
                     hit = {name for name, body in methods[other]
                            if re.search(r"\b" + re.escape(current) + r"\b", body)
-                           and (calls is None or calls.search(body))}
+                           and (calls is None or static.search(body) or (typed and calls.search(body)))}
                     if not hit:
                         continue
                 known = affected.get(other, set())
@@ -280,6 +291,28 @@ def _dc_rows_using(head_tree: str, sheet_codes: dict[str, set[str]]) -> dict[str
     return out
 
 
+_DATASOURCE = re.compile(r'datasource\s*=\s*"([^"]+)"')
+
+
+def _reading_methods(classes: set, sources: dict, names: set) -> dict:
+    """{class: its methods whose body names the workbook} -- only those pass a data change on. A class
+    that names it outside every method (a field, an annotation) is left out: changed as a whole."""
+    if not names:
+        return {}
+    pattern = re.compile("|".join(r"(?<![\w/])" + re.escape(n) + r"(?![\w])" for n in sorted(names, key=len, reverse=True)))
+    out = {}
+    for cls in classes:
+        text = re.sub(r"^\s*(?:import|package)\s[^;]*;", "", sources[cls][1], flags=re.M)
+        # each method with its declaration line: a DC type is often a parameter
+        methods = [(m.group(1), text[text.rfind("\n", 0, m.start() + len(m.group(0)) - len(m.group(0).lstrip())) + 1:end])
+                   for m, end in ((m, _body_end(text, m.end())) for m in _METHOD_DECL.finditer(text))
+                   if m.group(1) not in _NOT_METHODS]
+        hits = {name for name, body in methods if pattern.search(body)}
+        if hits and len(pattern.findall(text)) == sum(len(pattern.findall(b)) for n, b in methods if n in hits):
+            out[cls] = hits
+    return out
+
+
 def rerun_plan(base_tree: str, head_tree: str, changed: list[str], source_root: str) -> list[dict]:
     """[{test, codes (sorted, empty = whole test), reasons}] sorted by test name."""
     from rules.rule_ddt import _workbook_users
@@ -315,14 +348,19 @@ def rerun_plan(base_tree: str, head_tree: str, changed: list[str], source_root: 
                 dc_codes.setdefault(dc, set()).update(codes)
 
     if dc_codes:
+        from rules.rule_ddt import _workbook_tokens
         users = _workbook_users(head_tree, source_root)
+        tokens = _workbook_tokens(head_tree, source_root)
         for dc, codes in dc_codes.items():
             readers = users.get(dc, [])
             tests = {c for c in readers if c in sources and _is_test(sources[c][1])}
-            steps = set(readers) - tests
-            tests |= set(tests_reaching(steps & set(sources), sources))
+            steps = (set(readers) - tests) & set(sources)
+            tests |= set(tests_reaching(steps, sources, _reading_methods(steps, sources, tokens.get(dc, set()))))
             for test in tests:
-                add(test, f"{os.path.basename(dc)} rows changed", codes)
+                # row codes filter only the test whose own datasource is this workbook; a test that
+                # reaches it through a step or an @Rel column runs its own rows: rerun it whole
+                own = dc in _DATASOURCE.findall(sources[test][1])
+                add(test, f"{os.path.basename(dc)} rows changed", codes if own else None)
 
     result = []
     for entry in sorted(plan.values(), key=lambda e: e["test"]):

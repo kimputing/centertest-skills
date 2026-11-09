@@ -42,6 +42,40 @@ class TestsReachingTest(unittest.TestCase):
         self.assertEqual(tests_reaching({"AccountTest"}, SOURCES), {"AccountTest": "AccountTest"})
 
 
+class FacadeReceiverTest(unittest.TestCase):
+    SRC = {
+        "PC": ("PC.java", "public final class PC { public static CreatePcAccount createAccount(User u) { return new CreatePcAccount(u); } }"),
+        "BC": ("BC.java", """public final class BC {
+    public static CreateBcAccount createAccount(Ctx c, CA_SubmissionDC data) { return new CreateBcAccount(c, data); }
+    public static Login login(User u) { return new Login(u); }
+}"""),
+        "CreatePcAccount": ("CreatePcAccount.java", "public class CreatePcAccount { }"),
+        "CreateBcAccount": ("CreateBcAccount.java", "public class CreateBcAccount { }"),
+        "Login": ("Login.java", "public class Login { }"),
+        "SmokeTest": ("SmokeTest.java", """@CenterTest
+public final class SmokeTest {
+    @CenterTestCase()
+    public void run(ScenarioContext scenarioContext) { BC.login(su).execute(); PC.createAccount(p).execute(); }
+}"""),
+        "BillingTest": ("BillingTest.java", """@CenterTest
+public final class BillingTest {
+    @CenterTestCase()
+    public void run(ScenarioContext scenarioContext) { BC.createAccount(c, data).execute(); }
+}"""),
+    }
+
+    def test_a_same_named_method_on_another_facade_is_not_a_call(self):
+        # SmokeTest names BC and calls PC.createAccount: that is not BC.createAccount
+        self.assertEqual(tests_reaching({"CreateBcAccount"}, self.SRC), {"BillingTest": "CreateBcAccount"})
+
+    def test_a_data_reader_passes_a_change_on_only_through_its_reading_methods(self):
+        from eir_impact import _reading_methods
+        start = _reading_methods({"BC"}, self.SRC, {"CA_SubmissionDC"})
+        self.assertEqual(start, {"BC": {"createAccount"}})  # the DC is a parameter of createAccount
+        self.assertEqual(tests_reaching({"BC"}, self.SRC, start), {"BillingTest": "BC"})
+        self.assertEqual(set(tests_reaching({"BC"}, self.SRC)), {"BillingTest", "SmokeTest"})  # BC.java changed
+
+
 class CommandTest(unittest.TestCase):
     def test_rows_become_a_code_filter_only_when_the_build_forwards_it(self):
         entry = {"test": "WC_ClaimTest", "codes": ["CA-Claim", "Default"]}
@@ -134,4 +168,54 @@ public final class OtherTest {
         self.assertIn('"Name": "Rerun-2"', md)
         self.assertIn("./gradlew bootRun -PsuiteFilter=Rerun-2", md)
         self.assertNotIn("One test at a time", md)  # five commands: the suite replaces them
+
+
+class DataRowsTest(unittest.TestCase):
+    """Changed DataCombination rows filter only the test whose own datasource is that workbook."""
+
+    def setUp(self):
+        import tempfile
+        sys.path.insert(0, os.path.join(PLUGINS, "ddt-tools", "tests"))
+        from refcheck_fixture import make_xlsx
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base, self.head = os.path.join(self.tmp.name, "base"), os.path.join(self.tmp.name, "head")
+        for tree, value in ((self.base, "old"), (self.head, "new")):
+            src = os.path.join(tree, "src", "main", "java", "com", "x")
+            os.makedirs(src)
+            files = {
+                "SubmissionTest.java": """@CenterTest
+public final class SubmissionTest {
+    @CenterTestCase()
+    @DataDriven(datasource = "testdata/WC_SubmissionDC.xlsx")
+    public void run(ScenarioContext scenarioContext) { }
+}""",
+                "CreateSubmission.java": "public class CreateSubmission { void go(WC_SubmissionDC data) { } }",
+                "CancelTest.java": """@CenterTest
+public final class CancelTest {
+    @CenterTestCase()
+    @DataDriven(datasource = "testdata/WC_CancelDC.xlsx")
+    public void run(ScenarioContext scenarioContext) { new CreateSubmission().go(d); }
+}""",
+            }
+            for name, text in files.items():
+                with open(os.path.join(src, name), "w") as fh:
+                    fh.write(text)
+            os.makedirs(os.path.join(tree, "testdata"))
+            make_xlsx(os.path.join(tree, "testdata", "WC_SubmissionDC.xlsx"),
+                      {"DataCombination": [["Code", "State"], ["AZ", value], ["TX", "same"]]})
+            make_xlsx(os.path.join(tree, "testdata", "WC_CancelDC.xlsx"),
+                      {"DataCombination": [["Code", "Reason"], ["Flat", "x"]]})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_rows_for_the_own_datasource_whole_test_otherwise(self):
+        try:
+            import openpyxl  # noqa: F401
+        except ImportError:
+            self.skipTest("openpyxl not installed")
+        from eir_impact import rerun_plan
+        plan = {e["test"]: e["codes"] for e in rerun_plan(self.base, self.head, ["testdata/WC_SubmissionDC.xlsx"], "src")}
+        # CancelTest reaches WC_SubmissionDC through a step: "AZ" is not one of its own rows
+        self.assertEqual(plan, {"SubmissionTest": ["AZ"], "CancelTest": []})
 

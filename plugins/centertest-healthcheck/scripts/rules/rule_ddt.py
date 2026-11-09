@@ -164,6 +164,32 @@ def _workbook_users(repo_dir: str, source_root: str) -> dict:
     return {path: sorted(classes) for path, classes in users.items()}
 
 
+def _workbook_tokens(repo_dir: str, source_root: str) -> dict:
+    """{workbook rel path: names a class uses to read it}: its datasource path, the DDTHelper getters
+    for it and its DC class name, plus those of every DC that reaches it through an @Rel column.
+    The same names _workbook_users looks for, so a reader's methods that use them can be found."""
+    src = os.path.join(repo_dir, source_root)
+    tokens: dict[str, set] = {}
+    for root, _dirs, files in os.walk(src):
+        if "datadriven" not in root.replace("\\", "/").split("/") or "DDTHelper.java" not in files:
+            continue
+        try:
+            with open(os.path.join(root, "DDTHelper.java"), encoding="utf-8", errors="replace") as fh:
+                for m in _GETTER_RE.finditer(fh.read()):
+                    tokens.setdefault(m.group(2), set()).add(m.group(1))
+        except OSError:
+            continue
+    for root, _dirs, files in os.walk(os.path.join(repo_dir, "testdata")):
+        for name in files:
+            if name.endswith(".xlsx") and not name.startswith("~$"):
+                rel = os.path.relpath(os.path.join(root, name), repo_dir).replace("\\", "/")
+                tokens.setdefault(rel, set()).add(rel)
+                if name[:-5].endswith("DC"):
+                    tokens[rel].add(name[:-5])
+    _follow_relationships(repo_dir, tokens)
+    return tokens
+
+
 def _follow_relationships(repo_dir: str, users: dict) -> None:
     """Give each DC reached through an @Rel column the readers of the DC that reaches it."""
     import ddt_refcheck
