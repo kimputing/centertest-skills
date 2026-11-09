@@ -3,6 +3,7 @@
 
 Usage:
     xlsx-cleanup-unused.py              # report unused codes across all Data files
+    xlsx-cleanup-unused.py --json       # one JSON document on stdout (for the MCP server, CI)
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/ddt-tools/scripts/xlsx-cleanup-unused.py
 """
@@ -85,7 +86,9 @@ def main():
     project_dir = get_project_dir()
     os.chdir(project_dir)
 
-    print("Scanning DC files, reference sheets and Java for code usages...")
+    as_json = "--json" in sys.argv[1:]
+    if not as_json:
+        print("Scanning DC files, reference sheets and Java for code usages...")
     used = used_codes()
     ways = {}
     for codes in used.values():
@@ -93,7 +96,8 @@ def main():
             for how in hows:
                 ways[how] = ways.get(how, 0) + 1
 
-    print("Scanning all Data files for codes...")
+    if not as_json:
+        print("Scanning all Data files for codes...")
     data_codes = collect_all_data_codes()
 
     total_unused = 0
@@ -107,6 +111,12 @@ def main():
                 findings.append((filepath, sheet_name, unused, codes))
                 total_unused += len(unused)
 
+    if as_json:
+        import json
+        print(json.dumps({"schema": 1, "tool": "xlsx-cleanup-unused", "unused": total_unused, "ways": ways,
+                          "sheets": [{"file": f, "sheet": s, "codes": len(c), "unused": sorted(u)}
+                                     for f, s, u, c in findings]}, ensure_ascii=False))
+        return
     if ways:
         print("Codes counted as used: " + ", ".join(f"{n} via {how}" for how, n in sorted(ways.items())))
 
@@ -131,4 +141,7 @@ if __name__ == "__main__":
     if any(a in ("-h", "--help") for a in sys.argv[1:]):
         print(__doc__.strip())  # usage only: no check, no pr-review report
         sys.exit(0)
-    run_with_pr_review_report("xlsx-cleanup-unused", main)
+    if "--json" in sys.argv[1:]:
+        main()  # stdout is the JSON document alone: no pr-review report tee
+    else:
+        run_with_pr_review_report("xlsx-cleanup-unused", main)

@@ -5,6 +5,7 @@ and that reference sheets' own #-columns (reference-to-reference edges) also poi
 Usage:
     xlsx-validate-refs.py                          # validate all DC files
     xlsx-validate-refs.py testdata/WorkersCompDC.xlsx  # validate specific DC file
+    xlsx-validate-refs.py --json                   # one JSON document on stdout (for the MCP server, CI)
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/ddt-tools/scripts/xlsx-validate-refs.py
 """
@@ -41,39 +42,38 @@ def main():
     else:
         dc_files = find_all_dc_files()
 
-    total_errors = 0
-    files_with_errors = 0
-
-    # --- Per-DC DataCombination #-column validation (unchanged) ---
+    # (file, kind, row, column, code, sheet, message) for every broken reference
+    findings = []
     for dc_path in dc_files:
         try:
             errors = validate_dc(dc_path)
         except Exception as e:
-            print(f"\n  {dc_path}")
-            print(f"    ERROR: failed to validate — {e}")
-            files_with_errors += 1
-            total_errors += 1
+            findings.append((dc_path, "dc", 0, "", "", "", f"failed to validate — {e}"))
             continue
-        if errors:
-            files_with_errors += 1
-            print(f"\n  {dc_path}")
-            for row_idx, col, code, sheet, message in errors:
-                total_errors += 1
-                print(f"    [Row {row_idx}] {col} -> '{code}' : {message} (sheet: {sheet})")
+        findings += [(dc_path, "dc", *e) for e in errors]
+    # reference sheets' own #-columns: once per unique reference file
+    for ref_path, errors in sorted(validate_all_reference_sheets(dc_files).items()):
+        findings += [(ref_path, "reference sheet", *e) for e in errors]
 
-    # --- Reference-sheet #-column validation: once per unique reference file ---
-    ref_sheet_findings = validate_all_reference_sheets(dc_files)
-    for ref_path, errors in sorted(ref_sheet_findings.items()):
-        files_with_errors += 1
-        print(f"\n  {ref_path} [reference sheet]")
-        for row_idx, col, code, sheet, message in errors:
-            total_errors += 1
+    if "--json" in sys.argv[1:]:
+        import json
+        print(json.dumps({"schema": 1, "tool": "xlsx-validate-refs", "broken": len(findings),
+                          "findings": [dict(zip(("file", "kind", "row", "column", "code", "sheet", "message"), f))
+                                       for f in findings]}, ensure_ascii=False, default=str))
+        sys.exit(1 if findings else 0)
+    current = None
+    for path, kind, row_idx, col, code, sheet, message in findings:
+        if path != current:
+            current = path
+            print(f"\n  {path}" + (" [reference sheet]" if kind == "reference sheet" else ""))
+        if not col and not code:
+            print(f"    ERROR: {message}")
+        else:
             print(f"    [Row {row_idx}] {col} -> '{code}' : {message} (sheet: {sheet})")
-
-    if total_errors == 0:
+    if not findings:
         print("  All DC references are valid.")
     else:
-        print(f"\n  Found {total_errors} broken reference(s) in {files_with_errors} file(s).")
+        print(f"\n  Found {len(findings)} broken reference(s) in {len({f[0] for f in findings})} file(s).")
         sys.exit(1)
 
 
@@ -81,4 +81,7 @@ if __name__ == "__main__":
     if any(a in ("-h", "--help") for a in sys.argv[1:]):
         print(__doc__.strip())  # usage only: no check, no pr-review report
         sys.exit(0)
-    run_with_pr_review_report("xlsx-validate-refs", main)
+    if "--json" in sys.argv[1:]:
+        main()  # stdout is the JSON document alone: no pr-review report tee
+    else:
+        run_with_pr_review_report("xlsx-validate-refs", main)
