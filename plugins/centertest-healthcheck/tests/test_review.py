@@ -125,6 +125,26 @@ class BranchReviewTest(unittest.TestCase):
         # The changed row, not the whole workbook, is what to rerun.
         self.assertIn("**PolicyChangeTest** — rows New (WC_PolicyChangeDC.xlsx rows changed)", md)
 
+    def test_suite_changes_say_what_the_run_gains_and_what_adds_nothing(self):
+        res = os.path.join(self.repo, "src", "main", "resources")
+        os.makedirs(res)
+        path = os.path.join(res, "CenterTestSuiteList.json")
+        with open(path, "w") as fh:
+            fh.write('{"CenterTestSuites": [{"Name": "Smoke", "List": ["DelinquencyCheck"]}]}')
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "suite")
+        with open(path, "w") as fh:
+            fh.write('{"CenterTestSuites": [{"Name": "Smoke", "List": ["DelinquencyCheck", "PolicyChangeTest", '
+                     '"PolicyChangeTest run", "GhostTest"]}]}')
+        git(self.repo, "commit", "-q", "-am", "suite edit")
+        run = self.review("HEAD~1", "HEAD")
+        self.assertIn("## suite Smoke: 0 -> 2 scenarios, 1 entry adds nothing, 1 match no test", run.stdout)
+        md_dir = os.path.join(self.repo, "healthcheck")
+        with open(os.path.join(md_dir, sorted(os.listdir(md_dir))[-1]), encoding="utf-8") as fh:
+            md = fh.read()
+        self.assertIn("`PolicyChangeTest run` adds nothing", md)
+        self.assertIn("`GhostTest` matches no test", md)
+
     def test_the_fix_reads_as_fixed_not_new(self):
         from refcheck_fixture import make_xlsx
         with open(self.java_file, "w") as fh:

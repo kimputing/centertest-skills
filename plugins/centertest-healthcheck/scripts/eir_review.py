@@ -206,6 +206,22 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         for c in fixed:
             out.append(f"- **{len(c['fixed'])} × {c['trust'] or c['description']}** ({c['rule_id']})")
         out.append("")
+    for sc in meta.get("suites") or []:
+        if sc is (meta.get("suites") or [None])[0]:
+            out += ["### Suite changes", ""]
+        verb = {"new": "new suite", "deleted": "deleted", "changed": "changed"}[sc["status"]]
+        out.append(f"- **{sc['suite']}** ({verb}): {sc['before']} → {sc['after']} scenarios "
+                   f"(+{len(sc['added'])} −{len(sc['removed'])})")
+        for label, items in (("runs now", sc["added"]), ("no longer runs", sc["removed"])):
+            if items:
+                shown = ", ".join(" ".join(x).strip() for x in items[:limit])
+                out.append(f"  - {label}: {shown}" + (f" … +{len(items) - limit}" if len(items) > limit else ""))
+        for e in sc["adds_nothing"]:
+            out.append(f"  - ⚠ `{e}` adds nothing: the suite already runs it")
+        for e in sc["dead"]:
+            out.append(f"  - ⛔ `{e}` matches no test: CenterTest reports it as a failed scenario")
+    if meta.get("suites"):
+        out.append("")
     data = meta.get("data") or []
     if data:
         out += ["### Data changes", ""]
@@ -297,6 +313,10 @@ def print_review(changes: list[dict], meta: dict) -> None:
     for c in changes:
         if c.get("error"):
             print(f"  ?? not compared  {c['rule_id']}: {c['error']}")
+    for sc in meta.get("suites") or []:
+        warn = (f", {len(sc['adds_nothing'])} entr{'y adds' if len(sc['adds_nothing']) == 1 else 'ies add'} nothing" if sc["adds_nothing"] else "") + \
+               (f", {len(sc['dead'])} match no test" if sc["dead"] else "")
+        print(f"  ## suite {sc['suite']}: {sc['before']} -> {sc['after']} scenarios{warn}")
     data = meta.get("data") or []
     if data:
         files = len({d["file"] for d in data})
@@ -329,6 +349,11 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
         print(f"ERROR: {base_rev} and {head_rev} have no common history", file=sys.stderr)
         return 2
     paths = [config.source_root, "testdata"]
+    import suite as suites
+    suite_file = suites.find_suite_file(repo)
+    suite_rel = os.path.relpath(suite_file, repo).replace("\\", "/") if os.path.isfile(suite_file) else None
+    if suite_rel:
+        paths.append(suite_rel)
     results = {}
     with tempfile.TemporaryDirectory(prefix="ct-review-") as tmp:
         for side, sha in (("base", start), ("head", head_sha)):
@@ -341,12 +366,16 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
         changed = changed_files(repo, start, head_sha)
         rerun = rerun_plan(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed, config.source_root)
         data = data_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed)
+        from eir_impact import suite_changes
+        suites_changed = (suite_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), suite_rel, config.source_root)
+                          if suite_rel and suite_rel in changed else [])
     changes = diff_results(results["base"][0], results["head"][0])
     meta = {"base_name": base_rev, "head_name": head_rev,
             "base_short": start[:8], "head_short": head_sha[:8],
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
-            "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data}
+            "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
+            "suites": suites_changed}
     out_dir = os.path.join(repo, "healthcheck")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")

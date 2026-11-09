@@ -187,6 +187,52 @@ def data_changes(base_tree: str, head_tree: str, changed: list[str]) -> list[dic
     return out
 
 
+def suite_changes(base_tree: str, head_tree: str, suite_rel: str, source_root: str) -> list[dict]:
+    """Per suite the branch changed: scenarios before -> after, and its new entries that add nothing
+    (already covered by the suite) or match no test. Uses the vendored suite-builder engine."""
+    import suite as suites
+    base_path, head_path = os.path.join(base_tree, suite_rel), os.path.join(head_tree, suite_rel)
+    if not os.path.isfile(head_path):
+        return []
+    base_doc = suites.load_suites(base_path)[0] if os.path.isfile(base_path) else {"CenterTestSuites": []}
+    head_doc = suites.load_suites(head_path)[0]
+    base_tests, head_tests = suites.scan(base_tree, source_root), suites.scan(head_tree, source_root)
+    head_scen = suites.scenarios_of(head_tests)
+    out = []
+    names = [str(s.get("Name", "")) for s in head_doc["CenterTestSuites"]]
+    gone = [str(s.get("Name", "")) for s in base_doc["CenterTestSuites"] if not suites.find(head_doc, str(s.get("Name", "")))]
+    for name in names + gone:
+        b = suites.find(base_doc, name)
+        h = suites.find(head_doc, name)
+        if b == h:
+            continue
+        before = suites.resolve_suite(base_doc, name, base_tests)["scenarios"] if b else set()
+        after = suites.resolve_suite(head_doc, name, head_tests)["scenarios"] if h else set()
+        old_entries = (b or {}).get("List", []) or []
+        new_entries = [e for e in (h or {}).get("List", []) or [] if e not in old_entries or
+                       (h or {}).get("List", []).count(e) > old_entries.count(e)]
+        adds_nothing, dead = [], []
+        entries = (h or {}).get("List", []) or []
+        earlier: set = set()
+        seen_new = set()
+        for i, e in enumerate(entries):
+            hit = set(suites.resolve_entry(e, head_scen))
+            # a new entry is redundant when entries before it already run all of it (first one wins)
+            is_new = e in new_entries and (e not in old_entries or entries[:i].count(e) >= old_entries.count(e))
+            if is_new and e not in seen_new:
+                if not hit:
+                    dead.append(e)
+                elif hit <= earlier:
+                    adds_nothing.append(e)
+                seen_new.add(e)
+            earlier |= hit
+        out.append({"suite": name, "status": "new" if not b else "deleted" if not h else "changed",
+                    "before": len(before), "after": len(after),
+                    "added": sorted(after - before), "removed": sorted(before - after),
+                    "adds_nothing": adds_nothing, "dead": dead})
+    return out
+
+
 def changed_codes(base_tree: str, head_tree: str, rel: str) -> dict[str, set[str]]:
     """{sheet: codes added or changed} between the two versions of a workbook."""
     base, head = _sheet_rows(os.path.join(base_tree, rel)), _sheet_rows(os.path.join(head_tree, rel))
