@@ -32,6 +32,17 @@ public class DelinquencyCheck {
 SILENT = CLEAN.replace("        if (!shown.equals(expected)) {\n            throw new AssertionError(shown);\n        }\n",
                        "        shown.equals(expected);\n")
 
+READER = """package com.acme.tests;
+
+@CenterTest
+public final class PolicyChangeTest {
+    @CenterTestCase()
+    @DataDriven(datasource = "testdata/wc/WC_PolicyChangeDC.xlsx")
+    public void run(ScenarioContext scenarioContext) {
+    }
+}
+"""
+
 
 def git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
@@ -68,6 +79,8 @@ class BranchReviewTest(unittest.TestCase):
         self.java_file = os.path.join(java, "DelinquencyCheck.java")
         with open(self.java_file, "w") as fh:
             fh.write(CLEAN)
+        with open(os.path.join(java, "PolicyChangeTest.java"), "w") as fh:
+            fh.write(READER)
         git(self.repo, "init", "-q", "-b", "main")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "base")
@@ -98,7 +111,7 @@ class BranchReviewTest(unittest.TestCase):
         with open(os.path.join(md_dir, os.listdir(md_dir)[0]), encoding="utf-8") as fh:
             md = fh.read()
         self.assertIn("DelinquencyCheck.validate: shown.equals(expected);", md)
-        self.assertIn("WC_PolicyChangeDC.xlsx row 3: #Company 'Ghost'", md)
+        self.assertIn("WC_PolicyChangeDC.xlsx row 3: #Company 'Ghost' (in PolicyChangeTest)", md)
 
     def test_the_fix_reads_as_fixed_not_new(self):
         from refcheck_fixture import make_xlsx

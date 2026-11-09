@@ -107,6 +107,142 @@ def _refcheck_findings(repo_dir: str) -> dict:
 _REFCHECK_CACHE: dict = {}
 
 
+# --- Which tests run each workbook ------------------------------------------------
+
+# A DDTHelper getter embeds its workbook: getWorkerscompWC_SubmissionDC(String code) {... "testdata/....xlsx" ...}
+_GETTER_RE = re.compile(r'public\s+static\s+[\w.]+\s+(get\w+)\s*\([^)]*\)\s*\{[^\n]*?"(testdata/[^"]+\.xlsx)"')
+_TRUTHY = {"true", "yes", "y", "1", "x"}
+
+NOT_RUN_UNUSED = "not run: no test reads this workbook"
+NOT_RUN_DISABLED = "not run: row disabled"
+
+
+def _workbook_users(repo_dir: str, source_root: str) -> dict:
+    """{workbook rel path: sorted class names that read it}.
+
+    A class reads a workbook through @DataDriven(datasource=...), a DDTHelper getter for it, or
+    its generated DC class name. Generated code (any 'datadriven' folder) is not a reader. A DC
+    reached through an @Rel column of a read DC is read by the same classes.
+    """
+    src = os.path.join(repo_dir, source_root)
+    getters: dict[str, str] = {}
+    readers: list[tuple[str, str]] = []  # (class name, code)
+    for root, _dirs, files in os.walk(src):
+        generated = "datadriven" in root.replace("\\", "/").split("/")
+        for name in files:
+            if not name.endswith(".java"):
+                continue
+            try:
+                with open(os.path.join(root, name), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            if generated:
+                if name == "DDTHelper.java":
+                    for m in _GETTER_RE.finditer(text):
+                        getters[m.group(1)] = m.group(2)
+            else:
+                readers.append((name[:-5], text))
+    workbooks = {}
+    testdata = os.path.join(repo_dir, "testdata")
+    for root, _dirs, files in os.walk(testdata):
+        for name in files:
+            if name.endswith(".xlsx") and not name.startswith("~$"):
+                rel = os.path.relpath(os.path.join(root, name), repo_dir).replace("\\", "/")
+                workbooks.setdefault(name[:-5], rel)  # DC class name == workbook stem
+    users: dict[str, set] = {}
+    for cls, text in readers:
+        for path in _DATASOURCE_RE.findall(text):
+            users.setdefault(path, set()).add(cls)
+        for getter, path in getters.items():
+            if getter in text:
+                users.setdefault(path, set()).add(cls)
+        for stem, path in workbooks.items():
+            if stem.endswith("DC") and re.search(r"\b" + re.escape(stem) + r"\b", text):
+                users.setdefault(path, set()).add(cls)
+    _follow_relationships(repo_dir, users)
+    return {path: sorted(classes) for path, classes in users.items()}
+
+
+def _follow_relationships(repo_dir: str, users: dict) -> None:
+    """Give each DC reached through an @Rel column the readers of the DC that reaches it."""
+    import ddt_refcheck
+    from ddt_reference_scope import parse_relationships
+    previous = os.getcwd()
+    try:
+        os.chdir(repo_dir)
+        ddt_refcheck.reset_caches()
+        by_relationship, _ids = parse_relationships(ddt_refcheck.load_hierarchy())
+        if not by_relationship:
+            return
+        pending = list(users)
+        while pending:
+            path = pending.pop()
+            if not os.path.isfile(path):
+                continue
+            try:
+                wb = load_workbook(path, read_only=True, data_only=True)
+                sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
+                header = [str(h) for h in next(wb[sheet].iter_rows(max_row=1, values_only=True)) if h] if sheet else []
+                wb.close()
+            except Exception:
+                continue
+            _refs, rels, hops = ddt_refcheck.classify_headers(header)
+            names = {c[1:].lower() for c in rels} | {rel.lower() for _c, rel, _s in hops}
+            for rel in names:
+                for target in by_relationship.get(rel, {}).values():
+                    before = len(users.get(target, ()))
+                    users.setdefault(target, set()).update(users[path])
+                    if len(users[target]) != before:
+                        pending.append(target)
+    finally:
+        os.chdir(previous)
+
+
+def _disabled_rows(repo_dir: str, path: str) -> set:
+    """Excel row numbers of DataCombination rows switched off in a 'Disabled' column."""
+    try:
+        wb = load_workbook(os.path.join(repo_dir, path), read_only=True, data_only=True)
+    except Exception:
+        return set()
+    sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
+    disabled = set()
+    if sheet:
+        col = None
+        for idx, row in enumerate(wb[sheet].iter_rows(values_only=True), start=1):
+            if col is None:
+                lowered = [str(h).strip().lower() if h is not None else "" for h in row]
+                if "disabled" not in lowered:
+                    break
+                col = lowered.index("disabled")
+                continue
+            if col < len(row) and str(row[col] if row[col] is not None else "").strip().lower() in _TRUTHY:
+                disabled.add(idx)
+    wb.close()
+    return disabled
+
+
+def _runs_in(repo_dir: str, source_root: str, path: str, row) -> str:
+    """Where a finding bites: the reading classes, or why it never runs."""
+    key = (repo_dir, source_root)
+    if key not in _USERS_CACHE:
+        _USERS_CACHE[key] = _workbook_users(repo_dir, source_root)
+    users = _USERS_CACHE[key]
+    if not path.endswith("DC.xlsx"):
+        return "reference data"
+    readers = users.get(path, [])
+    if not readers:
+        return NOT_RUN_UNUSED
+    if isinstance(row, int) and row in _disabled_rows(repo_dir, path):
+        return NOT_RUN_DISABLED
+    tests = [c for c in readers if c.endswith("Test")] or readers
+    more = len(readers) - 2
+    return ", ".join(tests[:2]) + (f" +{more}" if more > 0 else "")
+
+
+_USERS_CACHE: dict = {}
+
+
 def _is_relationship_column(col: str) -> bool:
     """'@Submission' (a DC-to-DC relationship), not '@Submission.#Coverage' (a hop reference)."""
     return col.startswith("@") and "." not in col
@@ -126,7 +262,7 @@ def ddt_reference_integrity(commits: CommitsDict, config) -> RuleResult:
         rule_id="14003",
         description="DDT reference column integrity",
         category="CenterTest",
-        headers=["File", "Row", "Column", "Code", "Issue"],
+        headers=["File", "Row", "Column", "Code", "Issue", "Runs in"],
     )
     if not _HAS_OPENPYXL:
         result.error = "openpyxl required for DDT reference validation"
@@ -134,7 +270,8 @@ def ddt_reference_integrity(commits: CommitsDict, config) -> RuleResult:
     for path, errors in sorted(_refcheck_findings(config.repository_dir).items()):
         for row_idx, col, code, _sheet, message in errors:
             if not _is_relationship_column(col) and col:
-                result.rows.append([path, row_idx or "-", col, code or "-", message])
+                result.rows.append([path, row_idx or "-", col, code or "-", message,
+                                    _runs_in(config.repository_dir, config.source_root, path, row_idx)])
     return result
 
 
@@ -153,7 +290,7 @@ def ddt_relationship_integrity(commits: CommitsDict, config) -> RuleResult:
         rule_id="14004",
         description="DDT relationship (@) target integrity",
         category="CenterTest",
-        headers=["File", "Row", "Column", "Code", "Issue"],
+        headers=["File", "Row", "Column", "Code", "Issue", "Runs in"],
     )
     if not _HAS_OPENPYXL:
         result.error = "openpyxl required for DDT relationship validation"
@@ -161,5 +298,6 @@ def ddt_relationship_integrity(commits: CommitsDict, config) -> RuleResult:
     for path, errors in sorted(_refcheck_findings(config.repository_dir).items()):
         for row_idx, col, code, _sheet, message in errors:
             if _is_relationship_column(col) or not col:
-                result.rows.append([path, row_idx or "-", col or "-", code or "-", message])
+                result.rows.append([path, row_idx or "-", col or "-", code or "-", message,
+                                    _runs_in(config.repository_dir, config.source_root, path, row_idx)])
     return result

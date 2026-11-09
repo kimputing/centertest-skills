@@ -42,7 +42,7 @@ class DdtRulesAgreeWithValidatorTest(unittest.TestCase):
         tmp = tempfile.mkdtemp()
         try:
             build_project(tmp)
-            config = SimpleNamespace(repository_dir=tmp)
+            config = SimpleNamespace(repository_dir=tmp, source_root="src/main/java")
             refs = rule_ddt.ddt_reference_integrity({}, config)
             rels = rule_ddt.ddt_relationship_integrity({}, config)
             self.assertEqual(sorted((r[1], r[2], r[3]) for r in refs.rows),
@@ -50,6 +50,64 @@ class DdtRulesAgreeWithValidatorTest(unittest.TestCase):
             self.assertEqual([(r[1], r[2], r[3]) for r in rels.rows], [(4, "@Submission", "Missing")])
         finally:
             shutil.rmtree(tmp)
+
+
+
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class RunsInTest(unittest.TestCase):
+    """A data finding blocks only when a test runs it: its workbook is read and the row is enabled."""
+
+    def setUp(self):
+        from refcheck_fixture import build_project, make_xlsx
+        import rules.rule_ddt as rule_ddt
+        self.rule_ddt = rule_ddt
+        self.make_xlsx = make_xlsx
+        self.tmp = tempfile.mkdtemp()
+        build_project(self.tmp)
+        rule_ddt._USERS_CACHE.clear()
+        rule_ddt._REFCHECK_CACHE.clear()
+        self.config = SimpleNamespace(repository_dir=self.tmp, source_root="src/main/java")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def write_java(self, name, body):
+        folder = os.path.join(self.tmp, "src", "main", "java", "com", "acme")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, name + ".java"), "w") as fh:
+            fh.write(f"package com.acme;\npublic class {name} {{\n{body}\n}}\n")
+
+    def runs_in(self):
+        rows = self.rule_ddt.ddt_reference_integrity({}, self.config).rows + \
+               self.rule_ddt.ddt_relationship_integrity({}, self.config).rows
+        return {(r[1], r[3]): r[5] for r in rows}
+
+    def test_workbook_no_test_reads_is_not_run(self):
+        self.assertEqual(set(self.runs_in().values()), {self.rule_ddt.NOT_RUN_UNUSED})
+
+    def test_datadriven_reader_is_named(self):
+        self.write_java("PolicyChangeTest",
+                        '@DataDriven(datasource = "testdata/wc/WC_PolicyChangeDC.xlsx")\npublic void run() {}')
+        self.assertEqual(set(self.runs_in().values()), {"PolicyChangeTest"})
+
+    def test_disabled_row_is_not_run(self):
+        self.make_xlsx(os.path.join(self.tmp, "testdata", "wc", "WC_PolicyChangeDC.xlsx"), {
+            "DataCombination": [["Code", "Disabled", "#Company"], ["Ok", "", "Acme"],
+                                ["Off", "True", "Nope"], ["On", "", "Nope"]]})
+        self.write_java("PolicyChangeTest", "Object d = DDTHelper.getWcWC_PolicyChangeDC(scenarioContext);")
+        helper = os.path.join(self.tmp, "src", "main", "java", "com", "acme", "generated", "datadriven")
+        os.makedirs(helper)
+        with open(os.path.join(helper, "DDTHelper.java"), "w") as fh:
+            fh.write('public static x.WC_PolicyChangeDC getWcWC_PolicyChangeDC(String code) '
+                     '{return new x.WC_PolicyChangeDC(p("testdata/wc/WC_PolicyChangeDC.xlsx", code));}\n')
+        self.assertEqual(self.runs_in(), {(3, "Nope"): self.rule_ddt.NOT_RUN_DISABLED, (4, "Nope"): "PolicyChangeTest"})
+
+    def test_related_dc_inherits_the_readers(self):
+        self.make_xlsx(os.path.join(self.tmp, "testdata", "wc", "WC_SubmissionDC.xlsx"), {
+            "DataCombination": [["Code", "#Company"], ["Default", "Ghost"]]})
+        self.write_java("PolicyChangeTest",
+                        '@DataDriven(datasource = "testdata/wc/WC_PolicyChangeDC.xlsx")\npublic void run() {}')
+        self.assertEqual(self.runs_in()[(2, "Ghost")], "PolicyChangeTest")
 
 
 if __name__ == "__main__":

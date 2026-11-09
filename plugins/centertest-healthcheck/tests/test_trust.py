@@ -26,7 +26,7 @@ class TrustBlockersTest(unittest.TestCase):
         results = clean_trust_run()
         results[-1] = result("15018", headers=["Class", "Method", "Method Called", "Line"],
                              rows=[["DelinquencyEvent", "validate", "equals", "a.equals(b);"]])
-        blockers, not_checked = eir_report.trust_blockers(results)
+        blockers, not_checked, _ = eir_report.trust_blockers(results)
         self.assertEqual(not_checked, [])
         self.assertEqual([(b["rule_id"], b["count"]) for b in blockers], [("15018", 1)])
         self.assertEqual(blockers[0]["samples"], ["DelinquencyEvent.validate: a.equals(b);"])
@@ -34,11 +34,11 @@ class TrustBlockersTest(unittest.TestCase):
     def test_data_findings_read_as_file_row_column_code(self):
         rows = [["testdata/wc/WC_SeedingDC.xlsx", 35, "#Company", "McDEL1", "code not found"]]
         r = result("14003", "CenterTest", ["File", "Row", "Column", "Code", "Issue"], rows)
-        blockers, _ = eir_report.trust_blockers([r])
+        blockers, _, _ = eir_report.trust_blockers([r])
         self.assertEqual(blockers[0]["samples"], ["WC_SeedingDC.xlsx row 35: #Company 'McDEL1'"])
 
     def test_rules_not_run_are_reported_not_passed(self):
-        blockers, not_checked = eir_report.trust_blockers([result("5001", "Complexity")])
+        blockers, not_checked, _ = eir_report.trust_blockers([result("5001", "Complexity")])
         self.assertEqual(blockers, [])
         self.assertEqual(sorted(not_checked), ["14002", "14003", "14004", "15005", "15018"])
 

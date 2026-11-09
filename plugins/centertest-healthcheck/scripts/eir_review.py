@@ -27,12 +27,12 @@ from datetime import datetime
 
 from eir_models import LOCAL_COMMIT, RuleResult
 from eir_parser import parse_directory
-from eir_report import TRUST_RULES, _count_items, _finding_label
+from eir_report import TRUST_RULES, _finding_label, is_dormant
 from eir_rules import run_rules
 from eir_suppressions import apply_suppressions
 
-# Columns that locate a finding but change when unrelated lines move.
-_POSITION_COLUMNS = {"Row", "Line No", "Line Number"}
+# Columns that locate a finding or describe its context; they change without the finding changing.
+_POSITION_COLUMNS = {"Row", "Line No", "Line Number", "Runs in"}
 
 # Categories whose rows describe the project rather than problems in it.
 _INFORMATIONAL = {"Statistics"}
@@ -94,7 +94,8 @@ def _findings(result: RuleResult):
     """
     keep = [i for i, h in enumerate(result.headers) if str(h) not in _POSITION_COLUMNS]
     for row in result.rows:
-        yield ("row", tuple(str(row[i]) for i in keep if i < len(row))), _finding_label(result.headers, row)
+        yield (("row", tuple(str(row[i]) for i in keep if i < len(row))),
+               _finding_label(result.headers, row) + (" (not run)" if is_dormant(result.headers, row) else ""))
     for section in result.sections:
         # Snapshot rules title their single section after the commit ("Commit local"): no information.
         prefix = "" if section.title.startswith("Commit ") else f"{section.title}: "
@@ -138,7 +139,7 @@ def diff_results(base: list[RuleResult], head: list[RuleResult]) -> list[dict]:
             continue
         if h.error or b is None or b.error:
             changes.append({"rule_id": h.rule_id, "description": h.description, "category": h.category,
-                            "trust": TRUST_RULES.get(h.rule_id, (None,))[0], "introduced": [], "fixed": [],
+                            "trust": TRUST_RULES.get(h.rule_id, (None,))[0], "introduced": [], "fixed": [], "blocking": 0,
                             "error": h.error or (b.error if b else "not run on the base")})
             continue
         hk, bk = finding_keys(h), finding_keys(b)
@@ -150,6 +151,8 @@ def diff_results(base: list[RuleResult], head: list[RuleResult]) -> list[dict]:
             "rule_id": h.rule_id, "description": h.description, "category": h.category,
             "trust": TRUST_RULES.get(h.rule_id, (None,))[0],
             "introduced": [label for k in added for label in hl[k][-added[k]:]],
+            "blocking": 0 if h.rule_id not in TRUST_RULES else
+            sum(1 for k in added for label in hl[k][-added[k]:] if not label.endswith(" (not run)")),
             "fixed": [label for k in removed for label in bl[k][-removed[k]:]],
             "error": None,
         })
@@ -159,7 +162,7 @@ def diff_results(base: list[RuleResult], head: list[RuleResult]) -> list[dict]:
 
 def verdict(changes: list[dict]) -> tuple[str, int]:
     """(one-line verdict, exit code)."""
-    blockers = sum(len(c["introduced"]) for c in changes if c["trust"])
+    blockers = sum(c.get("blocking", 0) for c in changes)
     introduced = sum(len(c["introduced"]) for c in changes)
     fixed = sum(len(c["fixed"]) for c in changes)
     unknown = [c["rule_id"] for c in changes if c.get("error") and c["trust"]]
@@ -188,7 +191,7 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
     if introduced:
         out += ["### Introduced", ""]
         for c in introduced:
-            mark = "⛔ " if c["trust"] else ""
+            mark = "⛔ " if c.get("blocking") else ""
             title = c["trust"] or c["description"]
             out.append(f"- {mark}**{len(c['introduced'])} × {title}** ({c['rule_id']})")
             for label in c["introduced"][:limit]:
@@ -221,7 +224,7 @@ def print_review(changes: list[dict], meta: dict) -> None:
     for c in changes:
         if not c["introduced"]:
             continue
-        mark = "!!" if c["trust"] else "+ "
+        mark = "!!" if c.get("blocking") else "+ "
         print(f"  {mark} {len(c['introduced']):>3} new  {c['rule_id']}: {c['trust'] or c['description']}")
         for label in c["introduced"][:3]:
             print(f"           {label}")

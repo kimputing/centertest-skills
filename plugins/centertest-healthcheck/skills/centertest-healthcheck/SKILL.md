@@ -138,7 +138,11 @@ and lists only the findings that changed, trust blockers first:
 Every report opens with **"Can these tests be trusted?"**: findings that mean a test can pass while
 the application is broken, or cannot run its data at all — checks that can never fail (15018),
 swallowed failures (15005), missing datasources (14002), missing data codes (14003) and missing
-related rows (14004). Any of them caps the health score at 59 ("At risk"). Trust rules that were not
+related rows (14004). A data finding is a blocker only when a test runs it: rules 14003/14004 add a
+**Runs in** column naming the classes that read the workbook (through `@DataDriven`, a `DDTHelper`
+getter, the DC class, or an `@Rel` relationship from a DC they read); findings in workbooks no test
+reads, or in rows marked `Disabled`, are listed as cleanup, not blockers. Any blocker caps the health
+score at 59 ("At risk"). Trust rules that were not
 part of the run are listed as *not checked*, never as passed — use `CenterTestFull` for a complete
 verdict. When reporting results to the user, lead with these blockers.
 

@@ -208,7 +208,7 @@ def generate_markdown(results: list[RuleResult], output_dir: str) -> str:
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
 
-    blockers, not_checked = trust_blockers(results)
+    blockers, not_checked, dormant = trust_blockers(results)
     lines.append("## Can these tests be trusted?")
     lines.append("")
     if blockers:
@@ -218,6 +218,8 @@ def generate_markdown(results: list[RuleResult], output_dir: str) -> str:
                 lines.append(f"  - `{x}`")
     else:
         lines.append("No trust blockers.")
+    if dormant:
+        lines.append(f"\nNot blockers: {dormant} data findings in workbooks no test reads or in disabled rows.")
     if not_checked:
         lines.append(f"\nNot checked in this run: {', '.join(not_checked)}.")
     lines.append("")
@@ -333,6 +335,14 @@ TRUST_RULES = {
 TRUST_SCORE_CAP = 59
 
 
+def is_dormant(headers: list, row: list) -> bool:
+    """A data finding no test runs (its workbook is read by no test, or its row is disabled)."""
+    if "Runs in" not in headers:
+        return False
+    i = headers.index("Runs in")
+    return i < len(row) and str(row[i]).startswith("not run")
+
+
 def _finding_label(headers: list, row: list) -> str:
     """One readable line for a finding row, from whichever columns the rule has."""
     cell = {str(h): row[i] for i, h in enumerate(headers) if i < len(row)}
@@ -343,32 +353,40 @@ def _finding_label(headers: list, row: list) -> str:
             where += f" row {row_no}"
         col, code = cell.get("Column", ""), cell.get("Code", "")
         what = f"{col} '{code}'" if code not in (None, "", "-") else str(col or cell.get("Issue", ""))
-        return f"{where}: {what}"
+        runs = cell.get("Runs in")
+        return f"{where}: {what}" + (f" (in {runs})" if runs and not str(runs).startswith("not run") else "")
     label = ".".join(str(cell[k]) for k in ("Class", "Method") if cell.get(k))
     detail = cell.get("Line") or cell.get("Datasource Path") or ""
     return f"{label}: {detail}" if detail else label
 
 
-def trust_blockers(results: list[RuleResult], sample_size: int = 5) -> tuple[list[dict], list[str]]:
-    """(blockers, not_checked) for the trust rules.
+def trust_blockers(results: list[RuleResult], sample_size: int = 5) -> tuple[list[dict], list[str], int]:
+    """(blockers, not_checked, dormant) for the trust rules.
 
     blockers: [{rule_id, title, consequence, count, samples}] for trust rules with findings;
     not_checked: trust rule ids that were not part of this run (or errored), so the report
-    never presents an unchecked suite as trustworthy.
+    never presents an unchecked suite as trustworthy;
+    dormant: data findings no test runs (workbook read by no test, or row disabled), listed
+    in their rule but not blockers.
     """
     by_id = {r.rule_id: r for r in results}
-    blockers, not_checked = [], []
+    blockers, not_checked, dormant_only = [], [], []
     for rule_id, (title, consequence) in TRUST_RULES.items():
         r = by_id.get(rule_id)
         if r is None or r.error:
             not_checked.append(rule_id)
             continue
-        count = _count_items(r)
+        live = [row for row in r.rows if not is_dormant(r.headers, row)]
+        count = len(live) if r.rows else _count_items(r)
+        dormant = len(r.rows) - len(live)
         if count:
-            samples = [_finding_label(r.headers, row) for row in r.rows[:sample_size]]
+            samples = [_finding_label(r.headers, row) for row in live[:sample_size]]
             blockers.append({"rule_id": rule_id, "title": title, "consequence": consequence,
-                             "count": count, "samples": samples})
-    return blockers, not_checked
+                             "count": count, "samples": samples, "dormant": dormant})
+        elif dormant:
+            dormant_only.append({"rule_id": rule_id, "title": title, "dormant": dormant})
+    dormant = sum(b["dormant"] for b in blockers) + sum(d["dormant"] for d in dormant_only)
+    return blockers, not_checked, dormant
 
 
 def _html_escape(text: str) -> str:
@@ -376,9 +394,13 @@ def _html_escape(text: str) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-def _trust_panel_html(blockers: list[dict], not_checked: list[str]) -> str:
+def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int = 0) -> str:
     """The 'Can these tests be trusted?' panel shown under the score."""
     unchecked = ""
+    if dormant:
+        unchecked += (f'    <div class="trust-dormant">Not blockers: {dormant} data finding{"s" if dormant != 1 else ""} '
+                      'in workbooks no test reads or in disabled rows. They are listed under rules 14003/14004 '
+                      'as cleanup.</div>\n')
     if not_checked:
         unchecked = (f'    <div class="trust-unchecked">Not checked in this run: rules {", ".join(not_checked)}. '
                      'Run the CenterTestFull ruleset for a complete verdict.</div>\n')
@@ -478,7 +500,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
     total_rules = len(results)
     health_score = round(score_earned / score_possible * 100) if score_possible > 0 else 0
 
-    blockers, trust_not_checked = trust_blockers(results)
+    blockers, trust_not_checked, trust_dormant = trust_blockers(results)
     if blockers:
         health_score = min(health_score, TRUST_SCORE_CAP)
 
@@ -571,6 +593,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .blocker-why {{ color: var(--text-muted); font-size: 14px; }}
   .blocker ul {{ grid-column: 2; margin: 4px 0 0 18px; font-size: 13px; color: var(--text);
     font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }}
+  .trust-dormant {{ color: var(--text-muted); font-size: 13px; margin-top: 10px; }}
   .trust-unchecked {{ color: var(--amber); font-size: 13px; margin-top: 10px; }}
   .categories {{ margin: 32px 0; }}
   .categories h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 16px; }}
@@ -714,7 +737,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
   </div>
 """
 
-    html += _trust_panel_html(blockers, trust_not_checked)
+    html += _trust_panel_html(blockers, trust_not_checked, trust_dormant)
 
     # Category breakdown
     html += '  <div class="categories">\n    <h2>By Category</h2>\n'
@@ -949,7 +972,7 @@ def print_terminal_summary(results: list[RuleResult], suppressed_count: int = 0)
     sup_text = f"  |  Suppressed: {suppressed_count}" if suppressed_count > 0 else ""
     print(f"  Total issues: {total_issues}{sup_text}  |  Errors: {errors}  |  Rules: {len(results)}")
     print("=" * 60)
-    blockers, not_checked = trust_blockers(results, sample_size=3)
+    blockers, not_checked, dormant = trust_blockers(results, sample_size=3)
     if blockers:
         print("  TRUST BLOCKERS: tests can pass while the app is broken, or cannot run")
         for b in blockers:
@@ -958,6 +981,8 @@ def print_terminal_summary(results: list[RuleResult], suppressed_count: int = 0)
                 print(f"         {x}")
     else:
         print("  No trust blockers.")
+    if dormant:
+        print(f"  Not blockers: {dormant} data finding(s) no test runs (unused workbook or disabled row)")
     if not_checked:
         print(f"  Not checked in this run: {', '.join(not_checked)}")
     print("=" * 60)
