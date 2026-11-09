@@ -173,7 +173,7 @@ class CoverageDeltaTest(unittest.TestCase):
         from eir_review import coverage_delta, render_markdown
         delta = coverage_delta(self.tree("base", "c1"), self.tree("head", "c2"), self.resources)
         self.assertEqual(delta, [{"line": "GLLine", "gained": ["Cyber Suite"], "lost": ["Liquor Liability Endorsement"],
-                                  "not_offered": []}])
+                                  "not_offered": [], "options_lost": [], "options_gained": []}])
         self.assertEqual(coverage_delta(self.tree("b2", "c1"), self.tree("h2", "c1"), self.resources), [])
         meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
                 "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "coverage": delta}
@@ -264,6 +264,27 @@ class TermOptions(unittest.TestCase):
         lines = {l["line"]: l for l in eir_products.product_coverage(self.root, self.resources)}
         self.assertEqual(lines["GLLine"]["not_offered"], [])  # 750,000 is HO's Liquor Limit option
         self.assertEqual(lines["HOLine"]["not_offered"], [])
+
+    def test_the_review_names_options_no_scenario_sets_any_more(self):
+        import shutil
+        from eir_review import coverage_delta, render_markdown
+        base = os.path.join(self.tmp.name, "base")
+        shutil.copytree(self.root, base)
+        make_xlsx(os.path.join(self.root, "testdata", "GLData.xlsx"), {  # the branch moves the limit to $500,000
+            "Coverage": [["Code", "Coverage", "CovTerm", "CovtermValue"],
+                         ["lim", "Liquor Liability Endorsement", "Limit", "500,000"],
+                         ["ded", "Liquor Liability Endorsement", "Deductible", "No Deductible, 500"],
+                         ["pct", "Liquor Liability Endorsement", "Deductible", 0.1],
+                         ["odd", "Liquor Liability Endorsement", "Limit", "750,000"],
+                         ["med", "Medical Payments", "Limit", "9,999"]],
+            "CovTerm": [["Code", "Name", "PatternCode", "ChosenTerm"], ["api", "Limit", "GLLiquorLimit", "1000"]]})
+        delta = coverage_delta(base, self.root, self.resources)
+        self.assertEqual(delta[0]["options_lost"], ["Liquor Liability Endorsement / Limit = $1,000,000"])
+        self.assertEqual(delta[0]["options_gained"], ["Liquor Liability Endorsement / Limit = $500,000"])
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "coverage": delta}
+        self.assertIn("**Limit or deductible options no scenario sets any more** (1): GLLine: Liquor Liability "
+                      "Endorsement / Limit = $1,000,000", render_markdown([], meta))
 
     def test_shown_in_terminal_panel_and_excel(self):
         import contextlib

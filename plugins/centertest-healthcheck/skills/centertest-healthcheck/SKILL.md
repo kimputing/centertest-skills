@@ -111,7 +111,8 @@ and lists only the findings that changed, trust blockers first:
   switched off, or the test gone - deleted or renamed) come first: a whole flow leaves regression silently.
 - **Product coverage**: when the branch changes test data and the generated product model is found
   (`--cssids` or `<project>-generated`), the coverages scenarios no longer select (say these first: a
-  reviewer should confirm each was meant) and those newly selected, per line of business, and the **term
+  reviewer should confirm each was meant) and those newly selected, per line of business, the **limit or
+  deductible options no scenario sets any more** (a row's limit changed: the old value leaves regression), and the **term
   values the branch introduces that are not an option in the product model** (a limit or deductible the
   dropdown does not offer): name each with its options, so the author corrects the row before the run.
 - **Jurisdictions**: the states or provinces a line's scenarios no longer run in on the branch (say these:
@@ -207,8 +208,8 @@ changes or an upgrade touches a wizard. Offer the suite through `suite-builder`,
 
 Per suite: the mainline commit `--days` ago against HEAD through the branch review — commits landed,
 verdict, new trust blockers by kind, findings added/fixed, **what the run lost** (flows that no longer
-run, product coverages no scenario selects any more, jurisdictions a line no longer runs in, term values
-that are not an option), data rows changed and tests to rerun; quiet suites say so. One `--cssids` goes
+run, product coverages and limit/deductible options no scenario selects any more, jurisdictions a line no
+longer runs in, term values that are not an option), data rows changed and tests to rerun; quiet suites say so. One `--cssids` goes
 only to the project it was generated for; the others use their own `<project>-generated`. Reads the
 projects only; page in `~/.centertest/reports/Weekly_<timestamp>.html`. Report the suites with new trust
 blockers or anything lost first; offer `--review <sha> HEAD` on one suite for its full PR-style comment.

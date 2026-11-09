@@ -365,6 +365,7 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         lost = [(c["line"], n) for c in coverage for n in c["lost"]]
         gained = [(c["line"], n) for c in coverage for n in c["gained"]]
         odd = [(c["line"], n) for c in coverage for n in c.get("not_offered") or []]
+        options_lost = [(c["line"], o) for c in coverage for o in c.get("options_lost") or []]
         out += ["### Product coverage", "",
                 "Coverages of the product model the scenarios select (a row an enabled scenario reaches names them), "
                 "merge-base → branch tip.", ""]
@@ -373,6 +374,11 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
             out += [f"- {line}: {name}" for line, name in lost[:limit * 2]]
             if len(lost) > limit * 2:
                 out.append(f"- … and {len(lost) - limit * 2} more")
+            out.append("")
+        if options_lost:
+            out.append(f"**Limit or deductible options no scenario sets any more** ({len(options_lost)}): "
+                       + "; ".join(f"{line}: {o}" for line, o in options_lost[:limit * 2])
+                       + (f" … +{len(options_lost) - limit * 2}" if len(options_lost) > limit * 2 else ""))
             out.append("")
         if odd:
             out.append(f"**Term values that are not an option in the product model** ({len(odd)}, new on this "
@@ -482,6 +488,9 @@ def print_review(changes: list[dict], meta: dict) -> None:
                   + ", ".join(c["gained"][:4]) + (" ..." if len(c["gained"]) > 4 else ""))
         for n in c.get("not_offered") or []:
             print(f"  !! {c['line']}: {n['coverage']} / {n['term']} = {n['value']} is not an option in the product model")
+        if c.get("options_lost"):
+            print(f"  -- {c['line']}: no scenario sets {len(c['options_lost'])} option(s) any more: "
+                  + ", ".join(c["options_lost"][:3]) + (" ..." if len(c["options_lost"]) > 3 else ""))
     for s in meta.get("states") or []:
         if s["lost"]:
             print(f"  -- {s['line']}: no scenario runs in {', '.join(s['lost'])} any more")
@@ -556,7 +565,8 @@ def run_scope(base_tree: str, head_tree: str, source_root: str) -> dict:
 
 def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[dict]:
     """Per line of business: product coverages the scenarios select on the branch tip that they did not
-    at the merge-base (gained), and the other way round (lost); and term values that are not an option in
+    at the merge-base (gained), and the other way round (lost); the limit/deductible options scenarios no
+    longer set (options_lost) or newly set (options_gained); and term values that are not an option in
     the product model which the branch introduces (not_offered). [] without a product model."""
     from eir_products import product_coverage
     base, head = product_coverage(base_tree, cssids), product_coverage(head_tree, cssids)
@@ -564,12 +574,17 @@ def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[d
         return []
     before = {l["line"]: {c["name"] for c in l["named"]} for l in base}
     odd_before = {(l["line"], n["coverage"], n["term"], n["value"]) for l in base for n in l.get("not_offered", [])}
+    chosen = lambda l: {f'{c["name"]} / {o["term"]} = {v}' for c in l["named"] for o in c.get("options") or []
+                        for v in o["chosen"]}
+    options_before = {l["line"]: chosen(l) for l in base}
     out = []
     for l in head:
         now, was = {c["name"] for c in l["named"]}, before.get(l["line"], set())
         odd = [n for n in l.get("not_offered", []) if (l["line"], n["coverage"], n["term"], n["value"]) not in odd_before]
-        if now != was or odd:
-            out.append({"line": l["line"], "gained": sorted(now - was), "lost": sorted(was - now), "not_offered": odd})
+        o_now, o_was = chosen(l), options_before.get(l["line"], set())
+        if now != was or odd or o_now != o_was:
+            out.append({"line": l["line"], "gained": sorted(now - was), "lost": sorted(was - now), "not_offered": odd,
+                        "options_lost": sorted(o_was - o_now), "options_gained": sorted(o_now - o_was)})
     return out
 
 

@@ -70,7 +70,8 @@ def week_of(path: str, config, days: int, cssids: str | None = None) -> dict:
         flows=[s["test"] for s in (meta.get("scope") or {}).get("flows_stopped") or []],
         states_lost=[(s["line"], j) for s in meta.get("states") or [] for j in s["lost"]],
         not_offered=[(c["line"], f'{n["coverage"]} / {n["term"]} = {n["value"]}')
-                     for c in meta.get("coverage") or [] for n in c.get("not_offered") or []])
+                     for c in meta.get("coverage") or [] for n in c.get("not_offered") or []],
+        options_lost=[(c["line"], o) for c in meta.get("coverage") or [] for o in c.get("options_lost") or []])
     return out
 
 
@@ -80,6 +81,7 @@ def _lost(w: dict) -> str:
     parts = [("flow no longer runs", [f for f in w.get("flows", [])]),
              ("coverage no scenario selects", [f"{l}: {c}" for l, c in w.get("lost", [])]),
              ("line no longer runs in", [f"{l}: {j}" for l, j in w.get("states_lost", [])]),
+             ("option no scenario sets", [f"{l}: {o}" for l, o in w.get("options_lost", [])]),
              ("not an option", [f"{l}: {v}" for l, v in w.get("not_offered", [])])]
     total = sum(len(items) for _k, items in parts)
     detail = "".join(f'<div class="kind">{_html_escape(kind)}: {_html_escape(", ".join(items[:4]))}'
@@ -169,6 +171,7 @@ def print_weekly(weeks: list[dict], days: int) -> None:
             for label, items in (("flows that no longer run", w.get("flows", [])),
                                  ("coverages no scenario selects any more", [f"{l}: {c}" for l, c in w["lost"]]),
                                  ("lines no longer run in", [f"{l}: {j}" for l, j in w.get("states_lost", [])]),
+                                 ("options no scenario sets", [f"{l}: {o}" for l, o in w.get("options_lost", [])]),
                                  ("values not an option", [f"{l}: {v}" for l, v in w.get("not_offered", [])])):
                 if items:
                     print(f"  {'':<28} -- {label}: " + ", ".join(items[:4]) + (" ..." if len(items) > 4 else ""))
