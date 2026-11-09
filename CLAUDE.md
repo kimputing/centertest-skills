@@ -34,7 +34,7 @@ plugins/<plugin-name>/
 
 | Plugin | Purpose | Scripts |
 |--------|---------|---------|
-| **centertest-healthcheck** | Trust verdict, rules, `--review` (PR verdict + rerun plan), `--trend`, screens panel; HTML+Excel+MD | analyzer + report/review/trend/impact/locate/screens modules + 10 rule files; vendors ddt-tools' engine |
+| **centertest-healthcheck** | Trust verdict, rules, `--review` (PR verdict + rerun plan as one suite, by cause), `--trend`, `--portfolio`, `--uses` (scenarios that select a coverage/value), `--fix 15018`, screens + product-coverage + test-data panels; HTML+Excel+MD | analyzer + report/review/trend/impact/locate/screens/products/uses/data modules + 11 rule files; vendors ddt-tools' engine and suite-builder's suite.py |
 | **cssid-finder** | Find getter chains for Guidewire CSS IDs | 1 script |
 | **ddt-analyzer** | DDT structure analysis, 28-sheet Excel report (17 without Data Studio) | 1 script; vendors ddt-tools' engine |
 | **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + `ddt_refcheck.py` engine (source of the vendored copies) |
