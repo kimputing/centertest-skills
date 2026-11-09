@@ -406,7 +406,10 @@ def validate_project(dc_files=None):
         dc_files = find_all_dc_files()
     findings = {}
     for dc_path in dc_files:
-        errors = validate_dc(dc_path)
+        try:
+            errors = validate_dc(dc_path)
+        except Exception as e:  # one unreadable workbook must not hide every other finding
+            errors = [(0, "", "", "", f"could not validate: {type(e).__name__}: {e}")]
         if errors:
             findings[dc_path] = errors
     findings.update(validate_all_reference_sheets(dc_files))
@@ -476,9 +479,9 @@ def validate_dc(dc_path):
         # Second pass: validate codes for columns that do have a matching sheet
         for row_idx, row_data in dc_rows:
             for col in ref_columns:
-                if col in missing_sheets:
-                    continue
                 sheet_key = _norm_sheet(col[1:])
+                if col in missing_sheets or sheet_key not in ref_codes:
+                    continue  # reported once above, or an empty column naming no sheet
                 errors.extend(_missing_codes(row_idx, col, row_data.get(col, ""),
                                              ref_codes[sheet_key], sheet_key))
 

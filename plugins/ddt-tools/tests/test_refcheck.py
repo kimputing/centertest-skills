@@ -57,5 +57,23 @@ class ValidateProjectTest(unittest.TestCase):
         self.assertFalse(any("unknown identifier" in e[4] for e in errors))
 
 
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class EmptyColumnTest(unittest.TestCase):
+    def test_an_empty_column_naming_no_sheet_is_not_a_crash(self):
+        import ddt_refcheck
+        from refcheck_fixture import make_xlsx
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "testdata"))
+            make_xlsx(os.path.join(tmp, "testdata", "OldDC.xlsx"),
+                      {"DataCombination": [["Code", "#UWCompany"], ["Default", ""]]})
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                ddt_refcheck.reset_caches()
+                self.assertEqual(ddt_refcheck.validate_dc("testdata/OldDC.xlsx"), [])
+            finally:
+                os.chdir(cwd)
+
+
 if __name__ == "__main__":
     unittest.main()
