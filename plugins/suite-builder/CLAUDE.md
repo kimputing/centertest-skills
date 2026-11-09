@@ -16,6 +16,11 @@ entries the way CenterTest does, and edits suites.
 - `scripts/xlsx_read.py` — **vendored, byte-identical** copy of `plugins/recording-to-test/scripts/xlsx_read.py`
   (stdlib xlsx reader). Change it there and copy it over; `tests/test_suite.py` fails when they differ.
 
+## Vendored elsewhere
+
+`scripts/suite.py` and `scripts/xlsx_read.py` are copied byte for byte into `plugins/centertest-healthcheck/scripts/`
+(rule 14005, suite entries that run nothing); its test fails when the copies differ — copy them after every change.
+
 ## Rules
 
 - Never rewrite entries the user did not ask to change: `add` appends, `remove` rewrites only entries

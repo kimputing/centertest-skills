@@ -31,6 +31,7 @@ scripts/
     ├── rule_security.py     # 7001
     ├── rule_centertest.py   # 9001, 9003, 9005, 9007, 9008, 9010
     ├── rule_quality.py      # 15001, 15002, 15004, 15005, 15006, 15016, 15017, 15018
+    ├── rule_suites.py       # 14005 via the vendored suite.py (suite-builder)
     └── rule_ddt.py          # 14002, 14003, 14004 (14003/14004 via the vendored ddt_refcheck.py)
 ```
 

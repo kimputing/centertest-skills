@@ -17,7 +17,7 @@ def result(rule_id, category="Quality", headers=None, rows=None):
 
 
 def clean_trust_run():
-    return [result(r, "CenterTest") for r in ("9003", "9010", "14002", "14003", "14004")] + \
+    return [result(r, "CenterTest") for r in ("9003", "9010", "14002", "14003", "14004", "14005")] + \
            [result("15005"), result("15018")]
 
 
@@ -40,7 +40,7 @@ class TrustBlockersTest(unittest.TestCase):
     def test_rules_not_run_are_reported_not_passed(self):
         blockers, not_checked, _ = eir_report.trust_blockers([result("5001", "Complexity")])
         self.assertEqual(blockers, [])
-        self.assertEqual(sorted(not_checked), ["14002", "14003", "14004", "15005", "15018", "9003", "9010"])
+        self.assertEqual(sorted(not_checked), ["14002", "14003", "14004", "14005", "15005", "15018", "9003", "9010"])
 
 
 class HealthScoreTest(unittest.TestCase):

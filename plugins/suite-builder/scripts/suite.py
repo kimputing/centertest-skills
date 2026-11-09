@@ -156,12 +156,37 @@ def find_suite_file(project: str, explicit: str | None = None) -> str:
     return default
 
 
+def loads_lenient(text: str):
+    """json.loads that also accepts a trailing comma before ] or } -- hand-edited suite files
+    have them and CenterTest runs them, so the tools must read them too."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+            continue
+        if ch == ",":
+            k = i + 1
+            while k < n and text[k] in " \t\r\n":
+                k += 1
+            if k < n and text[k] in "]}":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return json.loads("".join(out))
+
+
 def load_suites(path: str) -> tuple[dict, str]:
     if not os.path.isfile(path):
         return {"CenterTestSuites": []}, ""
     with open(path, encoding="utf-8", newline="") as fh:  # keep \r\n visible, to write it back
         text = fh.read()
-    doc = json.loads(text) if text.strip() else {}
+    doc = loads_lenient(text) if text.strip() else {}
     doc.setdefault("CenterTestSuites", [])
     return doc, text
 
@@ -321,7 +346,7 @@ def minimal_edit(text: str, before: dict, after: dict) -> str | None:
         out = text
         for s0, s1, new in sorted(edits, reverse=True):
             out = out[:s0] + new + out[s1:]
-        return out if json.loads(out) == after else None
+        return out if loads_lenient(out) == after else None
     except (ValueError, KeyError, IndexError, json.JSONDecodeError):
         return None
 
@@ -364,7 +389,7 @@ def resolve_suite(doc: dict, name: str, tests: list[dict], seen=None) -> dict:
     s = find(doc, name) or {}
     scen = scenarios_of(tests)
     by_class = {t["class"]: t for t in tests}
-    out = {"scenarios": set(), "unmatched": [], "missing_suites": []}
+    out = {"scenarios": set(), "unmatched": [], "missing_suites": [], "unmatched_packages": []}
     for entry in s.get("List", []) or []:
         hit = resolve_entry(entry, scen)
         if hit:
@@ -372,9 +397,11 @@ def resolve_suite(doc: dict, name: str, tests: list[dict], seen=None) -> dict:
         else:
             out["unmatched"].append(entry)
     for pattern in s.get("Packages", []) or []:
-        for cls, method, code in scen:
-            if _full(pattern, by_class[cls]["package"]) or _full(pattern, by_class[cls]["package"] + "." + cls):
-                out["scenarios"].add((cls, method, code))
+        hit = {(cls, method, code) for cls, method, code in scen
+               if _full(pattern, by_class[cls]["package"]) or _full(pattern, by_class[cls]["package"] + "." + cls)}
+        if not hit:
+            out["unmatched_packages"].append(pattern)
+        out["scenarios"] |= hit
     for child in s.get("Suites", []) or []:
         if child.lower() in seen:
             continue
@@ -385,6 +412,7 @@ def resolve_suite(doc: dict, name: str, tests: list[dict], seen=None) -> dict:
         out["scenarios"] |= sub["scenarios"]
         out["unmatched"] += sub["unmatched"]
         out["missing_suites"] += sub["missing_suites"]
+        out["unmatched_packages"] += sub["unmatched_packages"]
     return out
 
 
@@ -589,13 +617,15 @@ def main(argv=None) -> int:
             r = resolve_suite(doc, s.get("Name", ""), tests)
             kind = "+".join(k for k in ("List", "Packages", "Suites") if s.get(k)) or "empty"
             rows.append({"name": s.get("Name", ""), "kind": kind, "entries": len(s.get("List", []) or []),
-                         "scenarios": len(r["scenarios"]), "unmatched": r["unmatched"], "missingSuites": r["missing_suites"]})
+                         "scenarios": len(r["scenarios"]), "unmatched": r["unmatched"], "missingSuites": r["missing_suites"],
+                         "unmatchedPackages": r["unmatched_packages"]})
         if args.json:
             print(json.dumps(rows, indent=1))
         else:
             for r in rows:
                 warn = f"  {len(r['unmatched'])} entries match nothing" if r["unmatched"] else ""
                 warn += f"  missing suites: {', '.join(r['missingSuites'])}" if r["missingSuites"] else ""
+                warn += f"  packages matching no test: {', '.join(r['unmatchedPackages'])}" if r["unmatchedPackages"] else ""
                 print(f"  {r['name']:<28} {r['kind']:<14} {r['scenarios']:>5} scenarios{warn}")
             print(f"{len(rows)} suites in {os.path.relpath(path, project)}")
         return 0
@@ -608,7 +638,7 @@ def main(argv=None) -> int:
         r = resolve_suite(doc, args.name, tests)
         if args.json:
             print(json.dumps({"suite": s, "scenarios": sorted(map(_fmt, r["scenarios"])), "unmatched": r["unmatched"],
-                              "missingSuites": r["missing_suites"]}, indent=1))
+                              "missingSuites": r["missing_suites"], "unmatchedPackages": r["unmatched_packages"]}, indent=1))
             return 0
         print(json.dumps(s, indent=2))
         print(f"Runs {len(r['scenarios'])} scenarios:")
@@ -618,6 +648,8 @@ def main(argv=None) -> int:
             print(f"  ! matches nothing (CenterTest reports it as a failed scenario): {e}")
         for e in r["missing_suites"]:
             print(f"  ! names a suite that does not exist: {e}")
+        for e in r["unmatched_packages"]:
+            print(f"  ! package pattern matches no test class: {e}")
         return 0
 
     if args.cmd == "picker":

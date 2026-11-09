@@ -137,6 +137,20 @@ class SuiteTest(unittest.TestCase):
         self.assertEqual(data["preselect"], "Smoke")
         self.assertEqual([t["class"] for t in data["tests"]], ["LoginTest", "PA_SubmissionTest"])
 
+    def test_a_hand_edited_file_with_trailing_commas_is_read_and_kept(self):
+        text = '{\n  "CenterTestSuites": [\n    {\n      "Name": "Smoke",\n      "List": [\n        "LoginTest",\n      ]\n    },\n    {"Name": "agr", "Packages": ["com.acme.tests.agr.*"]},\n  ]\n}\n'
+        with open(self.path, "w") as fh:
+            fh.write(text)
+        code, out = self.run_cli("add", "Smoke", "--class", "PA_Submission", "--write")
+        self.assertEqual(code, 0, out)
+        with open(self.path) as fh:
+            new = fh.read()
+        self.assertIn('"PA_SubmissionTest"', new)
+        self.assertIn("},\n  ]", new)  # the file's own trailing comma is still there
+        tests = suite.scan(self.p)
+        doc, _ = suite.load_suites(self.path)
+        self.assertEqual(suite.resolve_suite(doc, "agr", tests)["unmatched_packages"], ["com.acme.tests.agr.*"])
+
     def test_dry_run_writes_nothing(self):
         before = self.doc()[1]
         code, out = self.run_cli("delete", "Stale")

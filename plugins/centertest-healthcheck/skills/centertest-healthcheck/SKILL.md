@@ -160,6 +160,7 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 | 9010 | CenterTest | Tests that open screens but reach no assertion (followed per call through facades, steps, superclasses and field-held helpers); tools that open no screen are not reported |
 | 14002 | CenterTest | @DataDriven datasource file existence |
 | 14003 | CenterTest | DDT reference (`#`) column integrity — sheets/codes exist |
+| 14005 | CenterTest | Suite entries in CenterTestSuiteList.json that match no test (CenterTest reports each as a failed scenario) and composite suites naming a missing suite |
 | 14004 | CenterTest | DDT relationship (`@`) target integrity — target DC file + `Code` exist |
 | 15001 | Quality | Potential null pointer risks |
 | 15004 | Quality | String comparison with == |
@@ -171,7 +172,7 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 
 Every report opens with **"Can these tests be trusted?"**: findings that mean a test can pass while
 the application is broken, or cannot run its data at all — checks that can never fail (15018),
-swallowed failures (15005), tests that open screens but check nothing (9010), tests that read data they never load (9003), missing datasources (14002), missing data codes (14003) and missing
+swallowed failures (15005), tests that open screens but check nothing (9010), tests that read data they never load (9003), missing datasources (14002), suite entries that run nothing (14005), missing data codes (14003) and missing
 related rows (14004). A data finding is a blocker only when a test runs it: rules 14003/14004 add a
 **Runs in** column naming the classes that read the workbook (through `@DataDriven`, a `DDTHelper`
 getter, the DC class, or an `@Rel` relationship from a DC they read); findings in workbooks no test

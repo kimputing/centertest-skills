@@ -327,6 +327,8 @@ TRUST_RULES = {
              "the test opens screens but nothing it runs asserts, so it passes whenever the screens open"),
     "9003": ("Tests that read data they never load",
              "the test reads the scenario's data row but has no @DataDriven, so the run has no data"),
+    "14005": ("Suite entries that run nothing",
+              "CenterTest reports the entry as a failed scenario, so the suite does not run what it lists"),
     "14002": ("Datasources that do not exist",
               "the @DataDriven workbook is missing, so the test cannot load its data"),
     "14003": ("Test data codes that do not exist",
@@ -359,6 +361,8 @@ def _finding_label(headers: list, row: list) -> str:
         what = f"{col} '{code}'" if code not in (None, "", "-") else str(col or cell.get("Issue", ""))
         runs = cell.get("Runs in")
         return f"{where}: {what}" + (f" (in {runs})" if runs and not str(runs).startswith("not run") else "")
+    if "Suite" in cell and "Entry" in cell:
+        return f"{cell['Suite']}: '{cell['Entry']}'" + (f" ({cell['Location']})" if cell.get("Location") else "")
     label = ".".join(str(cell[k]) for k in ("Class", "Method") if cell.get(k))
     if cell.get("Location"):
         label += f" ({cell['Location']})"
