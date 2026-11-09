@@ -115,6 +115,19 @@ and lists only the findings that changed, trust blockers first:
   --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run. To trim it
   first, save the `--json` result and open `suite.py picker --from <file>`: the plan comes pre-ticked.
 
+### Everything one scenario enters
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/project" --scenario CA_RenewalTest AZ-Phoenix
+```
+
+TEST is a test class or a DataCombination workbook (stem or path), CODE the row code (any case). Prints
+whether the row runs (Disabled), the test methods that run it, the suites that include it, and the row
+with every row it reaches as a tree: `#Ref`, join and `@Rel` columns lead to the referenced workbook /
+sheet / code with its filled values; a row reached twice says "(shown above)"; a code with no row says
+"(no such row)". Use it when a scenario fails ("what did it enter?"), to explain a scenario to a client,
+or before changing a shared row. Unknown code: exit 1 and the workbook's codes. `--json` for tools.
+
 ### Which scenarios use a coverage (or any data value)
 
 ```bash

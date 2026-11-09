@@ -104,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--portfolio", nargs="+", metavar="PROJECT",
                    help="Compare several CenterTest projects on one page (score, trust blockers, "
                         "scenarios, wizards, broken data); reads them only; page in ~/.centertest/reports/")
+    p.add_argument("--scenario", nargs=2, metavar=("TEST", "CODE"),
+                   help="Everything one scenario enters: its DataCombination row (TEST = test class or DC workbook, "
+                        "CODE = row code) and every row it references, as a tree, with the tests and suites that run it")
     p.add_argument("--uses", metavar="PATTERN", action="append",
                    help="Which scenarios exercise a coverage, product, state ... : test data rows whose cell "
                         "matches PATTERN (whole cell, case-insensitive regex), followed through references; "
@@ -204,6 +207,14 @@ def main():
             config.ruleset = "CenterTestFull"
         print(f"\n  CenterTest weekly: {len(args.weekly)} project(s), last {args.days} days")
         sys.exit(run_weekly(config, args.weekly, args.days, args.cssids))
+
+    if args.scenario:
+        from eir_json import emit
+        from eir_uses import print_scenario, scenario_report
+        report = scenario_report(config.repository_dir, config.source_root, *args.scenario)
+        emit(report)
+        print_scenario(report)
+        sys.exit(0 if report["found"] else 1)
 
     if args.uses:
         from eir_impact import suite_command

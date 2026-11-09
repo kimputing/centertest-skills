@@ -127,6 +127,33 @@ class UsesTest(unittest.TestCase):
         self.assertEqual(report["pattern"], "Liquor Liability & Pollution")
         self.assertEqual(uses_report(self.root, "src", ["Liquor Liability", "Collision"])["scenarios"], 0)
 
+    def test_scenario_tree_through_relationships_and_references(self):
+        from eir_uses import print_scenario, scenario_report
+        report = scenario_report(self.root, "src", "GL_PolicyChangeTest", "change")  # codes: any case
+        self.assertTrue(report["found"])
+        self.assertEqual((report["datasource"], report["code"], report["disabled"]),
+                         ("testdata/gl/GL_PolicyChangeDC.xlsx", "Change", False))
+        self.assertEqual(report["tests"], ["GL_PolicyChangeTest.run"])
+        sub = report["tree"]["references"][0]
+        self.assertEqual((sub["via"], sub["workbook"], sub["code"]), ("@Submission", "testdata/gl/GL_SubmissionDC.xlsx", "Direct"))
+        cov = sub["references"][0]
+        self.assertEqual((cov["via"], cov["sheet"], cov["values"]), ("#Coverage", "coverage", {"Coverage": "Liquor Liability"}))
+        # by workbook stem too; a join cell and a package reach the same coverage once, then "shown above"
+        via_join = scenario_report(self.root, "src", "GL_SubmissionDC", "ViaJoin")["tree"]["references"]
+        self.assertEqual([(n["via"], n["code"]) for n in via_join], [("#Location<>#Coverage", "Liquor")])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            print_scenario(report)
+        self.assertIn("SCENARIO testdata/gl/GL_PolicyChangeDC.xlsx / Change: enabled, 3 data row(s)", out.getvalue())
+        self.assertIn("    #Coverage -> GLData.xlsx / coverage / Liquor", out.getvalue())
+        self.assertIn("Coverage = Liquor Liability", out.getvalue())
+
+    def test_scenario_not_found_lists_the_codes(self):
+        from eir_uses import scenario_report
+        report = scenario_report(self.root, "src", "GL_SubmissionTest", "Nope")
+        self.assertFalse(report["found"])
+        self.assertIn("ViaPackage", report["codes"])
+
     def test_touches_a_page_or_one_widget(self):
         from eir_uses import touches_report
         step = os.path.join(self.root, "src", "main", "java", "com", "x", "CreateGL.java")

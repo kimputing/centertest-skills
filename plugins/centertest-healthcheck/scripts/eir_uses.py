@@ -63,6 +63,7 @@ def _codes(cell: str) -> list[str]:
 
 
 _graph_cache: dict = {}
+_vias: dict = {}  # repo -> {row key: [(header, target key)]}: which column each link of _graph came from
 
 
 def _graph(repo_dir: str):
@@ -95,11 +96,12 @@ def _graph(repo_dir: str):
                     scope, default_id = {}, ""
             for code, cells in t["rows"]:
                 key = _key(t, code)
-                out = []
+                out, marks = [], []
                 for i, h in enumerate(t["headers"]):
                     cell = cells[i] if i < len(cells) else ""
                     if not cell or not h:
                         continue
+                    marks.append((len(out), h))
                     if ddt_refcheck.JOIN_SEPARATOR in h:
                         target = h.split(ddt_refcheck.JOIN_SEPARATOR)[-1].strip()
                         refs = [(target[1:], c) for line in cell.splitlines()
@@ -125,6 +127,9 @@ def _graph(repo_dir: str):
                             books = [base] if base in sheets_of.get(sk, []) else sheets_of.get(sk, [])
                             out += [("row", b, sk, c.lower()) for b in books]
                 links.append((key, out))
+                bounds = [m[0] for m in marks[1:]] + [len(out)]
+                _vias.setdefault(repo_dir, {})[key] = [(h, k) for (start, h), end in zip(marks, bounds)
+                                                       for k in out[start:end]]
     finally:
         os.chdir(previous)
     _graph_cache[repo_dir] = (tables, links)
@@ -456,3 +461,82 @@ def print_touches(report: dict, name: str, command: str | None) -> None:
     print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))
     if command:
         print(f"\n  Then: {command}")
+
+
+def scenario_report(repo_dir: str, source_root: str, which: str, code: str) -> dict:
+    """--scenario TEST CODE: everything one scenario enters, its DataCombination row and every row it
+    reaches (#Ref, joins, @Rel), as a tree; the tests that run it and the suites that include it.
+    `which` is a test class or a DataCombination workbook (path, file name or stem)."""
+    import suite as suites
+    tables, _links = _graph(repo_dir)
+    vias = _vias.get(repo_dir, {})
+    rows = {_key(t, c): (t, c, cells) for t in tables for c, cells in t["rows"]}
+    tests = suites.scan(repo_dir, source_root)
+    wanted = which.lower().removesuffix(".xlsx")
+    datasources = sorted({m["datasource"] for t in tests if t["class"].lower() == wanted for m in t["methods"]
+                          if m["datasource"]})
+    if not datasources:
+        datasources = sorted({t["rel"] for t in tables if t["dc"] and wanted in (
+            t["rel"].lower().removesuffix(".xlsx"), os.path.basename(t["rel"]).lower().removesuffix(".xlsx"))})
+    found = [("dc", ds, code.lower()) for ds in datasources if ("dc", ds, code.lower()) in rows]
+    if not found:
+        return {"scenario": f"{which} {code}", "found": False, "datasources": datasources,
+                "codes": sorted(c for ds in datasources for t in tables if t["dc"] and t["rel"] == ds
+                                for c, _cells in t["rows"])[:40]}
+    start = found[0]
+    shown: set = set()
+
+    def node(key, via=None) -> dict:
+        t, row_code, cells = rows[key]
+        n = {"workbook": t["rel"], "sheet": t["sheet"], "code": row_code}
+        if via:
+            n["via"] = via
+        if key in shown:
+            return dict(n, repeated=True)
+        shown.add(key)
+        n["values"] = {t["headers"][i]: cells[i].strip() for i in _value_columns(t)
+                       if i < len(cells) and cells[i].strip() and t["headers"][i].lower() != "code"}
+        n["references"] = [node(target, h) for h, target in vias.get(key, []) if target in rows]
+        missing = [f"{h} -> {target[-1]}" for h, target in vias.get(key, []) if target not in rows]
+        if missing:
+            n["unresolved"] = missing
+        return n
+
+    tree = node(start)
+    _t, _c, cells = rows[start]
+    di = next((i for i, h in enumerate(_t["headers"]) if h.lower() == "disabled"), None)
+    disabled = di is not None and di < len(cells) and cells[di].strip().lower() in _DISABLED
+    runs = {(t["class"], m["name"], _c) for t in tests for m in t["methods"] if m["datasource"] == start[1]}
+    runs &= set(suites.scenarios_of(tests))
+    return {"scenario": f"{which} {code}", "found": True, "datasource": start[1], "code": _c,
+            "disabled": disabled, "tests": sorted(f"{c}.{m}" for c, m, _code in runs),
+            "in_suites": suites_running(repo_dir, tests, runs), "rows": len(shown), "tree": tree}
+
+
+def print_scenario(report: dict) -> None:
+    if not report["found"]:
+        print(f"  No DataCombination row {report['scenario']!r}."
+              + (f" Rows of {', '.join(report['datasources'])}: {', '.join(report['codes'])}"
+                 if report["datasources"] else " Give a test class or a DataCombination workbook, then a row code."))
+        return
+    state = "DISABLED (does not run)" if report["disabled"] else "enabled"
+    print(f"  SCENARIO {report['datasource']} / {report['code']}: {state}, {report['rows']} data row(s)")
+    print(f"  Run by: {', '.join(report['tests']) or 'no test'}")
+    suites_in = report.get("in_suites")
+    if suites_in is not None:
+        print("  Suites: " + (", ".join(name for name, _n in suites_in["suites"]) or "none runs it"))
+
+    def show(n, depth):
+        pad = "    " * depth
+        head = f"{n['via']} -> " if n.get("via") else ""
+        where = f"{os.path.basename(n['workbook'])} / {n['sheet']} / {n['code']}"
+        print(f"  {pad}{head}{where}" + ("   (shown above)" if n.get("repeated") else ""))
+        for h, v in (n.get("values") or {}).items():
+            print(f"  {pad}    {h} = {v}")
+        for u in n.get("unresolved", []):
+            print(f"  {pad}    {u}   (no such row)")
+        for child in n.get("references") or []:
+            show(child, depth + 1)
+
+    print()
+    show(report["tree"], 0)
