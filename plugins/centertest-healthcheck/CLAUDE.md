@@ -17,6 +17,7 @@ scripts/
 ├── eir_impact.py        # Rerun plan for --review: per-method Java reach, changed DC rows, changed reference codes
 ├── eir_data.py          # Test data panel: scenarios per full run, unread DCs, unused codes (= xlsx-cleanup-unused), broken refs live/dormant
 ├── eir_screens.py       # Screens/wizards the suite's own code opens (generated cssids/ -> page classes)
+├── eir_products.py      # Product coverages (generated <Line>_coverage_structure.json) named in enabled testdata rows
 ├── eir_reach.py         # Forward reach from a test (per call: Facade.method, new Step, typed fields, superclasses); assertion vocabulary; rule 9010
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution

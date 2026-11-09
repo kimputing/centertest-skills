@@ -33,13 +33,15 @@ PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Sc
 
 ### Reporting to the user
 
-The terminal summary ends with the trust blockers, the test data and the screens. Reply in this order:
+The terminal summary ends with the trust blockers, the test data, the screens and the product coverages. Reply in this order:
 
 1. **Can these tests be trusted?** Each trust blocker group with its count and `path:line` locations —
    these are the things to fix first. Say plainly when there are none.
 2. **What to fix first**: the tiers (must fix, should fix, suggestions) as counts with their top rules;
    do not list suggestions one by one.
 3. **Test data and suites**: scenario runs, unread workbooks, unused codes, scenarios no suite runs.
+   **What the suite exercises**: wizards no test opens, and per line of business how many of the
+   product's coverages the test data names (lowest first; name the coverages a well-covered line misses).
 4. **Offer the next step that fits** (and run it only when asked):
    discarded `.equals()` → `--fix 15018` (diff first); suite entries that run nothing → the
    `suite-builder` skill's `doctor`; unused codes → `ddt-tools` cleanup report; a branch to merge →

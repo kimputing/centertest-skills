@@ -97,7 +97,8 @@ def _verdict_sheet(wb, results: list[RuleResult], total_files: int, data) -> Non
     ws.column_dimensions["C"].width = 70
 
 
-def generate_excel(results: list[RuleResult], output_dir: str, total_files: int = 0, data=None) -> str:
+def generate_excel(results: list[RuleResult], output_dir: str, total_files: int = 0, data=None,
+                   products=None) -> str:
     """Generate an Excel report: a Verdict sheet first, then the summary and one sheet per rule."""
     if Workbook is None:
         print("  Warning: openpyxl not installed, skipping Excel output.", file=sys.stderr)
@@ -192,6 +193,20 @@ def generate_excel(results: list[RuleResult], output_dir: str, total_files: int 
             if cell.value:
                 max_len = max(max_len, len(str(cell.value)))
         ws_summary.column_dimensions[col_letter].width = min(max_len + 2, 120)
+
+    if products:
+        from eir_products import excel_rows
+        ws = wb.create_sheet(title="Product coverage")
+        for col, header in enumerate(["Line", "Coverage", "Status", "Terms set", "Terms"], 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        for r, values in enumerate(excel_rows(products), 2):
+            for col, value in enumerate(values, 1):
+                ws.cell(row=r, column=col, value=value)
+        for letter, width in zip("ABCDE", (22, 60, 20, 10, 60)):
+            ws.column_dimensions[letter].width = width
+        ws.auto_filter.ref = ws.dimensions
 
     # Save
     os.makedirs(output_dir, exist_ok=True)
@@ -634,6 +649,43 @@ def _screens_panel_html(coverage) -> str:
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 
+def _products_panel_html(lines) -> str:
+    """'Product coverages the test data names': per line of business, from the generated product model."""
+    if not lines:
+        return ""
+    cards = []
+    for l in sorted(lines, key=lambda l: (-len(l["named"]) / max(l["coverages"], 1), l["line"])):
+        pct = len(l["named"]) / l["coverages"] * 100 if l["coverages"] else 0
+        # the shorter list says more: what a thin line covers, or what a well-covered line still misses
+        if len(l["named"]) <= len(l["missing"]):
+            label = "Named in test data"
+            chips = [f'<span class="chip on" title="{_html_escape(c["code"] or "")}: terms set '
+                     f'{len(c["terms_set"])}/{c["terms"]}">{_html_escape(c["name"])}</span>' for c in l["named"]]
+        else:
+            label = "Not named in any test data"
+            chips = [f'<span class="chip">{_html_escape(n)}</span>' for n in l["missing"]]
+        named = "".join(chips[:10])
+        if len(chips) > 10:
+            rest = "".join(chips[10:60]) + (f'<span class="chip">+{len(chips) - 60} in Excel</span>' if len(chips) > 60 else "")
+            named += (f'<details class="more"><summary>+{len(chips) - 10} more</summary>'
+                      f'<div class="chips">{rest}</div></details>')
+        java = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l["java"][:12])
+        terms = f'{l["terms_set"]} of {l["terms"]} terms of those coverages set' if l["terms"] else "no terms on those coverages"
+        cards.append(
+            f'<div class="app-card"><div class="app-name">{_html_escape(l["line"])}</div>'
+            f'<div class="app-big">{len(l["named"])}<small> of {l["coverages"]} coverages</small></div>'
+            f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
+            f'<div class="app-sub">{terms}</div>'
+            + (f'<div class="chips-label">{label}</div><div class="chips">{named}</div>' if named else "")
+            + (f'<div class="chips-label">Named only in code: check</div><div class="chips">{java}</div>' if java else "")
+            + "</div>")
+    return ('  <div class="screens"><h2>Product coverages the test data names</h2>'
+            '<p class="screens-note">From the generated product model, per line of business: a coverage counts when an '
+            'enabled test data row names it (name or code). Names are counted once per line, and a name several lines '
+            'share counts for each. Every coverage, named or not, is in the Excel sheet "Product coverage".</p>'
+            f'<div class="app-grid">{"".join(cards)}</div></div>\n')
+
+
 def _data_panel_html(d) -> str:
     """'Test data': scenarios a full run executes, unread workbooks, unused codes, broken references."""
     if not d:
@@ -663,7 +715,7 @@ def _data_panel_html(d) -> str:
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
-                  suppressed_count: int = 0, screens=None, data=None) -> str:
+                  suppressed_count: int = 0, screens=None, data=None, products=None) -> str:
     """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
     output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -975,6 +1027,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
     html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
     html += _data_panel_html(data)
     html += _screens_panel_html(screens)
+    html += _products_panel_html(products)
 
     html += _fix_order_html(results)
 

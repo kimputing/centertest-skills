@@ -95,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "writes only with --write")
     p.add_argument("--write", action="store_true", help="With --fix: apply the changes")
     p.add_argument("--cssids", metavar="DIR",
-                   help="Generated project's src/main/resources (or its cssids/) for the screens panel; "
+                   help="Generated project's src/main/resources (or its cssids/) for the screens and product coverage panels; "
                         "default: <project>-generated next to the project, then the cssid-finder config")
     p.add_argument("--trend", nargs="?", const=6, type=int, metavar="MONTHS",
                    help="Health trend: score, trust blockers and test cases for the last mainline "
@@ -274,18 +274,20 @@ def main():
     elapsed = time.time() - start_time
     project_name = os.path.basename(config.repository_dir)
 
-    screens = data = None
+    screens = data = products = None
     if not config.has_git_options():
         from eir_data import data_overview
         data = data_overview(config.repository_dir, config.source_root, results)
         from eir_screens import find_cssids_dir, screen_coverage
         cssids = find_cssids_dir(config.repository_dir, args.cssids)
         screens = screen_coverage(config.repository_dir, config.source_root, cssids) if cssids else []
+        from eir_products import product_coverage
+        products = product_coverage(config.repository_dir, cssids, config.source_root)
 
     # Excel first (appendix — referenced by HTML)
     excel_filename = ""
     if "excel" in config.output_formats:
-        filepath = generate_excel(results, output_dir, total_files=total_files, data=data)
+        filepath = generate_excel(results, output_dir, total_files=total_files, data=data, products=products)
         if filepath:
             excel_filename = os.path.basename(filepath)
             generated.append(filepath)
@@ -302,6 +304,7 @@ def main():
             suppressed_count=suppressed_count,
             screens=screens,
             data=data,
+            products=products,
         )
         if filepath:
             generated.append(filepath)
@@ -321,6 +324,9 @@ def main():
         if screens:
             from eir_screens import print_screens
             print_screens(screens)
+        if products:
+            from eir_products import print_products
+            print_products(products)
 
     print(f"\n  Completed in {elapsed:.1f}s")
     if generated:
