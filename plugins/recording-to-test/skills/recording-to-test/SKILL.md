@@ -1,6 +1,6 @@
 ---
 name: recording-to-test
-description: Create a CenterTest test scenario (Guidewire UI test) in the current project's own structure, from a CenterTest Recorder recording (.zip, folder or session.json, one or several), a plain-English request, a user story, a Jira issue or an existing test. A wizard with a gate after each phase (understand, reuse plan, data, code plan, write, verify) that reuses existing tests, data rows and facades before writing new code. Use when the user says "create a test from this recording", "convert the recording", "recording to test", "new test scenario", "add a test for <story>", "turn this Jira issue into a test", "make this test resumable", "add a data row for a scenario", or gives a recorder .zip / session.json and asks for a test.
+description: Create a CenterTest test scenario (Guidewire UI test) in the current project's own structure, from a CenterTest Recorder recording (.zip, folder or session.json, one or several), a plain-English request, a user story, a Jira issue or an existing test. A wizard with a gate after each phase (understand, reuse plan, data, code plan, write, verify) that reuses existing tests, data rows and facades before writing new code. Use when the user says "create a test from this recording", "convert the recording", "recording to test", "new test scenario", "add a test for <story>", "turn this Jira issue into a test", "make this test resumable", "add a data row for a scenario", or gives a recorder .zip / session.json and asks for a test. Also answers how much of a recorded flow the automation already does, field by field: "how much of this recording is automated", "automation coverage of this recording", "what does our automation miss compared to the recording".
 ---
 
 # Scenario wizard (recording-to-test)
@@ -20,6 +20,7 @@ Read a phase file when its phase starts, not before. Each phase ends at its `## 
 | Plain-English request, user story or acceptance criteria | [phases/understand.md#request-or-story](phases/understand.md#request-or-story) |
 | Jira issue (through the Atlassian connector) | [phases/understand.md#jira-issue](phases/understand.md#jira-issue) |
 | Existing test: a new scenario next to it, a data row, or restart points | [phases/understand.md#existing-test](phases/understand.md#existing-test) |
+| A recording and the question how much of it is already automated (no new test) | [Recording coverage](#recording-coverage) |
 
 A recording with voice narration: [phases/understand.md#narration](phases/understand.md#narration).
 When the input is unclear, ask which of these it is. All inputs:
@@ -98,6 +99,7 @@ PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 | `tools` | whether ffmpeg / whisper are installed | [phases/understand.md#narration](phases/understand.md#narration) |
 | `xlsx` | sheet names, headers and rows of a workbook | [phases/data.md#mechanisms](phases/data.md#mechanisms) |
 | `gap-report` | a report of an engine gap for Kimputing | [Engine gaps](#engine-gaps) |
+| `coverage` | how much of a recording the project's steps already automate | [Recording coverage](#recording-coverage) |
 
 `ct.py parse` transcribes narration itself; don't also run `ct.py narrate` on the same recording.
 
@@ -241,3 +243,21 @@ PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 
 `--expected` and `--got` are copied verbatim: describe the gap without recorded values
 (`a date field`, not the date). Tell the user to send the printed file to Kimputing.
+
+## Recording coverage
+
+When the user asks how much of a recorded flow is automated (no new test), run [Start](#start) step 1
+and the scan for `cssids`, then:
+
+```bash
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
+"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" coverage "<recording>" --cssids "<cssids.value from project.json>" --project "<project root>" --only "<path regex of the flow's steps>"
+```
+
+Every recorded field and action is data-driven, hardcoded, automated, partial (the steps set
+coverages from test data, no row names this one yet), missing or not counted (login, wizard Next,
+tab-bar menus). Ask which folder holds the flow's steps (e.g. its LOB and `shared`) for `--only`:
+without it a field set by another LOB's step counts as automated. Report the percentage, the
+screens with gaps and every partial and missing row with its reason; give the HTML report's path.
+The project is only read.
+

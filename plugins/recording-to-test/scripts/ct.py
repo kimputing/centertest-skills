@@ -18,6 +18,7 @@ COMMANDS = {
     "tools": "narration:main_tools",
     "gap-report": "gap_report:main",
     "scrub": "scrub_recording:main",
+    "coverage": "coverage:main",
 }
 
 

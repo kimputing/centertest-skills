@@ -70,6 +70,7 @@ The skill calls one script, `scripts/ct.py <command>`:
 | `tools` | whether ffmpeg and whisper are installed |
 | `profile resolve` / `profile init` | resolved switches / a draft client profile |
 | `gap-report` | a report of an engine gap, for Kimputing |
+| `coverage` | how much of a recorded flow the project's steps already do, field by field: data-driven, hardcoded, automated, partial (coverages come from test data but no row names this one), missing, or not counted (login, wizard Next, tab-bar menus); each with the step's `path:line`. `coverage <recording> --cssids DIR --project DIR [--only REGEX] [--html FILE]`; the project is only read |
 | `scrub` | a `session.json` copy with typed and posted values, `--also` words, hosts, long numbers, issue keys, meta ids and dates replaced in every non-structural string (`scrub <recording> --out DIR [--day-shift N] [--also WORD]`); narration transcripts (`audio/<stem>.transcript.json`) are written scrubbed, audio files never copied, so a recording without a transcript loses its narration; displayed text may remain and anything original still found is listed in `needsReview.leftovers`, so review `needsReview` and the files before storing them, and keep fixtures in a private repo |
 
 ## Checks → assertions
