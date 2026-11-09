@@ -81,6 +81,19 @@ class StateCoverage(unittest.TestCase):
         self.assertIn("**No scenario of the line runs there any more** (1): CA: NV", md)
         self.assertIn("Newly run in (1): CA: TX", md)
 
+    def test_breadth_tiles_head_the_dashboard(self):
+        lines = eir_states.state_coverage(self.root, self.cssids)
+        reach = [{"suite": "(full run)", "scenarios": 3, "test": 4, "coverage": 2, "jurisdiction": 3},
+                 {"suite": "Smoke", "scenarios": 1, "test": 1, "coverage": 1, "jurisdiction": 1},
+                 {"suite": "All", "scenarios": 3, "test": 3, "coverage": 2, "jurisdiction": 3}]
+        products = [{"line": "GLLine", "coverages": 10, "named": [{}, {}], "options_chosen": 1, "options_total": 4}]
+        html = eir_report._breadth_tiles_html({"scenarios": 9}, products, lines, reach)
+        for value, label in (("4", "Flows that run"), ("9", "Scenario runs per full run"),
+                             ("2/10", "Product coverages selected"), ("1/4", "Limit/deductible options set"),
+                             ("3", "Jurisdictions"), ("75%", "Flows in the widest suite (All)")):
+            self.assertIn(f'<div class="stat-value stat-blue">{value}</div><div class="stat-label">{label}</div>', html)
+        self.assertEqual(eir_report._breadth_tiles_html(None, None, None, None), "")
+
     def test_no_jurisdiction_typelist_no_panel(self):
         self.assertIsNone(eir_states.state_coverage(self.root, os.path.join(self.tmp.name, "nowhere")))
         self.assertIsNone(eir_states.state_coverage(self.root, None))

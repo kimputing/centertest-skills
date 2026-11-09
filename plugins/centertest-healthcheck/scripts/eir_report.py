@@ -734,6 +734,33 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 
+def _breadth_tiles_html(data, products, states, suite_reach) -> str:
+    """'What the regression covers' at the top of the page: flows, scenarios, coverages, options,
+    jurisdictions and the widest suite - the same numbers as the panels below."""
+    tiles = []
+    full = suite_reach[0] if suite_reach else None
+    if full:
+        tiles.append((str(full["test"]), "Flows that run"))
+    if data and data.get("scenarios") is not None:
+        tiles.append((str(data["scenarios"]), "Scenario runs per full run"))
+    if products:
+        tiles.append((f'{sum(len(l["named"]) for l in products)}/{sum(l["coverages"] for l in products)}',
+                      "Product coverages selected"))
+        total = sum(l.get("options_total", 0) for l in products)
+        if total:
+            tiles.append((f'{sum(l.get("options_chosen", 0) for l in products)}/{total}', "Limit/deductible options set"))
+    if states:
+        tiles.append((str(len(set().union(*(l["states"] for l in states)))), "Jurisdictions"))
+    if full and len(suite_reach) > 1 and full["test"]:
+        best = max(suite_reach[1:], key=lambda r: (r["test"], r["coverage"], r["jurisdiction"]))
+        tiles.append((f'{best["test"] * 100 // full["test"]}%', f'Flows in the widest suite ({best["suite"]})'))
+    if not tiles:
+        return ""
+    cards = "".join(f'<div class="stat-card"><div class="stat-value stat-blue">{_html_escape(v)}</div>'
+                    f'<div class="stat-label">{_html_escape(k)}</div></div>' for v, k in tiles)
+    return f'  <div class="breadth"><h2>What the regression covers</h2><div class="stats-grid">{cards}</div></div>\n'
+
+
 def _no_suite_html(missing) -> str:
     """Flows, coverages and line/jurisdictions the full run reaches and no suite does."""
     if not missing:
@@ -932,6 +959,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
   }}
 
   /* Stat cards */
+  .breadth {{ margin: 24px 0 8px; }} .breadth h2 {{ margin: 0 0 12px; }}
   .stats-grid {{
     display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
     gap: 16px;
@@ -1156,6 +1184,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
   </div>
 """
 
+    html += _breadth_tiles_html(data, products, states, suite_reach)
     repo_root = os.path.dirname(os.path.abspath(output_dir))
     from eir_since import panel_html as _since_panel
     html += _since_panel(since, _html_escape)
