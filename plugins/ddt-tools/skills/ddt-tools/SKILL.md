@@ -130,7 +130,7 @@ PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Sc
   **related** DC's scope — the DC this row's `@Submission` cell points at
 - Overrides (`#Policy.EffectiveDate`, `@Submission.#Policy.EffectiveDate`), joins
   (`#LocationInfo<>#Coverage`) and sentinels (`<blank>`) hold values, not codes, and are not checked
-- Handles comma-separated codes
+- Handles comma-separated codes; `Coupe(2)` is the second copy of record `Coupe` on the row (join scenarios), so it resolves to `Coupe`
 - Supports hierarchy via `testdata/DataDrivenHierarchy.json` (child DCs inherit parent codes)
 - Provides case-sensitivity hints when a near-match exists
 

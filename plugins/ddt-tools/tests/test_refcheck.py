@@ -117,5 +117,29 @@ class UsedCodesTest(unittest.TestCase):
         self.assertNotIn("<blank>", used["company"])  # a sentinel, not a code
         self.assertNotIn("company.name", used)  # an override holds a value
 
+
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class InstanceCopyTest(unittest.TestCase):
+    """"Acme(2)" is the second copy of record Acme on the row (join scenarios), not a missing code."""
+
+    def test_instance_copies_resolve_to_their_record(self):
+        import ddt_refcheck
+        from refcheck_fixture import build_project, make_xlsx
+        with tempfile.TemporaryDirectory() as tmp:
+            build_project(tmp)
+            make_xlsx(os.path.join(tmp, "testdata", "wc", "WC_PolicyChangeDC.xlsx"), {
+                "DataCombination": [["Code", "#Company"], ["Twice", "Acme, Acme(2)"], ["Bad", "Nope(2)"]]})
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                ddt_refcheck.reset_caches()
+                errors = ddt_refcheck.validate_dc("testdata/wc/WC_PolicyChangeDC.xlsx")
+                self.assertEqual([(e[0], e[2]) for e in errors], [(3, "Nope(2)")])
+                self.assertIn("Acme", ddt_refcheck.used_codes()["company"])
+                self.assertEqual(ddt_refcheck.base_code("Coupe(12)"), "Coupe")
+                self.assertEqual(ddt_refcheck.base_code("Plan (A)"), "Plan (A)")
+            finally:
+                os.chdir(cwd)
+
 if __name__ == "__main__":
     unittest.main()
