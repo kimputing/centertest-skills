@@ -102,7 +102,8 @@ and lists only the findings that changed, trust blockers first:
 - **All of it in one run**: from two tests up, the comment carries a suite `Rerun-<sha>` whose entries
   run exactly the plan's scenarios (a whole test, or `Class method (codeA|codeB)` for changed rows) and
   the one command to start it. Offer to add it with the `suite-builder` skill (`create Rerun-<sha>
-  --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run.
+  --entry "…"` per entry: dry run, then `--write` on approval), and to remove it after the run. To trim it
+  first, save the `--json` result and open `suite.py picker --from <file>`: the plan comes pre-ticked.
 
 ### Which scenarios use a coverage (or any data value)
 

@@ -341,6 +341,14 @@ $("project").textContent = `${DATA.projectName}: ${DATA.tests.length} test class
 $("suite").innerHTML = '<option value="">New suite</option>' + DATA.suites.map(s => `<option>${esc(s.Name || "")}</option>`).join("");
 if (DATA.preselect && suiteByName(DATA.preselect)) $("suite").value = DATA.preselect;
 loadSuite();
+if (DATA.start && !DATA.preselect) {
+  // a suggested selection (a branch's rerun plan, the scenarios that use a value): adjust it, then copy the command
+  $("suite").value = suiteByName(DATA.start.name) ? DATA.start.name : "";
+  loadSuite();
+  if (!suiteByName(DATA.start.name)) $("name").value = DATA.start.name || "";
+  state.sel = new Set(DATA.start.keys.filter(k => ALL.some(x => KEY(...x) === k)));
+  render();
+}
 </script>
 </body>
 </html>

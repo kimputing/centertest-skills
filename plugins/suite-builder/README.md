@@ -21,7 +21,8 @@ suite". The skill shows the selection and a dry-run diff before it writes anythi
 Prefer ticking boxes? "Open the suite picker" writes a page with the class → method → row tree; it shows
 the suite before → after and copies the command for Claude to apply. Its filter also searches each row's
 own data (type `Truck`, `TX`, `Motorcarrier`) and shows the matching cells; on the command line that is
-`pick --data "State=TX"`.
+`pick --data "State=TX"`. `picker --from FILE` opens a suggested selection to adjust first: a suite JSON, or
+the healthcheck's `--json` result (a review's `Rerun-<sha>` suite, `--uses`/`--touches` entries).
 
 Engine: `scripts/suite.py` (`picker` included) (`list`, `show`, `scan`, `pick`, `create`, `add`, `remove`, `delete`,
 `rename`, `set`); see `skills/suite-builder/SKILL.md`.

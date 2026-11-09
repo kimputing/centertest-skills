@@ -606,7 +606,22 @@ def _membership(doc: dict, tests: list[dict]) -> dict:
     return out
 
 
-def write_picker(project, source_root, tests, suite_path, doc, preselect=None, out=None) -> str:
+def entries_from(path: str) -> tuple[str, list[str]]:
+    """(suite name, entries) from a JSON file: a suite ({"Name", "List"}), a healthcheck --json / review result
+    (its rerun suite, or the "suite" and "entries" of --uses / --touches), or a plain list of entries."""
+    with open(path, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if isinstance(doc, list):
+        return "", [str(e) for e in doc]
+    one = (doc.get("meta") or {}).get("rerun_suite") or {}
+    if one.get("entries"):
+        return one.get("name", ""), list(one["entries"])
+    if doc.get("List") is not None:
+        return str(doc.get("Name", "")), list(doc["List"])
+    return str(doc.get("suite", "")), list(doc.get("entries") or [])
+
+
+def write_picker(project, source_root, tests, suite_path, doc, preselect=None, out=None, start=None) -> str:
     """A self-contained page to tick classes, methods and rows; it shows the suite's entries
     before -> after and the suite.py command that applies the change."""
     data = {
@@ -616,6 +631,9 @@ def write_picker(project, source_root, tests, suite_path, doc, preselect=None, o
         "suites": doc["CenterTestSuites"], "preselect": preselect or "",
         # which suites run each scenario ("class\tmethod\tcode" -> names), Packages and child Suites resolved
         "membership": _membership(doc, tests),
+        # a suggested selection to start from (picker --from): its name and the scenarios its entries run
+        "start": None if not start else {"name": start[0], "keys": sorted(
+            "\t".join(s) for e in start[1] for s in resolve_entry(e, scenarios_of(tests)))},
     }
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "picker.html"), encoding="utf-8") as fh:
         page = fh.read()
@@ -692,6 +710,8 @@ def main(argv=None) -> int:
     sp = sub.add_parser("drop"); sp.add_argument("name"); sp.add_argument("--entry", action="append", required=True)
     sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("picker"); sp.add_argument("--suite", help="suite to open for editing")
+    sp.add_argument("--from", dest="from_file", help="start from a suggested selection: a suite JSON, a healthcheck "
+                                                       "--json / review result (its rerun suite, --uses/--touches entries)")
     sp.add_argument("--out", help="where to write the page (default ~/.centertest/reports/)")
     sp.add_argument("--open", action="store_true", help="open the page in the default browser")
     sp = sub.add_parser("set"); sp.add_argument("name"); sp.add_argument("--entries-file", required=True)
@@ -807,7 +827,8 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "picker":
-        out = write_picker(project, args.source_root, tests, path, doc, args.suite, args.out)
+        start = entries_from(args.from_file) if getattr(args, "from_file", None) else None
+        out = write_picker(project, args.source_root, tests, path, doc, args.suite, args.out, start)
         print(f"Suite picker: {out}")
         if args.open:
             opener = {"darwin": ["open"], "win32": ["cmd", "/c", "start", ""]}.get(sys.platform, ["xdg-open"])

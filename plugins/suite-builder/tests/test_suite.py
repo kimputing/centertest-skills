@@ -82,6 +82,26 @@ class SuiteTest(unittest.TestCase):
         code, out = self.run_cli("pick", "--data", "State=TX", "--code", "Dallas")
         self.assertIn("PA_SubmissionTest run tx_Dallas", out)
 
+    def test_picker_starts_from_a_suggested_selection(self):
+        sources = {
+            "suite.json": {"Name": "Texas", "List": ["PA_SubmissionTest run tx_.*"]},
+            "review.json": {"meta": {"rerun_suite": {"name": "Rerun-abc", "entries": ["PA_SubmissionTest run tx_Dallas"]}}},
+            "uses.json": {"suite": "Uses-Texas", "entries": ["PA_SubmissionTest run tx_Austin"]},
+        }
+        expected = {"suite.json": ("Texas", 2), "review.json": ("Rerun-abc", 1), "uses.json": ("Uses-Texas", 1)}
+        for name, doc in sources.items():
+            path = os.path.join(self.p, name)
+            with open(path, "w") as fh:
+                json.dump(doc, fh)
+            title, entries = suite.entries_from(path)
+            out = os.path.join(self.p, name + ".html")
+            code, _ = self.run_cli("picker", "--from", path, "--out", out)
+            with open(out, encoding="utf-8") as fh:
+                page = fh.read()
+            blob = json.loads(page.split('<script id="data" type="application/json">')[1].split("</script>")[0]
+                              .replace("<\\/", "</"))
+            self.assertEqual((blob["start"]["name"], len(blob["start"]["keys"])), expected[name], name)
+
     def doc(self):
         with open(self.path, newline="") as fh:
             text = fh.read()
