@@ -73,7 +73,8 @@ _INDEX: list = []  # [(sources, index)]: the review asks once per changed class,
 
 
 def _index(sources: dict):
-    """(methods, own words, words with superclasses, texts with superclasses) per class, built once per sources."""
+    """(methods, own words, words with superclasses, texts with superclasses, propagation memo) per class,
+    built once per sources."""
     for known, index in _INDEX:
         if known is sources:
             return index
@@ -93,9 +94,48 @@ def _index(sources: dict):
 
     words = {name: set().union(*(own_words[c] for c in lineage(name))) for name in sources}
     texts = {name: "\n".join(sources[c][1] for c in lineage(name)) for name in sources}
-    index = (methods, own_words, words, texts)
+    index = (methods, own_words, words, texts, {})  # the last: _hits memo
     _INDEX[:] = [(sources, index)]  # one project at a time
     return index
+
+
+def _hits(current, names, sources, methods, words, texts, memo):
+    """[(other class, its methods that pass `current`'s change on, or None for a subclass)] -- the same for a
+    class and method set whichever change led there, so it is computed once per sources (memo)."""
+    key = (current, None if names is None else frozenset(names))
+    if key in memo:
+        return memo[key]
+    out = []
+    alts = None if names is None else "|".join(map(re.escape, names))
+    # a static call names its class (BC.createAccount, not PC.createAccount); a bare .name( counts
+    # only where the class is used as an instance (new X(...), a variable or parameter of type X)
+    static = None if names is None else re.compile(r"\b" + re.escape(current) + r"\s*\.\s*(?:" + alts + r")\s*\(")
+    calls = None if names is None else re.compile(r"\.(?:" + alts + r")\s*\(")
+    instance = re.compile(r"\bnew\s+" + re.escape(current) + r"\b|\b" + re.escape(current)
+                          + r"(?:<[^>]*>)?\s+\w+\s*[=;,)]")
+    for other, (_p, text) in sources.items():
+        if other == current or current not in words[other]:
+            continue
+        if re.search(r"\b(?:extends|implements)\s+[\w\s,<>]*\b" + re.escape(current) + r"\b", text):
+            hit = None
+        else:
+            typed = bool(instance.search(texts[other]))
+            # held in a field (its own or a superclass's): the methods that use that field
+            fields = set(re.findall(r"\b" + re.escape(current) + r"(?:<[^>]*>)?\s+(\w+)\s*[;=]", texts[other]))
+            uses = re.compile(r"\b(?:" + "|".join(map(re.escape, [current, *sorted(fields)])) + r")\b")
+            # a method that builds the step (a facade's `return new Step(...)`) hands it to a caller
+            # that runs it: it passes the change on once the step's execute() is affected
+            builds = names is not None and "execute" in names and re.compile(
+                r"\bnew\s+" + re.escape(current) + r"\s*[(<]")
+            hit = {name for name, body in methods[other]
+                   if uses.search(body)
+                   and (calls is None or static.search(body) or (typed and calls.search(body))
+                        or (builds and builds.search(body)))}
+            if not hit:
+                continue
+        out.append((other, hit))
+    memo[key] = out
+    return out
 
 
 def tests_reaching(classes: set[str], sources: dict, start: dict | None = None,
@@ -110,7 +150,7 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None,
     order (the result must not depend on set order); `every`, when given, gets {test: every changed
     class that reaches it}.
     """
-    methods, own_words, words, texts = _index(sources)
+    methods, own_words, words, texts, memo = _index(sources)
     reached: dict[str, str] = {}
 
     def closed(cls, names):
@@ -136,33 +176,7 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None,
                 reached.setdefault(current, begin)
                 if every is not None:
                     every.setdefault(current, set()).add(begin)
-            alts = None if names is None else "|".join(map(re.escape, names))
-            # a static call names its class (BC.createAccount, not PC.createAccount); a bare .name( counts
-            # only where the class is used as an instance (new X(...), a variable or parameter of type X)
-            static = None if names is None else re.compile(r"\b" + re.escape(current) + r"\s*\.\s*(?:" + alts + r")\s*\(")
-            calls = None if names is None else re.compile(r"\.(?:" + alts + r")\s*\(")
-            instance = re.compile(r"\bnew\s+" + re.escape(current) + r"\b|\b" + re.escape(current)
-                                  + r"(?:<[^>]*>)?\s+\w+\s*[=;,)]")
-            for other, (_p, text) in sources.items():
-                if other == current or current not in words[other]:
-                    continue
-                if re.search(r"\b(?:extends|implements)\s+[\w\s,<>]*\b" + re.escape(current) + r"\b", text):
-                    hit = None
-                else:
-                    typed = bool(instance.search(texts[other]))
-                    # held in a field (its own or a superclass's): the methods that use that field
-                    fields = set(re.findall(r"\b" + re.escape(current) + r"(?:<[^>]*>)?\s+(\w+)\s*[;=]", texts[other]))
-                    uses = re.compile(r"\b(?:" + "|".join(map(re.escape, [current, *sorted(fields)])) + r")\b")
-                    # a method that builds the step (a facade's `return new Step(...)`) hands it to a caller
-                    # that runs it: it passes the change on once the step's execute() is affected
-                    builds = names is not None and "execute" in names and re.compile(
-                        r"\bnew\s+" + re.escape(current) + r"\s*[(<]")
-                    hit = {name for name, body in methods[other]
-                           if uses.search(body)
-                           and (calls is None or static.search(body) or (typed and calls.search(body))
-                                or (builds and builds.search(body)))}
-                    if not hit:
-                        continue
+            for other, hit in _hits(current, names, sources, methods, words, texts, memo):
                 known = affected.get(other, set())
                 if known is None:
                     continue
