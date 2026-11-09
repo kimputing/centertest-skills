@@ -19,6 +19,13 @@ See [`skills/ddt-analyzer/SKILL.md`](skills/ddt-analyzer/SKILL.md) for trigger p
 - Python 3 (`python3` or `python`)
 - `openpyxl` Python package (`pip install openpyxl`)
 
+If `pip install` is refused (Homebrew and other "externally managed" Pythons), create the shared
+CenterTest environment once — every skill finds it automatically:
+
+```bash
+python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang
+```
+
 ## Report sheets (28)
 
 Written by Data Studio. The fallback script writes 17 sheets with a different order; see SKILL.md.

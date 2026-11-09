@@ -1,0 +1,8 @@
+{
+  "name": "suite-builder",
+  "description": "Build and edit CenterTest suites: pick classes, methods and DataCombination rows, add to or remove from existing suites, delete or rename them — with a dry-run diff before every write",
+  "author": { "name": "Kimputing" },
+  "homepage": "https://github.com/Kimputing/centertest-skills",
+  "repository": "https://github.com/Kimputing/centertest-skills",
+  "license": "MIT"
+}

@@ -9,7 +9,6 @@ Rules 14002–14004: DDT data source integrity (cross-skill with ddt-tools).
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
@@ -21,7 +20,7 @@ from eir_rules import rule
 from rule_core import get_implemented_classes
 
 try:
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     _HAS_OPENPYXL = True
 except ImportError:
     _HAS_OPENPYXL = False
@@ -81,244 +80,250 @@ def datasource_file_check(commits: CommitsDict, config) -> RuleResult:
     return result
 
 
-def _load_sheet_codes(wb, sheet_name: str) -> dict[str, int]:
-    """Load {code: row_number} from a sheet's 'code' column."""
-    codes = {}
-    ws = wb[sheet_name]
-    # Find 'code' column (case-insensitive)
-    code_col = None
-    header_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
-    for i, h in enumerate(header_row):
-        if h and str(h).strip().lower() == "code":
-            code_col = i
-            break
+def _refcheck_findings(repo_dir: str) -> dict:
+    """{file: [(row, col, code, sheet, message)]} from the shared ddt-tools engine (cached per repo).
 
-    if code_col is None:
-        return codes
+    ddt_refcheck.py is a vendored copy of plugins/ddt-tools/scripts/ddt_refcheck.py, so the
+    healthcheck and xlsx-validate-refs report the same broken references.
+    """
+    if repo_dir in _REFCHECK_CACHE:
+        return _REFCHECK_CACHE[repo_dir]
+    import ddt_refcheck
+    previous = os.getcwd()
+    try:
+        os.chdir(repo_dir)
+        ddt_refcheck.reset_caches()
+        findings = ddt_refcheck.validate_project() if os.path.isdir("testdata") else {}
+    finally:
+        os.chdir(previous)
+    rel = {}
+    for path, errors in findings.items():
+        key = os.path.relpath(path, repo_dir) if os.path.isabs(path) else path
+        rel[key.replace("\\", "/")] = errors
+    _REFCHECK_CACHE[repo_dir] = rel
+    return rel
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        if row_idx > 1 and code_col < len(row) and row[code_col]:
-            val = str(row[code_col]).strip()
-            if val:
-                codes[val] = row_idx
-    return codes
+
+_REFCHECK_CACHE: dict = {}
 
 
-def _get_ref_columns(ws) -> list[tuple[int, str]]:
-    """Find columns starting with # (reference columns). Returns [(col_idx, sheet_name)]."""
-    refs = []
-    header_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
-    for i, h in enumerate(header_row):
-        if h and str(h).strip().startswith("#"):
-            sheet_name = str(h).strip()[1:]  # remove #
-            refs.append((i, sheet_name))
-    return refs
+# --- Which tests run each workbook ------------------------------------------------
+
+# A DDTHelper getter embeds its workbook: getWorkerscompWC_SubmissionDC(String code) {... "testdata/....xlsx" ...}
+_GETTER_RE = re.compile(r'public\s+static\s+[\w.]+\s+(get\w+)\s*\([^)]*\)\s*\{[^\n]*?"(testdata/[^"]+\.xlsx)"')
+_TRUTHY = {"true", "t", "yes", "y", "checked", "1"}  # CenterTest's TRUEOPTIONS (BaseTestData.isDisabled)
+
+NOT_RUN_UNUSED = "not run: no test reads this workbook"
+NOT_RUN_DISABLED = "not run: row disabled"
+
+
+def _workbook_users(repo_dir: str, source_root: str) -> dict:
+    """{workbook rel path: sorted class names that read it}.
+
+    A class reads a workbook through @DataDriven(datasource=...), a DDTHelper getter for it, or
+    its generated DC class name. Generated code (any 'datadriven' folder) is not a reader. A DC
+    reached through an @Rel column of a read DC is read by the same classes.
+    """
+    src = os.path.join(repo_dir, source_root)
+    getters: dict[str, str] = {}
+    readers: list[tuple[str, str]] = []  # (class name, code)
+    for root, _dirs, files in os.walk(src):
+        generated = "datadriven" in root.replace("\\", "/").split("/")
+        for name in files:
+            if not name.endswith(".java"):
+                continue
+            try:
+                with open(os.path.join(root, name), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            if generated:
+                if name == "DDTHelper.java":
+                    for m in _GETTER_RE.finditer(text):
+                        getters[m.group(1)] = m.group(2)
+            else:
+                readers.append((name[:-5], text))
+    workbooks = {}
+    testdata = os.path.join(repo_dir, "testdata")
+    for root, _dirs, files in os.walk(testdata):
+        for name in files:
+            if name.endswith(".xlsx") and not name.startswith("~$"):
+                rel = os.path.relpath(os.path.join(root, name), repo_dir).replace("\\", "/")
+                workbooks.setdefault(name[:-5], rel)  # DC class name == workbook stem
+    users: dict[str, set] = {}
+    dc_stems = {stem: path for stem, path in workbooks.items() if stem.endswith("DC")}
+    for cls, text in readers:
+        for path in _DATASOURCE_RE.findall(text):
+            users.setdefault(path, set()).add(cls)
+        for getter, path in getters.items():
+            if getter in text:
+                users.setdefault(path, set()).add(cls)
+        words = set(re.findall(r"\w+", text))  # a DC class name is a whole word: one set beats a regex per stem
+        for stem in words & dc_stems.keys():
+            users.setdefault(dc_stems[stem], set()).add(cls)
+    _follow_relationships(repo_dir, users)
+    return {path: sorted(classes) for path, classes in users.items()}
+
+
+def _workbook_tokens(repo_dir: str, source_root: str) -> dict:
+    """{workbook rel path: names a class uses to read it}: its datasource path, the DDTHelper getters
+    for it and its DC class name, plus those of every DC that reaches it through an @Rel column.
+    The same names _workbook_users looks for, so a reader's methods that use them can be found."""
+    src = os.path.join(repo_dir, source_root)
+    tokens: dict[str, set] = {}
+    for root, _dirs, files in os.walk(src):
+        if "datadriven" not in root.replace("\\", "/").split("/") or "DDTHelper.java" not in files:
+            continue
+        try:
+            with open(os.path.join(root, "DDTHelper.java"), encoding="utf-8", errors="replace") as fh:
+                for m in _GETTER_RE.finditer(fh.read()):
+                    tokens.setdefault(m.group(2), set()).add(m.group(1))
+        except OSError:
+            continue
+    for root, _dirs, files in os.walk(os.path.join(repo_dir, "testdata")):
+        for name in files:
+            if name.endswith(".xlsx") and not name.startswith("~$"):
+                rel = os.path.relpath(os.path.join(root, name), repo_dir).replace("\\", "/")
+                tokens.setdefault(rel, set()).add(rel)
+                if name[:-5].endswith("DC"):
+                    tokens[rel].add(name[:-5])
+    _follow_relationships(repo_dir, tokens)
+    return tokens
+
+
+def _follow_relationships(repo_dir: str, users: dict) -> None:
+    """Give each DC reached through an @Rel column the readers of the DC that reaches it.
+
+    A relationship names one target per identifier ($relationships: {Submission: {WC: ..., CA: ...}}):
+    a DC reaches the target of its own identifier (its path's $identifiers match) and of any
+    `IDENT.code` written in the column -- not every target of the relationship. With no identifier
+    at all, every target is kept."""
+    import ddt_refcheck
+    from ddt_reference_scope import default_identifier_for, identifier_of, parse_relationships
+    previous = os.getcwd()
+    try:
+        os.chdir(repo_dir)
+        ddt_refcheck.reset_caches()
+        by_relationship, identifiers = parse_relationships(ddt_refcheck.load_hierarchy())
+        if not by_relationship:
+            return
+        pending = list(users)
+        while pending:
+            path = pending.pop()
+            if not os.path.isfile(path):
+                continue
+            try:
+                wb = load_workbook(path, read_only=True, data_only=True)
+                sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
+                rows = list(wb[sheet].iter_rows(values_only=True)) if sheet else []
+                wb.close()
+            except Exception:
+                continue
+            header = [ddt_refcheck.format_value(h) for h in rows[0]] if rows else []
+            _refs, rels, hops = ddt_refcheck.classify_headers(header)
+            try:
+                default_id = default_identifier_for(path.replace("\\", "/"), identifiers)
+            except ValueError:
+                default_id = ""
+            wanted: dict[str, set] = {}
+            for col in rels:  # @Rel cells may name another identifier: IDENT.code
+                i = header.index(col)
+                ids = {identifier_of(c.strip(), default_id) for r in rows[1:] if i < len(r) and r[i] not in (None, "")
+                       for c in ddt_refcheck.format_value(r[i]).split(",") if c.strip()}
+                wanted.setdefault(col[1:].lower(), set()).update(ids or {default_id.upper()})
+            for _c, rel, _s in hops:
+                wanted.setdefault(rel.lower(), set()).add(default_id.upper())
+            for rel, ids in wanted.items():
+                targets = by_relationship.get(rel, {})
+                chosen = [targets[i] for i in ids if i in targets] if ids - {""} else []
+                for target in chosen or targets.values():
+                    before = len(users.get(target, ()))
+                    users.setdefault(target, set()).update(users[path])
+                    if len(users[target]) != before:
+                        pending.append(target)
+    finally:
+        os.chdir(previous)
+
+
+def _disabled_rows(repo_dir: str, path: str) -> set:
+    """Excel row numbers of DataCombination rows switched off in a 'Disabled' column."""
+    try:
+        wb = load_workbook(os.path.join(repo_dir, path), read_only=True, data_only=True)
+    except Exception:
+        return set()
+    sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
+    disabled = set()
+    if sheet:
+        col = None
+        for idx, row in enumerate(wb[sheet].iter_rows(values_only=True), start=1):
+            if col is None:
+                lowered = [str(h).strip().lower() if h is not None else "" for h in row]
+                if "disabled" not in lowered:
+                    break
+                col = lowered.index("disabled")
+                continue
+            if col < len(row) and str(row[col] if row[col] is not None else "").strip().lower() in _TRUTHY:
+                disabled.add(idx)
+    wb.close()
+    return disabled
+
+
+def workbook_users(repo_dir: str, source_root: str) -> dict:
+    """_workbook_users, computed once per project and run (the rules and the data panel share it)."""
+    key = (repo_dir, source_root)
+    if key not in _USERS_CACHE:
+        _USERS_CACHE[key] = _workbook_users(repo_dir, source_root)
+    return _USERS_CACHE[key]
+
+
+def _runs_in(repo_dir: str, source_root: str, path: str, row) -> str:
+    """Where a finding bites: the reading classes, or why it never runs."""
+    users = workbook_users(repo_dir, source_root)
+    if not path.endswith("DC.xlsx"):
+        return "reference data"
+    readers = users.get(path, [])
+    if not readers:
+        return NOT_RUN_UNUSED
+    if isinstance(row, int) and row in _disabled_rows(repo_dir, path):
+        return NOT_RUN_DISABLED
+    tests = [c for c in readers if c.endswith("Test")] or readers
+    more = len(readers) - 2
+    return ", ".join(tests[:2]) + (f" +{more}" if more > 0 else "")
+
+
+_USERS_CACHE: dict = {}
+
+
+def _is_relationship_column(col: str) -> bool:
+    """'@Submission' (a DC-to-DC relationship), not '@Submission.#Coverage' (a hop reference)."""
+    return col.startswith("@") and "." not in col
 
 
 @rule(id="14003", description="DDT reference column integrity", category="CenterTest")
 def ddt_reference_integrity(commits: CommitsDict, config) -> RuleResult:
     """
-    Verify DDT Excel reference columns (# columns) point to valid sheets and codes.
+    Verify # reference columns (and @Rel.#Ref hop columns) point to codes that exist.
 
-    For each @DataDriven datasource file:
-    1. Find columns starting with # (e.g., #Payment, #Coverage)
-    2. Check that the referenced sheet exists (in same file or reference files)
-    3. Check that each code in the # column exists in the referenced sheet
-
-    This replicates the core logic of ddt-tools/xlsx-validate-refs.py
-    as a healthcheck rule.
+    Uses the same engine as ddt-tools' xlsx-validate-refs.py: the DC's reference scope comes
+    from its References sheet or $references, overrides (#Ref.Field), joins (#A<>#B) and
+    sentinels (<blank>) are not codes, and a hop column is checked in the related DC's scope.
+    Reference sheets' own # columns are included. @-relationship findings are rule 14004.
     """
     result = RuleResult(
         rule_id="14003",
         description="DDT reference column integrity",
         category="CenterTest",
-        headers=["File", "Sheet", "Row", "Column", "Code", "Issue"],
+        headers=["File", "Row", "Column", "Code", "Issue", "Runs in"],
     )
-
     if not _HAS_OPENPYXL:
         result.error = "openpyxl required for DDT reference validation"
         return result
-
-    repo_dir = config.repository_dir
-
-    # Collect all unique datasource paths from @DataDriven annotations
-    datasource_paths = set()
-    for commit_info, files in sorted(commits.items()):
-        for f in files:
-            mc = f.main_class
-            if mc is None:
-                continue
-            for method in mc.methods:
-                if method.body:
-                    m = _DATASOURCE_RE.search(method.body)
-                    if m:
-                        datasource_paths.add(m.group(1))
-
-    # Also scan testdata/ directory for all DC xlsx files
-    testdata_dir = os.path.join(repo_dir, "testdata")
-    if os.path.isdir(testdata_dir):
-        for root, _dirs, filenames in os.walk(testdata_dir):
-            for fname in filenames:
-                if fname.endswith("DC.xlsx"):
-                    rel = os.path.relpath(os.path.join(root, fname), repo_dir)
-                    datasource_paths.add(rel)
-
-    # Load reference data files (non-DC files in testdata/) for code lookup
-    ref_codes: dict[str, dict[str, int]] = {}  # {sheet_name_lower: {code: row}}
-
-    if os.path.isdir(testdata_dir):
-        for fname in os.listdir(testdata_dir):
-            if fname.endswith(".xlsx") and not fname.endswith("DC.xlsx"):
-                ref_path = os.path.join(testdata_dir, fname)
-                try:
-                    wb_ref = load_workbook(ref_path, read_only=True, data_only=True)
-                    for sheet_name in wb_ref.sheetnames:
-                        codes = _load_sheet_codes(wb_ref, sheet_name)
-                        if codes:
-                            key = sheet_name.lower()
-                            if key not in ref_codes:
-                                ref_codes[key] = {}
-                            ref_codes[key].update(codes)
-                    wb_ref.close()
-                except Exception:
-                    pass
-
-    # Validate each DC file
-    for ds_path in sorted(datasource_paths):
-        full_path = os.path.join(repo_dir, ds_path)
-        if not os.path.isfile(full_path):
-            continue  # rule 14002 handles missing files
-
-        try:
-            wb = load_workbook(full_path, read_only=True, data_only=True)
-        except Exception:
-            result.rows.append([ds_path, "-", "-", "-", "-", "Cannot open Excel file"])
-            continue
-
-        # Build local codes from all sheets in this DC file
-        local_codes: dict[str, dict[str, int]] = {}
-        for sheet_name in wb.sheetnames:
-            codes = _load_sheet_codes(wb, sheet_name)
-            if codes:
-                local_codes[sheet_name.lower()] = codes
-
-        # Check each sheet for # reference columns
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            ref_cols = _get_ref_columns(ws)
-            if not ref_cols:
-                continue
-
-            for col_idx, ref_sheet_name in ref_cols:
-                ref_key = ref_sheet_name.lower()
-
-                # Check if referenced sheet exists anywhere
-                available_codes = {}
-                if ref_key in local_codes:
-                    available_codes = local_codes[ref_key]
-                elif ref_key in ref_codes:
-                    available_codes = ref_codes[ref_key]
-                else:
-                    result.rows.append([
-                        os.path.basename(ds_path),
-                        sheet_name,
-                        "-",
-                        f"#{ref_sheet_name}",
-                        "-",
-                        f"Referenced sheet '{ref_sheet_name}' not found",
-                    ])
-                    continue
-
-                # Validate each code in the reference column
-                for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                    if col_idx >= len(row) or not row[col_idx]:
-                        continue
-                    cell_value = str(row[col_idx]).strip()
-                    if not cell_value:
-                        continue
-
-                    # Handle comma-separated codes
-                    codes_to_check = [c.strip() for c in cell_value.split(",")]
-                    for code in codes_to_check:
-                        if code and code not in available_codes:
-                            result.rows.append([
-                                os.path.basename(ds_path),
-                                sheet_name,
-                                row_idx,
-                                f"#{ref_sheet_name}",
-                                code,
-                                "Code not found in referenced sheet",
-                            ])
-
-        wb.close()
-
+    for path, errors in sorted(_refcheck_findings(config.repository_dir).items()):
+        for row_idx, col, code, _sheet, message in errors:
+            if not _is_relationship_column(col) and col:
+                result.rows.append([path, row_idx or "-", col, code or "-", message,
+                                    _runs_in(config.repository_dir, config.source_root, path, row_idx)])
     return result
-
-
-# --- Rule 14004: DC -> DC @-relationship integrity -------------------------------
-
-_IDENTIFIER_PREFIX = re.compile(r"^([A-Za-z0-9_]+)\..+$")
-
-
-def _norm_sheet(name: str) -> str:
-    """Normalise a sheet name: strip non-alphanumerics, lowercase (mirrors Java resolver)."""
-    return re.sub(r"[^a-z0-9]", "", name.lower())
-
-
-def _identifier_of(raw_code: str, default_identifier: str) -> str:
-    """Identifier (UPPER) of a relationship code: the ``token.`` prefix, else the default."""
-    if raw_code is not None:
-        m = _IDENTIFIER_PREFIX.match(raw_code.strip())
-        if m:
-            return m.group(1).upper()
-    return (default_identifier or "").strip().upper()
-
-
-def _strip_identifier(raw_code: str) -> str:
-    """The bare code with any ``identifier.`` prefix removed."""
-    trimmed = (raw_code or "").strip()
-    m = _IDENTIFIER_PREFIX.match(trimmed)
-    if m:
-        return trimmed[len(m.group(1)) + 1:].strip()
-    return trimmed
-
-
-def _parse_relationships(hierarchy: dict):
-    """($relationships + $identifiers) -> (by_relationship{rel_lower:{ID:target}}, [(ID,[patterns])])."""
-    by_rel: dict = {}
-    identifiers: list = []
-    ids = hierarchy.get("$identifiers") if isinstance(hierarchy, dict) else None
-    if isinstance(ids, dict):
-        for ident, patterns in ids.items():
-            compiled = []
-            for p in (patterns if isinstance(patterns, list) else []):
-                try:
-                    compiled.append(re.compile(p))
-                except re.error:
-                    pass
-            identifiers.append((ident.upper(), compiled))
-    rels = hierarchy.get("$relationships") if isinstance(hierarchy, dict) else None
-    if isinstance(rels, dict):
-        for rel, targets in rels.items():
-            target_map = {}
-            if isinstance(targets, dict):
-                for ident, target in targets.items():
-                    target_map[ident.upper()] = target
-            by_rel[rel.lower()] = target_map
-    return by_rel, identifiers
-
-
-def _default_identifier_for(dc_path: str, identifiers) -> str:
-    """Default identifier (UPPER) for a DC path; '' if none or ambiguous."""
-    normalized = dc_path.replace("\\", "/").strip()
-    match = ""
-    for ident, patterns in identifiers:
-        for pattern in patterns:
-            if pattern.fullmatch(normalized):
-                if match and match != ident:
-                    return ""  # ambiguous — treated as no default
-                match = ident
-    return match
 
 
 @rule(id="14004", description="DDT relationship (@) target integrity", category="CenterTest")
@@ -330,158 +335,20 @@ def ddt_relationship_integrity(commits: CommitsDict, config) -> RuleResult:
       1. resolve the identifier ($identifiers default for the DC, or a Prefix. on the value)
       2. look up the target DC file via $relationships[relationship][identifier]
       3. check the target DC file exists and the referenced Code is a row in it
+    Together with 14003 this equals what xlsx-validate-refs.py reports.
     """
     result = RuleResult(
         rule_id="14004",
         description="DDT relationship (@) target integrity",
         category="CenterTest",
-        headers=["File", "Row", "Column", "Code", "Issue"],
+        headers=["File", "Row", "Column", "Code", "Issue", "Runs in"],
     )
-
     if not _HAS_OPENPYXL:
         result.error = "openpyxl required for DDT relationship validation"
         return result
-
-    repo_dir = config.repository_dir
-    hierarchy_path = os.path.join(repo_dir, "testdata", "DataDrivenHierarchy.json")
-    if not os.path.isfile(hierarchy_path):
-        return result
-    try:
-        with open(hierarchy_path) as fh:
-            hierarchy = json.load(fh)
-    except Exception:
-        result.error = "Cannot read testdata/DataDrivenHierarchy.json"
-        return result
-
-    by_relationship, identifiers = _parse_relationships(hierarchy)
-    if not by_relationship:
-        return result  # no relationships configured — nothing to validate
-
-    testdata_dir = os.path.join(repo_dir, "testdata")
-    if not os.path.isdir(testdata_dir):
-        return result
-
-    code_cache: dict = {}
-
-    def codes_of(target_rel_path: str) -> set:
-        if target_rel_path in code_cache:
-            return code_cache[target_rel_path]
-        codes: set = set()
-        try:
-            wb = load_workbook(os.path.join(repo_dir, target_rel_path), read_only=True, data_only=True)
-            name = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
-            if name:
-                codes = set(_load_sheet_codes(wb, name).keys())
-            wb.close()
-        except Exception:
-            pass
-        code_cache[target_rel_path] = codes
-        return codes
-
-    for root, _dirs, filenames in os.walk(testdata_dir):
-        for fname in filenames:
-            if not fname.endswith("DC.xlsx") or fname.startswith("~$"):
-                continue
-            full_path = os.path.join(root, fname)
-            rel_path = os.path.relpath(full_path, repo_dir).replace("\\", "/")
-            try:
-                wb = load_workbook(full_path, read_only=True, data_only=True)
-            except Exception:
-                continue
-            dc_sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
-            if dc_sheet is None:
-                wb.close()
-                continue
-            ws = wb[dc_sheet]
-            header_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
-            rel_cols = [(i, str(h).strip()[1:]) for i, h in enumerate(header_row)
-                        if h and str(h).strip().startswith("@")]
-            if not rel_cols:
-                wb.close()
-                continue
-            default_id = _default_identifier_for(rel_path, identifiers)
-            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                for col_idx, rel_name in rel_cols:
-                    if col_idx >= len(row) or not row[col_idx]:
-                        continue
-                    cell_value = str(row[col_idx]).strip()
-                    if not cell_value:
-                        continue
-                    targets = by_relationship.get(rel_name.lower(), {})
-                    for raw in [c.strip() for c in cell_value.split(",")]:
-                        if not raw:
-                            continue
-                        ident = _identifier_of(raw, default_id)
-                        bare = _strip_identifier(raw)
-                        target = targets.get(ident)
-                        if target is None:
-                            issue = f"Unknown identifier '{ident}' for relationship '{rel_name}'"
-                        elif not os.path.isfile(os.path.join(repo_dir, target)):
-                            issue = f"Target DC file not found: {target}"
-                        elif bare not in codes_of(target):
-                            issue = f"Code '{bare}' not found in {target}"
-                        else:
-                            continue
-                        result.rows.append([fname, row_idx, f"@{rel_name}", raw, issue])
-            wb.close()
-
-    # --- Reference-to-reference: #-columns on reference (non-DC) sheets ---
-    # Build a global scope: sheet_name_lower -> {code: row} from all non-DC xlsx in testdata/
-    ref_sheet_codes: dict[str, dict[str, int]] = {}
-    for root, _dirs, filenames in os.walk(testdata_dir):
-        for fname in filenames:
-            if not fname.endswith(".xlsx") or fname.endswith("DC.xlsx") or fname.startswith("~$"):
-                continue
-            full_path = os.path.join(root, fname)
-            try:
-                wb_ref = load_workbook(full_path, read_only=True, data_only=True)
-                for sheet_name in wb_ref.sheetnames:
-                    key = _norm_sheet(sheet_name)
-                    codes = _load_sheet_codes(wb_ref, sheet_name)
-                    if codes and key not in ref_sheet_codes:
-                        ref_sheet_codes[key] = codes
-                wb_ref.close()
-            except Exception:
-                pass
-
-    # Validate #-columns on each reference (non-DC) file's sheets
-    for root, _dirs, filenames in os.walk(testdata_dir):
-        for fname in filenames:
-            if not fname.endswith(".xlsx") or fname.endswith("DC.xlsx") or fname.startswith("~$"):
-                continue
-            full_path = os.path.join(root, fname)
-            try:
-                wb_ref = load_workbook(full_path, read_only=True, data_only=True)
-            except Exception:
-                continue
-            for sheet_name in wb_ref.sheetnames:
-                ws = wb_ref[sheet_name]
-                header_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
-                r2r_cols = []
-                for i, h in enumerate(header_row):
-                    if h and str(h).strip().startswith("#"):
-                        raw_target = str(h).strip()[1:]
-                        # Normalise: strip non-alphanumerics, lowercase (mirrors Java)
-                        target_lower = _norm_sheet(raw_target)
-                        r2r_cols.append((i, str(h).strip(), raw_target, target_lower))
-                if not r2r_cols:
-                    continue
-                for col_idx, col_header, raw_target, target_lower in r2r_cols:
-                    if target_lower not in ref_sheet_codes:
-                        result.rows.append([fname, sheet_name, "-", col_header, "-",
-                                            f"Referenced sheet '{raw_target}' not found"])
-                        continue
-                    available = ref_sheet_codes[target_lower]
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                        if col_idx >= len(row) or not row[col_idx]:
-                            continue
-                        cell_value = str(row[col_idx]).strip()
-                        if not cell_value:
-                            continue
-                        for code in [c.strip() for c in cell_value.split(",")]:
-                            if code and code not in available:
-                                result.rows.append([fname, sheet_name, row_idx, col_header,
-                                                    code, f"Code not found in '{raw_target}' sheet"])
-            wb_ref.close()
-
+    for path, errors in sorted(_refcheck_findings(config.repository_dir).items()):
+        for row_idx, col, code, _sheet, message in errors:
+            if _is_relationship_column(col) or not col:
+                result.rows.append([path, row_idx or "-", col or "-", code or "-", message,
+                                    _runs_in(config.repository_dir, config.source_root, path, row_idx)])
     return result

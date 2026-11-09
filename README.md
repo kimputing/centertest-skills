@@ -8,11 +8,14 @@ A Claude Code plugin marketplace distributing skills for CenterTest test automat
 
 | Plugin | Description | Status |
 |--------|-------------|--------|
-| [centertest-healthcheck](plugins/centertest-healthcheck/) | Java code quality analysis — 27 rules, HTML dashboard + Excel reports | Active |
-| [cssid-finder](plugins/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs | Active |
-| [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure and generate 15-sheet Excel report | Active |
-| [ddt-tools](plugins/ddt-tools/) | Validate DC references, diff xlsx, report unused codes | Active |
-| [recording-to-test](plugins/recording-to-test/) | Generate a CenterTest test from a CenterTest Recorder recording | Active |
+| [centertest-healthcheck](plugins/centertest-healthcheck/) | Suite health for QA architects: a trust verdict (checks that can never fail, data that cannot load), findings at `path:line`, branch review with a PR verdict and what to rerun (as one suite), monthly trend, screens and wizards the suite opens, which product coverages and limit/deductible options the scenarios select (and values the product does not offer), the states or provinces each line runs in, how much of the full run each suite reaches (and what no suite does), the smallest suite with the full run's breadth or what a suite misses (`--cover`), everything one scenario enters (`--scenario`), which scenarios use a coverage or values (combined) and which tests touch a screen, what changed since the last check, a weekly page across client suites, and JSON on any mode for other tools | Active |
+| [cssid-finder](plugins/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs, or by the words on screen (`--words "effective date" --page PolicyInfo`) | Active |
+| [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure — 28-sheet Excel report via Data Studio (17 from the fallback script) | Active |
+| [ddt-tools](plugins/ddt-tools/) | Validate DC references (relationship hops included), diff xlsx, report codes nothing uses | Active |
+| [suite-builder](plugins/suite-builder/) | Build and edit suites: pick classes, methods and DDT rows; add, remove, delete, rename; see what each suite runs and which entries match nothing | Active |
+| [recording-to-test](plugins/recording-to-test/) | Generate a CenterTest test from a CenterTest Recorder recording; measure how much of a recorded flow is already automated | Active |
+
+Other tools (the CenterTest MCP server, CI) can run these implementations directly: every check has a `--json` mode — see [INTEGRATION.md](INTEGRATION.md).
 
 ## Installation
 
@@ -25,9 +28,16 @@ Inside Claude Code, add the marketplace and install the plugins you want:
 /plugin install ddt-analyzer@centertest-skills
 /plugin install ddt-tools@centertest-skills
 /plugin install recording-to-test@centertest-skills
+/plugin install suite-builder@centertest-skills
 ```
 
 Each plugin is independent — install only the ones you need.
+
+The healthcheck and DDT plugins need `openpyxl` (and `javalang` for the healthcheck). Where `pip install` is refused (Homebrew and other "externally managed" Pythons), create the shared environment once and every skill uses it:
+
+```bash
+python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang
+```
 
 ## Updating
 

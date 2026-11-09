@@ -1,0 +1,32 @@
+# suite-builder
+
+Build and edit CenterTest suites (`CenterTestSuiteList.json`) from the project's own tests: pick
+classes, methods and DataCombination rows, add them to or remove them from existing suites, delete or
+rename suites, and see what every suite really runs — including entries that match nothing, which
+CenterTest reports as failed scenarios.
+
+## Install
+
+```text
+/plugin marketplace add Kimputing/centertest-skills
+/plugin install suite-builder@centertest-skills
+```
+
+## Use
+
+In a CenterTest project: "which suites do we have?", "create a Smoke suite with the login tests and
+the Texas submission rows", "remove the disabled vehicle types from Regression1", "delete the Old
+suite". The skill shows the selection and a dry-run diff before it writes anything.
+
+Prefer ticking boxes? "Open the suite picker" writes a page with the class → method → row tree; it shows
+the suite before → after and copies the command for Claude to apply. Its filter also searches each row's
+own data (type `Truck`, `TX`, `Motorcarrier`) and shows the matching cells; on the command line that is
+`pick --data "State=TX"`. `picker --from FILE` opens a suggested selection to adjust first: a suite JSON, or
+the healthcheck's `--json` result (a review's `Rerun-<sha>` suite, `--uses`/`--touches` entries, a `--cover` suite such as `Cover-Smoke`).
+
+Engine: `scripts/suite.py` (`picker` included) (`list`, `show`, `scan`, `pick`, `create`, `add`, `remove`, `delete`,
+`rename`, `set`); see `skills/suite-builder/SKILL.md`.
+
+## Prerequisites
+
+- Python 3 — no packages (workbooks are read with the standard library).

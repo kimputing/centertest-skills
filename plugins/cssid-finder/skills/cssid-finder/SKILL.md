@@ -1,6 +1,6 @@
 ---
 name: cssid-finder
-description: Find the Java getter chain (hierarchyPath) for a Guidewire UI CSS ID in CenterTest. Use when the user says "find getter", "what's the getter", or pastes a CSS ID and asks how to reference it in PC, CC, BC, or AB/CM. Triggers on phrases like "find getter in PC for", "getter in BC for", "AB getter for", or any CSS ID lookup request.
+description: Find the Java getter chain (hierarchyPath) for a Guidewire UI CSS ID in CenterTest. Use when the user says "find getter", "what's the getter", or pastes a CSS ID and asks how to reference it in PC, CC, BC, or AB/CM. Triggers on phrases like "find getter in PC for", "getter in BC for", "AB getter for", or any CSS ID lookup request. Also finds a widget by the words on screen ("getter for Effective Date on Policy Info", "which widget is Producer Code").
 ---
 
 # Skill: CSS ID Getter Finder
@@ -58,6 +58,21 @@ Show the getter chain as a code snippet the developer can paste into their test:
 ```java
 new AccountFile_SummaryPage(getContext()).getAccountHolder()
 ```
+
+### By the words on screen (no CSS id at hand)
+
+When the user names a field by what they see ("Effective Date on the Policy Info screen"), search the
+words; `--page` narrows to ids with that page, wizard screen or panel in any segment:
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/find_getter.py" pc --words "effective date" --page PolicyInfo
+```
+
+Results come element-first: ids whose last segment is exactly those words, then ones whose last
+segment holds them among others, then ids where other segments supply them; at most 15 shown with the
+total. The generated ids carry no labels, so a label that differs from the element id ("Pol Eff Date")
+is not found: ask for the CSS id (right-click → Inspect) then. When several pages match, show them and
+ask which screen the user means (submission, renewal, policy change...).
 
 If the result contains an iterator placeholder `#` (e.g. `getClauseIterator(#)`), tell the
 user to replace it with the concrete row index, for example `getClauseIterator(0)`.

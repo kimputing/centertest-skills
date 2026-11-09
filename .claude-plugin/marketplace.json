@@ -13,35 +13,70 @@
       "source": "./plugins/centertest-healthcheck",
       "description": "Java code quality analysis for CenterTest projects — 27 rules, HTML+Excel reports",
       "category": "code-quality",
-      "keywords": ["centertest", "java", "healthcheck", "code-quality"]
+      "keywords": [
+        "centertest",
+        "java",
+        "healthcheck",
+        "code-quality"
+      ]
     },
     {
       "name": "cssid-finder",
       "source": "./plugins/cssid-finder",
       "description": "Find Java getter chains for Guidewire UI CSS IDs",
       "category": "developer-tools",
-      "keywords": ["centertest", "guidewire", "cssid"]
+      "keywords": [
+        "centertest",
+        "guidewire",
+        "cssid"
+      ]
     },
     {
       "name": "ddt-analyzer",
       "source": "./plugins/ddt-analyzer",
       "description": "Analyze CenterTest Data-Driven Testing structure — 28-sheet Excel report (17 without Data Studio)",
       "category": "test-data",
-      "keywords": ["centertest", "ddt", "test-data", "excel"]
+      "keywords": [
+        "centertest",
+        "ddt",
+        "test-data",
+        "excel"
+      ]
     },
     {
       "name": "ddt-tools",
       "source": "./plugins/ddt-tools",
       "description": "Validate DC references, diff xlsx, report unused codes",
       "category": "test-data",
-      "keywords": ["centertest", "ddt", "xlsx"]
+      "keywords": [
+        "centertest",
+        "ddt",
+        "xlsx"
+      ]
     },
     {
       "name": "recording-to-test",
       "source": "./plugins/recording-to-test",
       "description": "Scenario wizard: create a CenterTest test from a Recorder recording, a request, a story, a Jira issue or an existing test, reusing the project's own tests, data and facades",
       "category": "developer-tools",
-      "keywords": ["centertest", "recorder", "guidewire", "test-generation"]
+      "keywords": [
+        "centertest",
+        "recorder",
+        "guidewire",
+        "test-generation"
+      ]
+    },
+    {
+      "name": "suite-builder",
+      "source": "./plugins/suite-builder",
+      "description": "Build and edit CenterTest suites: pick classes, methods and DDT rows, add/remove/delete/rename suites, see what each suite runs",
+      "category": "test-management",
+      "keywords": [
+        "centertest",
+        "suite",
+        "ddt",
+        "test-selection"
+      ]
     }
   ]
 }

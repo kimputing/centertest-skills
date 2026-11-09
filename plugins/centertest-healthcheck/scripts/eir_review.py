@@ -1,0 +1,682 @@
+"""
+Branch review: what a branch introduces and fixes, compared with where it started.
+
+The merge-base of BASE and HEAD and the HEAD commit are exported with ``git archive`` into
+temporary folders (no checkout, no worktree: the repository is only read), every active rule
+runs on both, and findings are diffed. A finding is the same finding when its rule and its row
+(minus workbook row numbers, which shift when rows are inserted) match, so a branch is only
+held responsible for what it changed.
+
+The verdict is written as Markdown, ready to paste into the pull request, and printed. The
+exit code is 1 when the branch introduces a trust blocker (see eir_report.TRUST_RULES), so the
+review can gate a pipeline.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+import tarfile
+import tempfile
+from collections import Counter
+from datetime import datetime
+
+from eir_models import LOCAL_COMMIT, RuleResult
+from eir_parser import parse_directory
+from eir_report import TRUST_RULES, _finding_label, is_dormant
+from eir_rules import run_rules
+from eir_suppressions import apply_suppressions
+
+# Columns that locate a finding or describe its context; they change without the finding changing.
+_POSITION_COLUMNS = {"Row", "Line No", "Line Number", "Runs in", "Location"}
+
+# Categories whose rows describe the project rather than problems in it.
+_INFORMATIONAL = {"Statistics"}
+
+
+def _git(repo_dir: str, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=repo_dir, capture_output=True)
+
+
+def resolve_rev(repo_dir: str, rev: str) -> str | None:
+    """Full SHA for rev; tries origin/<rev> when rev is not a local name."""
+    for candidate in (rev, f"origin/{rev}"):
+        r = _git(repo_dir, "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}")
+        if r.returncode == 0:
+            return r.stdout.decode().strip()
+    return None
+
+
+def merge_base(repo_dir: str, base_sha: str, head_sha: str) -> str | None:
+    r = _git(repo_dir, "merge-base", base_sha, head_sha)
+    return r.stdout.decode().strip() if r.returncode == 0 else None
+
+
+def export_tree(repo_dir: str, sha: str, dest: str, paths: list[str]) -> list[str]:
+    """Extract the given paths of commit sha into dest. Returns the paths that existed."""
+    present = [p for p in paths
+               if _git(repo_dir, "cat-file", "-e", f"{sha}:{p}").returncode == 0]
+    if not present:
+        return []
+    r = _git(repo_dir, "archive", "--format=tar", sha, "--", *present)
+    if r.returncode != 0:
+        raise RuntimeError(f"git archive {sha[:8]} failed: {r.stderr.decode().strip()}")
+    with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
+        try:
+            tar.extractall(dest, filter="data")
+        except TypeError:  # Python < 3.12 has no extraction filters
+            tar.extractall(dest)
+    return present
+
+
+_FINGERPRINT: list = []
+
+
+def _fingerprint() -> str:
+    """Hash of the plugin's own scripts: a cached analysis is only reused by the code that made it."""
+    if not _FINGERPRINT:
+        h = hashlib.sha256()
+        here = os.path.dirname(os.path.abspath(__file__))
+        for root, _dirs, files in sorted(os.walk(here)):
+            for name in sorted(f for f in files if f.endswith(".py")):
+                with open(os.path.join(root, name), "rb") as fh:
+                    h.update(name.encode() + fh.read())
+        _FINGERPRINT.append(h.hexdigest()[:16])
+    return _FINGERPRINT[0]
+
+
+def analyze_commit(repo: str, sha: str, tree_dir: str, config, suppressions) -> tuple[list[RuleResult], int]:
+    """analyze_tree for a commit, cached in ~/.centertest/cache/analysis/: a commit never changes, so the
+    same commit, rules, settings and plugin code give the same findings (reviews, --weekly and --trend
+    re-analyse the same merge-bases and month-ends)."""
+    import pickle
+    simple = (str, int, float, bool, type(None), list, tuple, dict, set)
+    knobs = sorted((k, repr(v)) for k, v in vars(config).items()
+                   if isinstance(v, simple) and k not in ("repository_dir", "output_dir", "output_formats"))
+    settings = repr((os.path.abspath(repo), sha, knobs, repr(suppressions), _fingerprint()))
+    key = hashlib.sha256(settings.encode()).hexdigest()[:32]
+    path = os.path.join(os.path.expanduser("~"), ".centertest", "cache", "analysis", key + ".pkl")
+    try:
+        with open(path, "rb") as fh:
+            return pickle.load(fh)
+    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ImportError):
+        pass
+    result = analyze_tree(tree_dir, config, suppressions)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            pickle.dump(result, fh)
+    except OSError:
+        pass  # no cache, same answer
+    return result
+
+
+def analyze_tree(tree_dir: str, config, suppressions) -> tuple[list[RuleResult], int]:
+    """Run the active rules on an exported tree, as local mode would. Returns (results, files)."""
+    cfg = copy.copy(config)
+    cfg.repository_dir = tree_dir
+    files = parse_directory(tree_dir, cfg.source_root, cfg.exclude_packages,
+                            cfg.exclude_files, cfg.compat_comment_lines, None)
+    results = run_rules({LOCAL_COMMIT: files}, cfg)
+    from eir_locate import annotate_locations
+    annotate_locations(results, {LOCAL_COMMIT: files}, tree_dir)
+    if suppressions:
+        results, _ = apply_suppressions(results, suppressions)
+    return results, len(files)
+
+
+def _findings(result: RuleResult):
+    """Yield (key, label) for each finding of a result.
+
+    Row keys drop position columns. Grouped items (rules 1004, 4001, ...) embed counts such as
+    "13/14 (93%)" or "6x"; those are replaced by "#" in the key, so adding one more use of an
+    existing pattern is not reported as one finding fixed and another introduced.
+    """
+    keep = [i for i, h in enumerate(result.headers) if str(h) not in _POSITION_COLUMNS]
+    for row in result.rows:
+        yield (("row", tuple(str(row[i]) for i in keep if i < len(row))),
+               _finding_label(result.headers, row) + (" (not run)" if is_dormant(result.headers, row) else ""))
+    for section in result.sections:
+        # Snapshot rules title their single section after the commit ("Commit local"): no information.
+        prefix = "" if section.title.startswith("Commit ") else f"{section.title}: "
+        for item in section.items:
+            yield ("item", section.title, _DIGITS.sub("#", str(item))), f"{prefix}{item}"
+        for sub in section.subsections:
+            for item in sub.items:
+                yield (("item", section.title, sub.title, _DIGITS.sub("#", str(item))),
+                       f"{prefix}{sub.title}: {item}")
+        for row in section.rows:
+            yield ("row", section.title, tuple(str(v) for v in row)), prefix + ", ".join(str(v) for v in row)
+
+
+_DIGITS = re.compile(r"\d+")
+
+
+def finding_keys(result: RuleResult) -> Counter:
+    """Counter of finding identities for a rule's result."""
+    return Counter(key for key, _ in _findings(result))
+
+
+def _labels(result: RuleResult) -> dict:
+    """key -> readable labels, one per occurrence (rows keep their own row number)."""
+    labels: dict = {}
+    for key, label in _findings(result):
+        labels.setdefault(key, []).append(label)
+    return labels
+
+
+def diff_results(base: list[RuleResult], head: list[RuleResult]) -> list[dict]:
+    """Per rule: {rule_id, description, category, trust, introduced: [label], fixed: [label]}.
+
+    Only rules with a change are returned, trust rules first. Rules that errored on either
+    side are skipped (their findings are unknown, not changed).
+    """
+    base_by_id = {r.rule_id: r for r in base}
+    changes = []
+    for h in head:
+        b = base_by_id.get(h.rule_id)
+        if h.category in _INFORMATIONAL:
+            continue
+        if h.error or b is None or b.error:
+            changes.append({"rule_id": h.rule_id, "description": h.description, "category": h.category,
+                            "trust": TRUST_RULES.get(h.rule_id, (None,))[0], "introduced": [], "fixed": [], "blocking": 0,
+                            "error": h.error or (b.error if b else "not run on the base")})
+            continue
+        hk, bk = finding_keys(h), finding_keys(b)
+        added, removed = hk - bk, bk - hk
+        if not added and not removed:
+            continue
+        hl, bl = _labels(h), _labels(b)
+        changes.append({
+            "rule_id": h.rule_id, "description": h.description, "category": h.category,
+            "trust": TRUST_RULES.get(h.rule_id, (None,))[0],
+            "introduced": [label for k in added for label in hl[k][-added[k]:]],
+            "blocking": 0 if h.rule_id not in TRUST_RULES else
+            sum(1 for k in added for label in hl[k][-added[k]:] if not label.endswith(" (not run)")),
+            "fixed": [label for k in removed for label in bl[k][-removed[k]:]],
+            "error": None,
+        })
+    changes.sort(key=lambda c: (c["trust"] is None, c["rule_id"]))
+    return changes
+
+
+def verdict(changes: list[dict]) -> tuple[str, int]:
+    """(one-line verdict, exit code)."""
+    blockers = sum(c.get("blocking", 0) for c in changes)
+    introduced = sum(len(c["introduced"]) for c in changes)
+    fixed = sum(len(c["fixed"]) for c in changes)
+    unknown = [c["rule_id"] for c in changes if c.get("error") and c["trust"]]
+    if blockers:
+        return (f"Changes requested: this branch introduces {blockers} trust blocker"
+                f"{'s' if blockers != 1 else ''} (tests that cannot fail or data that cannot load).", 1)
+    if unknown:
+        return (f"Not verified: trust rule{'s' if len(unknown) != 1 else ''} {', '.join(unknown)} could not run "
+                "on both sides, so this branch may hide blockers.", 1)
+    if introduced:
+        return (f"Mergeable with follow-ups: {introduced} new finding{'s' if introduced != 1 else ''}, "
+                f"no trust blockers; {fixed} fixed.", 0)
+    return f"Clean: no new findings; {fixed} fixed.", 0
+
+
+GROUP_FROM = 10  # above this many tests the plan is read by cause, not test by test
+
+
+def _rerun_by_cause(rerun: list[dict], limit: int) -> list[str]:
+    """The plan grouped by the change that reaches it, biggest first, with the tests that only that
+    change reaches (they leave the plan if it is reverted); row-level reruns listed on their own."""
+    causes: dict[str, list[str]] = {}
+    for e in rerun:
+        for reason in e["reasons"]:
+            causes.setdefault(reason, []).append(e["test"])
+    ranked = sorted(causes.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    only = {reason: sum(1 for e in rerun if e["reasons"] == [reason]) for reason in causes}
+    out = ["By change (a test reached by several changes is under each):", ""]
+    for reason, tests in ranked[:limit]:
+        names = ", ".join(tests[:8]) + (f" +{len(tests) - 8}" if len(tests) > 8 else "")
+        alone = f", {only[reason]} only through it" if only[reason] else ""
+        out.append(f"- **{reason}** → {len(tests)} test{'s' if len(tests) != 1 else ''}{alone}: {names}")
+    if len(ranked) > limit:
+        out.append(f"- … and {len(ranked) - limit} more changes")
+    rows = [e for e in rerun if e["codes"]]
+    if rows:
+        out += ["", "Only some rows:"] + [f"- **{e['test']}** — rows {', '.join(e['codes'])}" for e in rows[:limit * 2]]
+        if len(rows) > limit * 2:
+            out.append(f"- … and {len(rows) - limit * 2} more")
+    return out
+
+
+def breadth_lost(meta: dict) -> str:
+    """'The run loses 2 flows, 3 coverages, 1 limit/deductible option, 1 line/jurisdiction' - what leaves
+    regression without any test failing, in one line for the top of the review; "" when nothing does."""
+    scope, coverage = meta.get("scope") or {}, meta.get("coverage") or []
+    counts = [(len(scope.get("flows_stopped") or []), "flow"),
+              (sum(len(c["lost"]) for c in coverage), "coverage"),
+              (sum(len(c.get("options_lost") or []) for c in coverage), "limit/deductible option"),
+              (sum(len(s["lost"]) for s in meta.get("states") or []), "line/jurisdiction")]
+    parts = [f"{n} {what}{'' if n == 1 else 's'}" for n, what in counts if n]
+    return "The run loses " + ", ".join(parts) + " (details below)." if parts else ""
+
+
+def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
+    """The review as Markdown for a pull-request comment."""
+    line, _ = verdict(changes)
+    lost = breadth_lost(meta)
+    out = [f"## CenterTest review: `{meta['head_name']}` vs `{meta['base_name']}`", "",
+           f"**{line}**", ""] + ([f"**{lost}**", ""] if lost else []) + [
+           f"Compared {meta['head_short']} with the merge-base {meta['base_short']} "
+           f"({meta['head_files']} vs {meta['base_files']} Java files, rules: {meta['ruleset']}). "
+           "Only findings this branch added or removed are listed.", ""]
+    introduced = [c for c in changes if c["introduced"]]
+    fixed = [c for c in changes if c["fixed"]]
+    if introduced:
+        out += ["### Introduced", ""]
+        for c in introduced:
+            mark = "⛔ " if c.get("blocking") else ""
+            title = c["trust"] or c["description"]
+            out.append(f"- {mark}**{len(c['introduced'])} × {title}** ({c['rule_id']})")
+            for label in c["introduced"][:limit]:
+                by = (meta.get("blame") or {}).get(label)
+                how = {"workbook": ", last change to the workbook",
+                       "older": ", written before this range: what it relies on changed"}.get(by[3], "") if by else ""
+                note = f" — {by[0]}, {by[1]} ({by[2]}{how})" if by else ""
+                out.append(f"  - `{label}`{note}")
+            if len(c["introduced"]) > limit:
+                out.append(f"  - … and {len(c['introduced']) - limit} more")
+        out.append("")
+    if fixed:
+        out += ["### Fixed", ""]
+        for c in fixed:
+            out.append(f"- **{len(c['fixed'])} × {c['trust'] or c['description']}** ({c['rule_id']})")
+        out.append("")
+    for sc in meta.get("suites") or []:
+        if sc is (meta.get("suites") or [None])[0]:
+            out += ["### Suite changes", ""]
+        verb = {"new": "new suite", "deleted": "deleted", "changed": "changed"}[sc["status"]]
+        out.append(f"- **{sc['suite']}** ({verb}): {sc['before']} → {sc['after']} scenarios "
+                   f"(+{len(sc['added'])} −{len(sc['removed'])})")
+        for label, items in (("runs now", sc["added"]), ("no longer runs", sc["removed"])):
+            if items:
+                shown = ", ".join(" ".join(x).strip() for x in items[:limit])
+                out.append(f"  - {label}: {shown}" + (f" … +{len(items) - limit}" if len(items) > limit else ""))
+        for e in sc["adds_nothing"]:
+            out.append(f"  - ⚠ `{e}` adds nothing: the suite already runs it")
+        for e in sc["dead"]:
+            out.append(f"  - ⛔ `{e}` matches no test: CenterTest reports it as a failed scenario")
+    if meta.get("suites"):
+        out.append("")
+    data = meta.get("data") or []
+    if data:
+        out += ["### Data changes", ""]
+        for d in data[:limit * 2]:
+            name = f"`{os.path.basename(d['file'])} › {d['sheet']}`"
+            parts = []
+            if d["added"]:
+                parts.append("added " + ", ".join(f"**{c}**" for c in d["added"][:limit]) +
+                             (f" +{len(d['added']) - limit}" if len(d["added"]) > limit else ""))
+            if d["removed"]:
+                parts.append("removed " + ", ".join(f"**{c}**" for c in d["removed"][:limit]) +
+                             (f" +{len(d['removed']) - limit}" if len(d["removed"]) > limit else ""))
+            out.append(f"- {name}: " + ("; ".join(parts) if parts else f"{len(d['changed'])} row(s) changed"))
+            for code, cols in d["changed"][:limit]:
+                diffs = "; ".join("{} `{}` → `{}`".format(col, *_diff_pair(old, new)) for col, old, new in cols[:6])
+                out.append(f"  - **{code}**: {diffs}" + (f" (+{len(cols) - 6} columns)" if len(cols) > 6 else ""))
+            if len(d["changed"]) > limit:
+                out.append(f"  - … and {len(d['changed']) - limit} more changed rows")
+        if len(data) > limit * 2:
+            out.append(f"- … and {len(data) - limit * 2} more sheets")
+        out.append("")
+    rerun = meta.get("rerun") or []
+    if rerun:
+        from eir_impact import command_for
+        out += ["### Rerun to verify", "",
+                f"{len(rerun)} test{'s' if len(rerun) != 1 else ''} reach this branch's {meta.get('changed', 0)} changed "
+                "files (code they call, rows they run, reference data those rows use).", ""]
+        if len(rerun) > GROUP_FROM:
+            out += _rerun_by_cause(rerun, limit)
+        else:
+            for entry in rerun:
+                rows = f" — rows {', '.join(entry['codes'])}" if entry["codes"] else " — all rows"
+                out.append(f"- **{entry['test']}**{rows} ({'; '.join(entry['reasons'])})")
+        one = meta.get("rerun_suite")
+        if one:
+            body = json.dumps({"Name": one["name"], "List": one["entries"]}, indent=2)
+            out += ["", f"**All of it in one run**: add this suite to `CenterTestSuiteList.json` (it runs exactly "
+                        f"these scenarios: {len(one['entries'])} entr{'y' if len(one['entries']) == 1 else 'ies'}) "
+                        "and start it once:", "", "```json", body, "```", "", "```bash", one["command"], "```"]
+            if one.get("idle"):
+                out += ["", f"Not in it: {', '.join(one['idle'])} — every row the plan names is disabled, so "
+                            "the test runs nothing (rule 9011)."]
+        commands = [c for c in (command_for(e, meta.get("forwards", (False, False))) for e in rerun) if c]
+        if commands and (not one or len(commands) <= 3):
+            out += ([""] + (["One test at a time:"] if one else []) + ["```bash"] + commands[:limit * 2] + ["```"])
+        out.append("")
+    scope = meta.get("scope")
+    if scope and (scope["removed"] or scope["switched_off"] or scope["added"]):
+        def names(items):
+            shown = [f"`{c} {m}{(' ' + k) if k else ''}`" for c, m, k in items[:limit]]
+            return ", ".join(shown) + (f" … +{len(items) - limit}" if len(items) > limit else "")
+        out += ["### Run scope", "", f"A full run executes {scope['before']} → {scope['after']} scenarios.", ""]
+        stopped = scope.get("flows_stopped") or []
+        if stopped:
+            out += [f"**Flows that no longer run** ({len(stopped)}): " + "; ".join(
+                f"{s['test']} ({'test gone: deleted or renamed' if s['deleted'] else 'still there, runs no scenario'})"
+                for s in stopped[:limit * 2]) + (f" … +{len(stopped) - limit * 2}" if len(stopped) > limit * 2 else ""), ""]
+        if scope["removed"]:
+            out += [f"**Removed** ({len(scope['removed'])}: the test or its row is gone): {names(scope['removed'])}", ""]
+        if scope["switched_off"]:
+            out += [f"**Switched off** ({len(scope['switched_off'])}: the row is disabled): {names(scope['switched_off'])}", ""]
+        if scope["added"]:
+            out += [f"Added ({len(scope['added'])}): {names(scope['added'])}", ""]
+    coverage = meta.get("coverage") or []
+    if coverage:
+        lost = [(c["line"], n) for c in coverage for n in c["lost"]]
+        gained = [(c["line"], n) for c in coverage for n in c["gained"]]
+        odd = [(c["line"], n) for c in coverage for n in c.get("not_offered") or []]
+        options_lost = [(c["line"], o) for c in coverage for o in c.get("options_lost") or []]
+        out += ["### Product coverage", "",
+                "Coverages of the product model the scenarios select (a row an enabled scenario reaches names them), "
+                "merge-base → branch tip.", ""]
+        if lost:
+            out.append(f"**No scenario selects these any more** ({len(lost)}):")
+            out += [f"- {line}: {name}" for line, name in lost[:limit * 2]]
+            if len(lost) > limit * 2:
+                out.append(f"- … and {len(lost) - limit * 2} more")
+            out.append("")
+        if options_lost:
+            out.append(f"**Limit or deductible options no scenario sets any more** ({len(options_lost)}): "
+                       + "; ".join(f"{line}: {o}" for line, o in options_lost[:limit * 2])
+                       + (f" … +{len(options_lost) - limit * 2}" if len(options_lost) > limit * 2 else ""))
+            out.append("")
+        if odd:
+            out.append(f"**Term values that are not an option in the product model** ({len(odd)}, new on this "
+                       "branch: the dropdown offers no such value):")
+            out += [f"- {line}: {n['coverage']} / {n['term']} = `{n['value']}` (options: "
+                    + ", ".join(n["options"][:8]) + (", …" if len(n["options"]) > 8 else "") + ")"
+                    for line, n in odd[:limit * 2]]
+            if len(odd) > limit * 2:
+                out.append(f"- … and {len(odd) - limit * 2} more")
+            out.append("")
+        if gained:
+            out.append(f"Newly selected ({len(gained)}): " + "; ".join(f"{l}: {n}" for l, n in gained[:limit])
+                       + (f" … +{len(gained) - limit}" if len(gained) > limit else ""))
+            out.append("")
+    states = meta.get("states") or []
+    if states:
+        lost = [(s["line"], j) for s in states for j in s["lost"]]
+        gained = [(s["line"], j) for s in states for j in s["gained"]]
+        out += ["### Jurisdictions", "",
+                "States or provinces a line's scenarios run in (a State/Jurisdiction cell of a row an enabled scenario "
+                "reaches), merge-base → branch tip.", ""]
+        if lost:
+            out.append(f"**No scenario of the line runs there any more** ({len(lost)}): "
+                       + "; ".join(f"{line}: {j}" for line, j in lost[:limit * 2])
+                       + (f" … +{len(lost) - limit * 2}" if len(lost) > limit * 2 else ""))
+            out.append("")
+        if gained:
+            out.append(f"Newly run in ({len(gained)}): " + "; ".join(f"{line}: {j}" for line, j in gained[:limit])
+                       + (f" … +{len(gained) - limit}" if len(gained) > limit else ""))
+            out.append("")
+    errored = [c for c in changes if c.get("error")]
+    if errored:
+        out += ["### Not compared", ""]
+        for c in errored:
+            out.append(f"- {c['rule_id']} {c['trust'] or c['description']}: {c['error']}")
+        out.append("")
+    if not changes:
+        out += ["No findings were added or removed.", ""]
+    return "\n".join(out)
+
+
+def _short(value: str, width: int = 40) -> str:
+    value = str(value).replace("`", "'")
+    return value if len(value) <= width else value[: width - 1] + "…"
+
+
+def _diff_pair(old: str, new: str, width: int = 40, context: int = 12) -> tuple[str, str]:
+    """old and new cut to the region where they differ (with a little context), so a long cell
+    whose change sits past the first characters still shows the change."""
+    old, new = str(old).replace("`", "'"), str(new).replace("`", "'")
+    if len(old) <= width and len(new) <= width:
+        return old, new
+    p = 0
+    while p < min(len(old), len(new)) and old[p] == new[p]:
+        p += 1
+    q = 0
+    while q < min(len(old), len(new)) - p and old[-1 - q] == new[-1 - q]:
+        q += 1
+    start = max(0, p - context)
+
+    def cut(v):
+        end = min(len(v), len(v) - q + context)
+        part = v[start:end]
+        if len(part) > width:
+            part = part[:width - 1] + "…"
+        return ("…" if start > 0 else "") + part + ("…" if end < len(v) else "")
+    return cut(old), cut(new)
+
+
+def print_review(changes: list[dict], meta: dict) -> None:
+    line, _ = verdict(changes)
+    print("\n" + "=" * 60)
+    print(f"  BRANCH REVIEW  {meta['head_name']} ({meta['head_short']}) vs {meta['base_name']}"
+          f" (merge-base {meta['base_short']})")
+    print("=" * 60)
+    for c in changes:
+        if not c["introduced"]:
+            continue
+        mark = "!!" if c.get("blocking") else "+ "
+        print(f"  {mark} {len(c['introduced']):>3} new  {c['rule_id']}: {c['trust'] or c['description']}")
+        for label in c["introduced"][:3]:
+            print(f"           {label}")
+    for c in changes:
+        if c.get("error"):
+            print(f"  ?? not compared  {c['rule_id']}: {c['error']}")
+    for sc in meta.get("suites") or []:
+        warn = (f", {len(sc['adds_nothing'])} entr{'y adds' if len(sc['adds_nothing']) == 1 else 'ies add'} nothing" if sc["adds_nothing"] else "") + \
+               (f", {len(sc['dead'])} match no test" if sc["dead"] else "")
+        print(f"  ## suite {sc['suite']}: {sc['before']} -> {sc['after']} scenarios{warn}")
+    data = meta.get("data") or []
+    if data:
+        files = len({d["file"] for d in data})
+        print(f"  ~~ data: {files} workbook(s), {sum(len(d['added']) for d in data)} rows added, "
+              f"{sum(len(d['changed']) for d in data)} changed, {sum(len(d['removed']) for d in data)} removed")
+    scope = meta.get("scope")
+    if scope and (scope["removed"] or scope["switched_off"] or scope["added"]):
+        print(f"  ## run scope {scope['before']} -> {scope['after']} scenarios: {len(scope['removed'])} removed, "
+              f"{len(scope['switched_off'])} switched off, {len(scope['added'])} added")
+    for s in (scope or {}).get("flows_stopped") or []:
+        print(f"  -- {s['test']} no longer runs " + ("(test gone: deleted or renamed)" if s["deleted"] else "(still there, runs no scenario)"))
+    for c in meta.get("coverage") or []:
+        if c["lost"]:
+            print(f"  -- {c['line']}: no scenario selects {len(c['lost'])} coverage(s) any more: "
+                  + ", ".join(c["lost"][:4]) + (" ..." if len(c["lost"]) > 4 else ""))
+        if c["gained"]:
+            print(f"  ++ {c['line']}: {len(c['gained'])} coverage(s) newly selected: "
+                  + ", ".join(c["gained"][:4]) + (" ..." if len(c["gained"]) > 4 else ""))
+        for n in c.get("not_offered") or []:
+            print(f"  !! {c['line']}: {n['coverage']} / {n['term']} = {n['value']} is not an option in the product model")
+        if c.get("options_lost"):
+            print(f"  -- {c['line']}: no scenario sets {len(c['options_lost'])} option(s) any more: "
+                  + ", ".join(c["options_lost"][:3]) + (" ..." if len(c["options_lost"]) > 3 else ""))
+    for s in meta.get("states") or []:
+        if s["lost"]:
+            print(f"  -- {s['line']}: no scenario runs in {', '.join(s['lost'])} any more")
+        if s["gained"]:
+            print(f"  ++ {s['line']}: now runs in {', '.join(s['gained'])}")
+    rerun = meta.get("rerun") or []
+    if rerun:
+        print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
+            e["test"] + (f" [{len(e['codes'])} rows]" if e["codes"] else "") for e in rerun[:6])
+              + (" ..." if len(rerun) > 6 else ""))
+        one = meta.get("rerun_suite")
+        if one:
+            print(f"  >> all in one run: suite {one['name']} ({len(one['entries'])} entries, in the PR comment): "
+                  f"{one['command']}")
+    fixed = sum(len(c["fixed"]) for c in changes)
+    if fixed:
+        print(f"  -  {fixed:>3} fixed in "
+              + ", ".join(c["rule_id"] for c in changes if c["fixed"]))
+    print("-" * 60)
+    print(f"  {line}")
+    if breadth_lost(meta):
+        print(f"  {breadth_lost(meta)}")
+    print("=" * 60)
+
+
+_LINE_LOC = re.compile(r"([\w./\-]+\.(?:java|json)):(\d+)\b")
+_XLSX_LOC = re.compile(r"^([\w.\-]+\.xlsx) row \d+")
+
+
+def blame(repo: str, start: str, head: str, labels: list[str], changed: list[str]) -> dict:
+    """{label: (author, date, short sha, how)} for findings this range introduced: a path:line is blamed on
+    the tip ("line", or "older" when that line predates the range: something else made it a finding); a
+    workbook row (xlsx cannot be blamed) gets the range's last commit touching that workbook."""
+    out = {}
+    for label in labels:
+        m = _LINE_LOC.search(label)
+        if m:
+            r = subprocess.run(["git", "-C", repo, "blame", "--porcelain", "-L", f"{m.group(2)},{m.group(2)}",
+                                head, "--", m.group(1)], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout:
+                sha = r.stdout.split()[0]
+                fields = dict(line.split(" ", 1) for line in r.stdout.splitlines()[1:] if " " in line)
+                when = datetime.fromtimestamp(int(fields.get("author-time", "0"))).strftime("%Y-%m-%d")
+                older = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", sha, start],
+                                       capture_output=True).returncode == 0
+                out[label] = (fields.get("author", "?"), when, sha[:8], "older" if older else "line")
+            continue
+        m = _XLSX_LOC.match(label)
+        if m:
+            path = next((p for p in changed if p.endswith("/" + m.group(1)) or p == m.group(1)), None)
+            if path:
+                r = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%an%x09%ad%x09%h", "--date=short",
+                                    f"{start}..{head}", "--", path], capture_output=True, text=True)
+                if r.returncode == 0 and r.stdout.strip():
+                    author, when, sha = r.stdout.strip().split("\t")
+                    out[label] = (author, when, sha, "workbook")
+    return out
+
+
+def run_scope(base_tree: str, head_tree: str, source_root: str) -> dict:
+    """What a full run executes, merge-base -> branch tip: (class, method, code) scenarios removed (the test or
+    row is gone), switched off (the row is still there, disabled) and added, by the vendored suite engine;
+    and flows_stopped: test methods that ran scenarios and run none on the tip ({test, deleted})."""
+    import suite as suites
+    base_t, head_t = suites.scan(base_tree, source_root), suites.scan(head_tree, source_root)
+    on_a, on_b = set(suites.scenarios_of(base_t)), set(suites.scenarios_of(head_t))
+    all_b = set(suites.scenarios_of(head_t, include_disabled=True))
+    flows = lambda scenarios: {(c, m) for c, m, _code in scenarios}
+    present = {(t["class"], m["name"]) for t in head_t for m in t["methods"]}
+    stopped = [{"test": f"{c}.{m}", "deleted": (c, m) not in present} for c, m in sorted(flows(on_a) - flows(on_b))]
+    return {"before": len(on_a), "after": len(on_b), "removed": sorted(on_a - all_b),
+            "switched_off": sorted((on_a - on_b) & all_b), "added": sorted(on_b - on_a), "flows_stopped": stopped}
+
+
+def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[dict]:
+    """Per line of business: product coverages the scenarios select on the branch tip that they did not
+    at the merge-base (gained), and the other way round (lost); the limit/deductible options scenarios no
+    longer set (options_lost) or newly set (options_gained); and term values that are not an option in
+    the product model which the branch introduces (not_offered). [] without a product model."""
+    from eir_products import product_coverage
+    base, head = product_coverage(base_tree, cssids), product_coverage(head_tree, cssids)
+    if not base or not head:
+        return []
+    before = {l["line"]: {c["name"] for c in l["named"]} for l in base}
+    odd_before = {(l["line"], n["coverage"], n["term"], n["value"]) for l in base for n in l.get("not_offered", [])}
+    chosen = lambda l: {f'{c["name"]} / {o["term"]} = {v}' for c in l["named"] for o in c.get("options") or []
+                        for v in o["chosen"]}
+    options_before = {l["line"]: chosen(l) for l in base}
+    out = []
+    for l in head:
+        now, was = {c["name"] for c in l["named"]}, before.get(l["line"], set())
+        odd = [n for n in l.get("not_offered", []) if (l["line"], n["coverage"], n["term"], n["value"]) not in odd_before]
+        o_now, o_was = chosen(l), options_before.get(l["line"], set())
+        if now != was or odd or o_now != o_was:
+            out.append({"line": l["line"], "gained": sorted(now - was), "lost": sorted(was - now), "not_offered": odd,
+                        "options_lost": sorted(o_was - o_now), "options_gained": sorted(o_now - o_was)})
+    return out
+
+
+def run_review(config, base_rev: str, head_rev: str, suppressions, cssids: str | None = None) -> int:
+    """Run the branch review; returns the exit code (1 when a trust blocker is introduced)."""
+    repo = config.repository_dir
+    base_sha, head_sha = resolve_rev(repo, base_rev), resolve_rev(repo, head_rev)
+    for name, sha in ((base_rev, base_sha), (head_rev, head_sha)):
+        if sha is None:
+            print(f"ERROR: '{name}' is not a branch, tag or commit in {repo}", file=sys.stderr)
+            return 2
+    start = merge_base(repo, base_sha, head_sha)
+    if start is None:
+        print(f"ERROR: {base_rev} and {head_rev} have no common history", file=sys.stderr)
+        return 2
+    changes, meta = compute_review(config, start, head_sha, base_rev, head_rev, suppressions, cssids)
+    out_dir = os.path.join(repo, "healthcheck")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(render_markdown(changes, meta))
+    from eir_json import emit, review_json
+    doc = review_json(changes, meta)
+    emit(dict(doc, comment=path))
+    with open(path[:-3] + ".json", "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1, ensure_ascii=False)
+    print_review(changes, meta)
+    print(f"  PR comment: {path}  (JSON beside it)\n")
+    return verdict(changes)[1]
+
+
+def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: str, suppressions,
+                   cssids: str | None = None) -> tuple[list[dict], dict]:
+    """(finding changes, meta) between two commits; reads the repository only (git archive to a temp dir)."""
+    repo = config.repository_dir
+    paths = [config.source_root, "testdata"]
+    import suite as suites
+    suite_file = suites.find_suite_file(repo)
+    suite_rel = os.path.relpath(suite_file, repo).replace("\\", "/") if os.path.isfile(suite_file) else None
+    if suite_rel:
+        paths.append(suite_rel)
+    results = {}
+    with tempfile.TemporaryDirectory(prefix="ct-review-") as tmp:
+        for side, sha in (("base", start), ("head", head_sha)):
+            tree = os.path.join(tmp, side)
+            os.makedirs(tree)
+            export_tree(repo, sha, tree, paths)
+            print(f"  Analyzing {side} {sha[:8]}...")
+            results[side] = analyze_commit(repo, sha, tree, config, suppressions)
+        from eir_impact import changed_files, data_changes, rerun_plan, rerun_suite, run_commands, suite_command
+        changed = changed_files(repo, start, head_sha)
+        rerun = rerun_plan(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed, config.source_root)
+        suite_name = f"Rerun-{head_sha[:8]}"
+        # one test is one command already; a suite pays off from two
+        suite_entries, idle = (rerun_suite(os.path.join(tmp, "head"), rerun, config.source_root)
+                               if len(rerun) > 1 else ([], []))
+        data = data_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed)
+        from eir_impact import suite_changes
+        suites_changed = (suite_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), suite_rel, config.source_root)
+                          if suite_rel and suite_rel in changed else [])
+        scope = run_scope(os.path.join(tmp, "base"), os.path.join(tmp, "head"), config.source_root)
+        from eir_screens import find_cssids_dir
+        product_dir = find_cssids_dir(repo, cssids)
+        data_changed = product_dir and any(p.startswith("testdata/") for p in changed)
+        coverage = coverage_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir) if data_changed else []
+        from eir_states import state_delta
+        states = state_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir) if data_changed else []
+    changes = diff_results(results["base"][0], results["head"][0])
+    shown = [label for c in changes if c.get("blocking") for label in c["introduced"][:15]]
+    who = blame(repo, start, head_sha, shown, changed) if shown else {}
+    meta = {"base_name": base_rev, "head_name": head_rev,
+            "base_short": start[:8], "head_short": head_sha[:8],
+            "base_files": results["base"][1], "head_files": results["head"][1],
+            "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
+            "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
+            "suites": suites_changed, "coverage": coverage, "states": states, "scope": scope,
+            "blame": who,
+            "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
+                            "command": suite_command(repo, suite_name)} if suite_entries else None}
+    return changes, meta

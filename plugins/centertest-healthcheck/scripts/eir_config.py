@@ -27,15 +27,15 @@ DEFAULT_RULESETS = {
     "Methods":           ["4001", "4002"],
     "Full":              ["0001", "0002", "1001", "1002", "1003", "1004",
                           "2001", "2002", "3001", "4001", "4002"],
-    "CenterTest":        ["9001", "9003", "9005", "9007", "9008", "3001"],
-    "DDT":               ["14002", "14003"],
+    "CenterTest":        ["9001", "9003", "9005", "9007", "9008", "9010", "9011", "3001"],
+    "DDT":               ["14002", "14003", "14004", "14005"],
     "Quality":           ["5001", "5002", "15001", "15002", "15004", "15006", "15016", "15017", "15018", "7001"],
     "Security":          ["7001"],
     "CenterTestFull":    ["0001", "0002", "1001", "1002", "1003", "1004",
                           "2001", "2002", "3001", "4001", "4002",
                           "5001", "5002", "7001",
-                          "9001", "9003", "9005", "9007", "9008",
-                          "14002", "14003",
+                          "9001", "9003", "9005", "9007", "9008", "9010", "9011",
+                          "14002", "14003", "14004", "14005",
                           "15001", "15002", "15004", "15005", "15006", "15016", "15017", "15018"],
 }
 
@@ -114,7 +114,7 @@ class EirConfig:
         # Layer 4: defaults
         self.repository_dir = os.getcwd()
         self.source_root = "src/main/java"
-        self.ruleset = "Full"
+        self.ruleset = "CenterTestFull"  # every rule: the trust verdict needs the trust rules
         self.rules = None  # specific rule IDs override ruleset
         self.exclude_packages = [".*datadriven.*"]  # generated code, skip by default
         self.exclude_files = []

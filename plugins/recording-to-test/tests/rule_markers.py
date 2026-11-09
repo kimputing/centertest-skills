@@ -13,6 +13,8 @@ MARKERS: list = [
     ("SKILL.md", "update the recording-to-test plugin"),
     ("SKILL.md", "Just run it"),
     ("phases/understand.md", "plan.narration"),
+    ("phases/reuse.md", "never a copy of the step"),
+    ("phases/reuse.md", "ct.py\" coverage"),
     ("phases/recording.md", "CoverageUtil"),
     ("phases/recording.md", ".withCssId("),
     ("phases/recording.md", "held once per step class"),

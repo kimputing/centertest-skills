@@ -51,8 +51,55 @@ def _safe_sheet_name(rule_id: str, description: str, existing_names: set[str]) -
 # Excel report
 # ---------------------------------------------------------------------------
 
-def generate_excel(results: list[RuleResult], output_dir: str) -> str:
-    """Generate an Excel report with one sheet per rule + summary sheet."""
+def _verdict_sheet(wb, results: list[RuleResult], total_files: int, data) -> None:
+    """The first sheet a reader opens: score, trust blockers with their locations, the fix order,
+    and the test-data numbers -- the same functions as the HTML dashboard, so they agree."""
+    ws = wb.create_sheet("Verdict", 0)
+    bold, big = Font(bold=True), Font(bold=True, size=14)
+    red = Font(bold=True, color="C0392B")
+    score = health_score(results, total_files)
+    blockers, not_checked, dormant = trust_blockers(results, sample_size=10_000)
+    ws.append(["CenterTest health check", datetime.now().strftime("%Y-%m-%d %H:%M")])
+    ws["A1"].font = big
+    label = "At risk" if blockers else ("Healthy" if score >= 80 else "Needs attention" if score >= 60 else "Critical")
+    ws.append(["Health score", score, label])
+    ws.append([])
+    ws.append(["Can these tests be trusted?", "No" if blockers else "No trust blockers found"])
+    ws.cell(ws.max_row, 1).font = bold
+    for b in blockers:
+        ws.append([f"{b['count']} x {b['title']}", b["consequence"], f"rule {b['rule_id']}"])
+        ws.cell(ws.max_row, 1).font = red
+        for label_, loc in zip(b["samples"], b.get("locations") or [""] * len(b["samples"])):
+            ws.append(["", label_.replace(f" ({loc})", "") if loc else label_, loc])
+    if dormant:
+        ws.append(["Not blockers", f"{dormant} data findings in workbooks no test reads or in disabled rows"])
+    if not_checked:
+        ws.append(["Not checked", "rules " + ", ".join(not_checked)])
+    ws.append([])
+    ws.append(["What to fix first", "Findings", "Top rules"])
+    ws.cell(ws.max_row, 1).font = bold
+    for t in fix_order(results):
+        ws.append([t["title"], t["count"], "; ".join(f"{d} ({c})" for _r, d, c in t["rules"][:5])])
+    if data:
+        ws.append([])
+        ws.append(["Test data", "", ""])
+        ws.cell(ws.max_row, 1).font = bold
+        ws.append(["Scenario runs in a full run", data["scenarios"], "Multiplier repeats included"])
+        ws.append(["DC workbooks no test reads", len(data["unread"]), ", ".join(os.path.basename(u) for u in data["unread"])])
+        ws.append(["Reference codes nothing uses", data["unused_codes"], f"of {data['codes']}"])
+        if data["broken_live"] is not None:
+            ws.append(["Broken references in data tests run", data["broken_live"], f"{data['broken_dormant']} more in data no test runs"])
+        if data.get("in_no_suite"):
+            n = data["in_no_suite"]
+            ws.append(["Distinct scenarios no suite runs", n["count"], f"of {n['of']}; classes: " + ", ".join(n["classes"])])
+    ws.column_dimensions["A"].width = 44
+    ws.column_dimensions["B"].width = 90
+    ws.column_dimensions["C"].width = 70
+
+
+def generate_excel(results: list[RuleResult], output_dir: str, total_files: int = 0, data=None,
+                   products=None, states=None, suite_reach=None) -> str:
+    """Generate an Excel report: a Verdict sheet first, then the summary and one sheet per rule."""
     if Workbook is None:
         print("  Warning: openpyxl not installed, skipping Excel output.", file=sys.stderr)
         return ""
@@ -147,11 +194,55 @@ def generate_excel(results: list[RuleResult], output_dir: str) -> str:
                 max_len = max(max_len, len(str(cell.value)))
         ws_summary.column_dimensions[col_letter].width = min(max_len + 2, 120)
 
+    if products:
+        from eir_products import excel_rows
+        ws = wb.create_sheet(title="Product coverage")
+        for col, header in enumerate(["Line", "Coverage", "Status", "Terms set", "Terms", "Selected by",
+                                      "Term options set"], 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        for r, values in enumerate(excel_rows(products), 2):
+            for col, value in enumerate(values, 1):
+                ws.cell(row=r, column=col, value=value)
+        for letter, width in zip("ABCDEFG", (22, 60, 20, 10, 60, 80, 80)):
+            ws.column_dimensions[letter].width = width
+        ws.auto_filter.ref = ws.dimensions
+
+    if suite_reach:
+        from eir_cover import suite_breadth_rows
+        ws = wb.create_sheet(title="Suites")
+        heads = ["Suite", "Scenarios", "Test methods", "Share", "Coverages", "Share", "Line/jurisdictions", "Share"]
+        for col, header in enumerate(heads, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        for r, values in enumerate(suite_breadth_rows(suite_reach), 2):
+            for col, value in enumerate(values, 1):
+                cell = ws.cell(row=r, column=col, value=value)
+                if col in (4, 6, 8):
+                    cell.number_format = "0%"
+        ws.column_dimensions["A"].width = 40
+        ws.auto_filter.ref = ws.dimensions
+
+    if states:
+        from eir_states import excel_rows as state_rows
+        ws = wb.create_sheet(title="States")
+        for col, header in enumerate(["Line", "State", "Scenarios"], 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        for r, values in enumerate(state_rows(states), 2):
+            for col, value in enumerate(values, 1):
+                ws.cell(row=r, column=col, value=value)
+        ws.auto_filter.ref = ws.dimensions
+
     # Save
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"HealthCheck_{timestamp}.xlsx"
     filepath = os.path.join(output_dir, filename)
+    _verdict_sheet(wb, results, total_files, data)  # first sheet, created last so the summary keeps wb.active
     wb.save(filepath)
     return filepath
 
@@ -206,6 +297,22 @@ def generate_markdown(results: list[RuleResult], output_dir: str) -> str:
     """Generate a Markdown report."""
     lines = ["# CenterTest Health Check Report", ""]
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+
+    blockers, not_checked, dormant = trust_blockers(results)
+    lines.append("## Can these tests be trusted?")
+    lines.append("")
+    if blockers:
+        for b in blockers:
+            lines.append(f"- **{b['count']} × {b['title']}** ({b['rule_id']}): {b['consequence']}")
+            for x in b["samples"]:
+                lines.append(f"  - `{x}`")
+    else:
+        lines.append("No trust blockers.")
+    if dormant:
+        lines.append(f"\nNot blockers: {dormant} data findings in workbooks no test reads or in disabled rows.")
+    if not_checked:
+        lines.append(f"\nNot checked in this run: {', '.join(not_checked)}.")
     lines.append("")
 
     # Summary table
@@ -294,69 +401,491 @@ def _count_items(result: RuleResult) -> int:
     return len(result.rows)
 
 
+# ---------------------------------------------------------------------------
+# Trust blockers
+# ---------------------------------------------------------------------------
+
+# Findings that mean a test can pass while the application is broken, or cannot run its data
+# at all. Any of them makes the suite untrustworthy however clean the rest is, so they are
+# listed first and cap the score below "Healthy". Rules whose findings are style or risk
+# (complexity, naming, 15017 heuristics) are deliberately not here.
+TRUST_RULES = {
+    "15018": ("Checks that can never fail",
+              "the result of .equals() is thrown away, so the verification passes whatever the app shows"),
+    "15005": ("Failures swallowed",
+              "an empty catch block hides the exception, so the step reports success"),
+    "9010": ("Tests that check nothing",
+             "the test opens screens but nothing it runs asserts, so it passes whenever the screens open"),
+    "9003": ("Tests that read data they never load",
+             "the test reads the scenario's data row but has no @DataDriven, so the run has no data"),
+    "14005": ("Suite entries that run nothing",
+              "CenterTest reports the entry as a failed scenario, so the suite does not run what it lists"),
+    "14002": ("Datasources that do not exist",
+              "the @DataDriven workbook is missing, so the test cannot load its data"),
+    "14003": ("Test data codes that do not exist",
+              "a row references a code no sheet in its scope has, so that scenario fails on load"),
+    "14004": ("Related test data rows that do not exist",
+              "an @-relationship points at a DC row or file that is not there"),
+}
+
+# A blocker caps the score here: one notch below "Healthy" (80) and "Needs Attention" (60).
+TRUST_SCORE_CAP = 59
+
+
+def is_dormant(headers: list, row: list) -> bool:
+    """A data finding no test runs (its workbook is read by no test, or its row is disabled)."""
+    if "Runs in" not in headers:
+        return False
+    i = headers.index("Runs in")
+    return i < len(row) and str(row[i]).startswith("not run")
+
+
+def _finding_label(headers: list, row: list) -> str:
+    """One readable line for a finding row, from whichever columns the rule has."""
+    cell = {str(h): row[i] for i, h in enumerate(headers) if i < len(row)}
+    if "File" in cell:
+        where = os.path.basename(str(cell["File"]))
+        row_no = cell.get("Row")
+        if row_no not in (None, "", "-"):
+            where += f" row {row_no}"
+        col, code = cell.get("Column", ""), cell.get("Code", "")
+        what = f"{col} '{code}'" if code not in (None, "", "-") else str(col or cell.get("Issue", ""))
+        runs = cell.get("Runs in")
+        return f"{where}: {what}" + (f" (in {runs})" if runs and not str(runs).startswith("not run") else "")
+    if "Suite" in cell and "Entry" in cell:
+        return f"{cell['Suite']}: '{cell['Entry']}'" + (f" ({cell['Location']})" if cell.get("Location") else "")
+    label = ".".join(str(cell[k]) for k in ("Class", "Method") if cell.get(k))
+    if cell.get("Location"):
+        label += f" ({cell['Location']})"
+    detail = cell.get("Line") or cell.get("Datasource Path") or ""
+    return f"{label}: {detail}" if detail else label
+
+
+def trust_blockers(results: list[RuleResult], sample_size: int = 5) -> tuple[list[dict], list[str], int]:
+    """(blockers, not_checked, dormant) for the trust rules.
+
+    blockers: [{rule_id, title, consequence, count, samples}] for trust rules with findings;
+    not_checked: trust rule ids that were not part of this run (or errored), so the report
+    never presents an unchecked suite as trustworthy;
+    dormant: data findings no test runs (workbook read by no test, or row disabled), listed
+    in their rule but not blockers.
+    """
+    by_id = {r.rule_id: r for r in results}
+    blockers, not_checked, dormant_only = [], [], []
+    for rule_id, (title, consequence) in TRUST_RULES.items():
+        r = by_id.get(rule_id)
+        if r is None or r.error:
+            not_checked.append(rule_id)
+            continue
+        live = [row for row in r.rows if not is_dormant(r.headers, row)]
+        count = len(live) if r.rows else _count_items(r)
+        dormant = len(r.rows) - len(live)
+        if count:
+            samples = [_finding_label(r.headers, row) for row in live[:sample_size]]
+            li = r.headers.index("Location") if "Location" in r.headers else None
+            locations = [str(row[li]) if li is not None and li < len(row) else "" for row in live[:sample_size]]
+            blockers.append({"rule_id": rule_id, "title": title, "consequence": consequence,
+                             "count": count, "samples": samples, "locations": locations, "dormant": dormant})
+        elif dormant:
+            dormant_only.append({"rule_id": rule_id, "title": title, "dormant": dormant})
+    dormant = sum(b["dormant"] for b in blockers) + sum(d["dormant"] for d in dormant_only)
+    return blockers, not_checked, dormant
+
+
 def _html_escape(text: str) -> str:
     """Escape HTML special characters."""
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
+# Severity of each category for the health score. Informational categories are not scored.
+#   - Low (ClassNames, Methods): suggestions, nice-to-have
+#   - Medium (Inheritance, Selenium, Complexity, CenterTest): should fix
+#   - High (Quality, Security): must fix
+_SEVERITY = {
+    "Statistics": None,
+    "ClassNames": "low",
+    "Methods":    "low",
+    "Inheritance": "medium",
+    "Selenium":   "medium",
+    "Complexity": "medium",
+    "CenterTest": "medium",
+    "Quality":    "high",
+    "Security":   "high",
+}
+_WEIGHT = {"low": 1, "medium": 2, "high": 3}
+
+# Rules whose consequence in a test suite differs from their category's: an index or null error
+# in a test fails it loudly (with an unhelpful message: assert the precondition first), and an
+# unused variable is clutter. A busy-wait that can hang (15017) keeps its category's "high".
+_RULE_SEVERITY = {"15001": "medium", "15002": "medium", "15006": "low"}
+
+
+def severity_of(result: RuleResult):
+    """'high' / 'medium' / 'low', or None for informational rules."""
+    return _RULE_SEVERITY.get(result.rule_id, _SEVERITY.get(result.category, "medium"))
+
+
+def health_score(results: list[RuleResult], total_files: int) -> int:
+    """The health score (0-100): severity-weighted rule credit, capped at TRUST_SCORE_CAP when a
+    trust blocker exists. The dashboard and the trend both use this, so they always agree."""
+    earned = possible = 0.0
+    for r in results:
+        severity = severity_of(r)
+        if severity is None or r.error:
+            if severity is not None:
+                possible += _WEIGHT[severity]
+            continue
+        weight = _WEIGHT[severity]
+        possible += weight
+        count = _count_items(r)
+        # Partial credit: few findings in a large codebase is still mostly healthy.
+        earned += weight if count == 0 else weight * max(0, 1.0 - min(count / max(total_files, 1), 1.0))
+    score = round(earned / possible * 100) if possible > 0 else 0
+    if trust_blockers(results)[0]:
+        score = min(score, TRUST_SCORE_CAP)
+    return score
+
+
+def _ide_link(repo_root: str, location: str, text: str) -> str:
+    """text as a link that opens path:line in IntelliJ (idea:// scheme); plain text without a location."""
+    if not location or ":" not in location or not repo_root:
+        return _html_escape(text)
+    rel, _, line = location.rpartition(":")
+    if not line.isdigit():
+        return _html_escape(text)
+    from urllib.parse import quote
+    url = f"idea://open?file={quote(os.path.join(repo_root, rel))}&line={line}"
+    return f'<a class="ide" href="{_html_escape(url)}" title="Open in IntelliJ">{_html_escape(text)}</a>'
+
+
+_TIERS = (("trust", "Trust blockers", "tests that can pass while the app is broken, or cannot run"),
+          ("high", "Must fix", "quality and security defects"),
+          ("medium", "Should fix", "framework compliance, complexity, failures with unhelpful messages"),
+          ("low", "Suggestions", "naming, readability, clutter"))
+
+
+def fix_order(results: list[RuleResult]) -> list[dict]:
+    """Findings grouped by what they cost, most urgent first: [{tier, title, why, count, rules}].
+    Trust rules count only findings a test runs (dormant data findings are cleanup);
+    informational categories are left out."""
+    blockers, _nc, _dormant = trust_blockers(results)
+    live = {b["rule_id"]: b["count"] for b in blockers}
+    tiers = {key: [] for key, _t, _w in _TIERS}
+    for r in results:
+        if r.error:
+            continue
+        if r.rule_id in TRUST_RULES:
+            if live.get(r.rule_id):
+                tiers["trust"].append((r.rule_id, r.description, live[r.rule_id]))
+            continue
+        severity = severity_of(r)
+        count = _count_items(r)
+        if severity and count:
+            tiers[severity].append((r.rule_id, r.description, count))
+    out = []
+    for key, title, why in _TIERS:
+        rules = sorted(tiers[key], key=lambda x: (-x[2], x[0]))
+        out.append({"tier": key, "title": title, "why": why, "count": sum(c for _i, _d, c in rules), "rules": rules})
+    return out
+
+
+def _fix_order_html(results: list[RuleResult]) -> str:
+    """'What to fix first': the same findings, ordered by cost rather than by count."""
+    tiers = fix_order(results)
+    top = max((t["count"] for t in tiers), default=1) or 1
+    rows = []
+    for t in tiers:
+        rules = ", ".join(f'<a href="#rule-{r}" onclick="navigateTo(\'rule-{r}\');return false">{_html_escape(d)}</a> {c}'
+                          for r, d, c in t["rules"][:4])
+        more = f" and {len(t['rules']) - 4} more rules" if len(t["rules"]) > 4 else ""
+        rows.append(
+            f'<div class="tier tier-{t["tier"]}"><div class="tier-head"><span class="tier-title">{t["title"]}</span>'
+            f'<span class="tier-count">{t["count"]}</span></div>'
+            f'<div class="cat-bar-bg"><div class="tier-fill" style="width:{t["count"] / top * 100:.0f}%"></div></div>'
+            f'<div class="tier-why">{_html_escape(t["why"])}{": " + rules + more if rules else " — none"}</div></div>')
+    return ('  <div class="categories">\n    <h2>What to fix first</h2>\n'
+            '    <p class="tier-note">The same findings as below, grouped by what they cost rather than by how many there are.</p>\n'
+            + "\n".join(rows) + "\n  </div>\n")
+
+
+def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int = 0,
+                      repo_root: str = "") -> str:
+    """The 'Can these tests be trusted?' panel shown under the score."""
+    unchecked = ""
+    if dormant:
+        unchecked += (f'    <div class="trust-dormant">Not blockers: {dormant} data finding{"s" if dormant != 1 else ""} '
+                      'in workbooks no test reads or in disabled rows. They are listed under rules 14003/14004 '
+                      'as cleanup.</div>\n')
+    if not_checked:
+        unchecked = (f'    <div class="trust-unchecked">Not checked in this run: rules {", ".join(not_checked)}. '
+                     'Run the CenterTestFull ruleset for a complete verdict.</div>\n')
+    if not blockers:
+        return ('  <div class="trust ok">\n    <h2>Can these tests be trusted?</h2>\n'
+                '    <div class="trust-sub">No trust blockers: every check can fail, no failure is swallowed, '
+                'and all test data resolves.</div>\n' + unchecked + '  </div>\n')
+    total = sum(b["count"] for b in blockers)
+    out = ['  <div class="trust">', '    <h2>Can these tests be trusted? Not yet.</h2>',
+           f'    <div class="trust-sub">{total} finding{"s" if total != 1 else ""} below mean tests can pass while '
+           'the application is broken, or cannot run at all. Fix these before anything else; '
+           'until then the score is capped below Healthy.</div>']
+    for b in blockers:
+        more = b["count"] - len(b["samples"])
+        locs = b.get("locations") or [""] * len(b["samples"])
+        items = "".join(f"<li>{_ide_link(repo_root, loc, x)}</li>" for x, loc in zip(b["samples"], locs))
+        if more > 0:
+            items += f"<li>… and {more} more</li>"
+        out.append(
+            f'    <div class="blocker" onclick="navigateTo(\'rule-{b["rule_id"]}\')">'
+            f'<div class="blocker-count">{b["count"]}</div>'
+            f'<div><div class="blocker-title">{_html_escape(b["title"])} <span class="badge-cat">{b["rule_id"]}</span></div>'
+            f'<div class="blocker-why">{_html_escape(b["consequence"])}</div></div>'
+            f'<ul>{items}</ul></div>')
+    out.append(unchecked.rstrip("\n")) if unchecked else None
+    out.append('  </div>')
+    return "\n".join(out) + "\n"
+
+
+def _screens_panel_html(coverage) -> str:
+    """'Screens the suite opens': per application, wizards opened and not, and the screen count."""
+    if coverage is None:
+        return ""
+    if not coverage:
+        return ('  <div class="screens"><h2>Screens the suite opens</h2><p class="screens-note">Not measured: '
+                'the generated project\'s cssids/ folder was not found. Pass --cssids &lt;generated src/main/resources&gt;.</p></div>\n')
+    cards = []
+    for c in coverage:
+        total_w = len(c["wizards"]) + len(c["unused_wizards"])
+        pct = (len(c["wizards"]) / total_w * 100) if total_w else 0
+        opened = "".join(f'<span class="chip on" title="{_html_escape(", ".join(users[:8]))}">{_html_escape(w)}</span>'
+                         for w, users in c["wizards"])
+        shown = 12 if len(c["unused_wizards"]) > 15 else 15  # never fold away just a few
+        missing = "".join(f'<span class="chip">{_html_escape(w)}</span>' for w in c["unused_wizards"][:shown])
+        if len(c["unused_wizards"]) > shown:
+            rest = "".join(f'<span class="chip">{_html_escape(w)}</span>' for w in c["unused_wizards"][12:])
+            missing += (f'<details class="more"><summary>+{len(c["unused_wizards"]) - 12} more</summary>'
+                        f'<div class="chips">{rest}</div></details>')
+        cards.append(
+            f'<div class="app-card"><div class="app-name">{_html_escape(c["name"])}</div>'
+            f'<div class="app-big">{len(c["wizards"])}<small> of {total_w} wizards</small></div>'
+            f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
+            f'<div class="app-sub">{c["used"]} of {c["screens"]} screens</div>'
+            + (f'<div class="chips-label">Opened</div><div class="chips">{opened}</div>' if opened else "")
+            + (f'<div class="chips-label">No test opens</div><div class="chips">{missing}</div>' if missing else "")
+            + "</div>")
+    return ('  <div class="screens"><h2>Screens the suite opens</h2>'
+            '<p class="screens-note">Wizards are the business transactions. Counted from the page objects your own code '
+            'uses; screens opened only inside framework steps are not seen, so these are floors.</p>'
+            f'<div class="app-grid">{"".join(cards)}</div></div>\n')
+
+
+def _products_panel_html(lines) -> str:
+    """'Product coverages the test data names': per line of business, from the generated product model."""
+    if not lines:
+        return ""
+    cards = []
+    for l in sorted(lines, key=lambda l: (-len(l["named"]) / max(l["coverages"], 1), l["line"])):
+        pct = len(l["named"]) / l["coverages"] * 100 if l["coverages"] else 0
+        # the shorter list says more: what a thin line covers, or what a well-covered line still misses
+        if len(l["named"]) <= len(l["missing"]) or not l["missing"]:
+            label = "Selected by a scenario"
+            from eir_products import _tests, options_text
+            chips = [f'<span class="chip on" title="{_html_escape(c["code"] or "")}: terms set '
+                     f'{len(c["terms_set"])}/{c["terms"]}. Selected by: {_html_escape(_tests(c)) or "–"}'
+                     f'{". Options: " + _html_escape(options_text(c)) if c.get("options") else ""}">'
+                     f'{_html_escape(c["name"])}</span>' for c in l["named"]]
+        else:
+            label = "No scenario selects"
+            chips = [f'<span class="chip">{_html_escape(n)}</span>' for n in l["missing"]]
+        named = "".join(chips[:10])
+        if len(chips) > 10:
+            rest = "".join(chips[10:60]) + (f'<span class="chip">+{len(chips) - 60} in Excel</span>' if len(chips) > 60 else "")
+            named += (f'<details class="more"><summary>+{len(chips) - 10} more</summary>'
+                      f'<div class="chips">{rest}</div></details>')
+        java = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l["java"][:12])
+        outside = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in (l.get("outside_suites") or [])[:12])
+        unused = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l.get("unused", [])[:12])
+        if len(l.get("unused", [])) > 12:
+            unused += f'<span class="chip">+{len(l["unused"]) - 12} in Excel</span>'
+        terms = f'{l["terms_set"]} of {l["terms"]} terms of those coverages set' if l["terms"] else "no terms on those coverages"
+        if l.get("option_terms"):
+            terms += (f'; {l["option_terms"]} option terms set, {l["options_chosen"]} of their '
+                      f'{l["options_total"]} options used')
+        off = "".join(f'<span class="chip warn" title="Options: {_html_escape(", ".join(n["options"]))}">'
+                      f'{_html_escape(n["coverage"])} / {_html_escape(n["term"])} = {_html_escape(n["value"])}</span>'
+                      for n in l.get("not_offered", []))
+        cards.append(
+            f'<div class="app-card"><div class="app-name">{_html_escape(l["line"])}</div>'
+            f'<div class="app-big">{len(l["named"])}<small> of {l["coverages"]} coverages</small></div>'
+            f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
+            f'<div class="app-sub">{terms}</div>'
+            + (f'<div class="chips-label">{label}</div><div class="chips">{named}</div>' if named else "")
+            + (f'<div class="chips-label">Term values that are not an option in the product model</div><div class="chips">{off}</div>' if off else "")
+            + (f'<div class="chips-label">Selected only by scenarios no suite runs</div><div class="chips">{outside}</div>' if outside else "")
+            + (f'<details class="more"><summary>{len(l.get("unused", []))} in data rows no scenario reaches</summary>'
+               f'<div class="chips">{unused}</div></details>' if unused else "")
+            + (f'<details class="more"><summary>{len(l["java"])} named only in code: check</summary>'
+               f'<div class="chips">{java}</div></details>' if java else "")
+            + "</div>")
+    return ('  <div class="screens"><h2>Product coverages the scenarios select</h2>'
+            '<p class="screens-note">From the generated product model, per line of business: a coverage counts when a '
+            'row an enabled scenario reaches (its DataCombination row and what it references) names it, by name or code. '
+            'Names are counted once per line, and a name several lines share counts for each. Every coverage is in the '
+            'Excel sheet "Product coverage".</p>'
+            f'<div class="app-grid">{"".join(cards)}</div></div>\n')
+
+
+def _breadth_tiles_html(data, products, states, suite_reach) -> str:
+    """'What the regression covers' at the top of the page: flows, scenarios, coverages, options,
+    jurisdictions and the widest suite - the same numbers as the panels below."""
+    tiles = []
+    full = suite_reach[0] if suite_reach else None
+    if full:
+        tiles.append((str(full["test"]), "Flows that run"))
+    if data and data.get("scenarios") is not None:
+        tiles.append((str(data["scenarios"]), "Scenario runs per full run"))
+    if products:
+        tiles.append((f'{sum(len(l["named"]) for l in products)}/{sum(l["coverages"] for l in products)}',
+                      "Product coverages selected"))
+        total = sum(l.get("options_total", 0) for l in products)
+        if total:
+            tiles.append((f'{sum(l.get("options_chosen", 0) for l in products)}/{total}', "Limit/deductible options set"))
+    if states:
+        tiles.append((str(len(set().union(*(l["states"] for l in states)))), "Jurisdictions"))
+    if full and len(suite_reach) > 1 and full["test"]:
+        best = max(suite_reach[1:], key=lambda r: (r["test"], r["coverage"], r["jurisdiction"]))
+        tiles.append((f'{best["test"] * 100 // full["test"]}%', f'Flows in the widest suite ({best["suite"]})'))
+    if not tiles:
+        return ""
+    cards = "".join(f'<div class="stat-card"><div class="stat-value stat-blue">{_html_escape(v)}</div>'
+                    f'<div class="stat-label">{_html_escape(k)}</div></div>' for v, k in tiles)
+    return f'  <div class="breadth"><h2>What the regression covers</h2><div class="stats-grid">{cards}</div></div>\n'
+
+
+def _no_suite_html(missing) -> str:
+    """Flows, coverages and line/jurisdictions the full run reaches and no suite does."""
+    if not missing:
+        return ""
+    labels = {"test": "Flows", "coverage": "Coverages", "jurisdiction": "Line/jurisdictions"}
+    groups = "".join(
+        f'<div class="chips-label">{labels[k]} ({len(names)})</div><div class="chips">'
+        + "".join(f'<span class="chip warn">{_html_escape(n)}</span>' for n in names[:40])
+        + (f'<span class="chip">+{len(names) - 40}</span>' if len(names) > 40 else "") + "</div>"
+        for k in ("test", "coverage", "jurisdiction")
+        for names in [[i[1] if k == "test" else f"{i[1]} {i[2]}" for i in missing if i[0] == k]] if names)
+    return (f'<details class="more"><summary>{len(missing)} reached by no suite: they run only when everything '
+            f'runs</summary>{groups}</details>')
+
+
+def _suites_panel_html(rows) -> str:
+    """'How much of the full run each suite reaches': flows (test methods), product coverages and
+    line/jurisdiction pairs as a share of what every scenario together reaches."""
+    if not rows or len(rows) < 2:
+        return ""
+    full = rows[0]
+    ranked = sorted(rows[1:], key=lambda r: (-r["test"], -r["coverage"], r["suite"].lower()))
+    running = [r for r in ranked if r["scenarios"]]
+    idle = [r["suite"] for r in ranked if not r["scenarios"]]
+
+    def cell(r, k):
+        if not full[k]:
+            return '<td class="num">–</td>'
+        share = r[k] * 100 // full[k]  # floored as the terminal does: 216 of 217 is 99%, never 100%
+        return (f'<td class="num" title="{r[k]} of {full[k]}"><span class="share"><i style="width:{share}%"></i>'
+                f'</span>{share}%</td>')
+
+    body = "".join(f'<tr><td>{_html_escape(r["suite"])}</td><td class="num">{r["scenarios"]}</td>'
+                   f'{cell(r, "test")}{cell(r, "coverage")}{cell(r, "jurisdiction")}</tr>' for r in running)
+    return ('  <div class="screens"><h2>How much of the full run each suite reaches</h2>'
+            f'<p class="screens-note">All {full["scenarios"]} scenarios that run reach {full["test"]} test methods (flows), '
+            f'{full["coverage"]} product coverages and {full["jurisdiction"]} line/jurisdiction pairs. Each suite as CenterTest '
+            'resolves it, as a share of those. <code>--cover SUITE</code> names what a suite misses and the fewest '
+            'scenarios to add.</p>'
+            '<div class="table-wrap"><table class="suite-reach"><thead><tr><th>Suite</th><th class="num">Scenarios</th>'
+            '<th class="num">Flows</th><th class="num">Coverages</th><th class="num">Jurisdictions</th></tr></thead>'
+            f'<tbody>{body}</tbody></table></div>'
+            + (f'<p class="screens-note">Run nothing ({len(idle)}): {_html_escape(", ".join(idle))}</p>' if idle else "")
+            + _no_suite_html(full.get("no_suite") or [])
+            + '</div>\n')
+
+
+def _states_panel_html(lines) -> str:
+    """'States the scenarios run in': per line, the states its scenarios' data names, and the states the
+    suite uses on other lines but never on this one."""
+    if not lines:
+        return ""
+    every = set().union(*(l["states"] for l in lines))
+    cards = []
+    for l in lines:
+        chips = "".join(f'<span class="chip on" title="{n} scenario{"s" if n != 1 else ""}">{_html_escape(s)}</span>'
+                        for s, n in l["states"].items())
+        gap = "".join(f'<span class="chip">{_html_escape(s)}</span>' for s in l["elsewhere"])
+        cards.append(
+            f'<div class="app-card"><div class="app-name">{_html_escape(l["line"])}</div>'
+            f'<div class="app-big">{len(l["states"])}<small> of {len(every)} jurisdictions the suite uses</small></div>'
+            f'<div class="app-bar"><i style="width:{len(l["states"]) / len(every) * 100:.0f}%"></i></div>'
+            f'<div class="chips">{chips}</div>'
+            + (f'<details class="more"><summary>{len(l["elsewhere"])} used on other lines, never here</summary>'
+               f'<div class="chips">{gap}</div></details>' if gap else "")
+            + "</div>")
+    return ('  <div class="screens"><h2>Jurisdictions the scenarios run in</h2>'
+            '<p class="screens-note">Per line of business (the DataCombination workbook\'s prefix): the states or provinces a row '
+            'an enabled scenario reaches names in a State, Jurisdiction or Governing Law column, by the Jurisdiction '
+            'typelist\'s code or name. Addresses count too. Hover one for its scenarios; every line and jurisdiction is '
+            'in the Excel sheet "States".</p>'
+            f'<div class="app-grid">{"".join(cards)}</div></div>\n')
+
+
+def _data_panel_html(d) -> str:
+    """'Test data': scenarios a full run executes, unread workbooks, unused codes, broken references."""
+    if not d:
+        return ""
+    unread = ", ".join(os.path.basename(u) for u in d["unread"][:6]) + (" …" if len(d["unread"]) > 6 else "")
+    tiles = [
+        (f'{d["scenarios"]}', "scenario runs in a full run",
+         f'{d["data_driven"]} data-driven of {d["test_classes"]} test classes; Multiplier repeats included; '
+         f'{d["disabled"]} rows disabled'),
+        (f'{len(d["unread"])}<small> of {d["dc_files"]}</small>', "DC workbooks no test reads", unread or "every workbook is read"),
+        (f'{d["unused_codes"]}<small> of {d["codes"]}</small>', "reference codes nothing uses",
+         "xlsx-cleanup-unused lists them"),
+        (f'{d["broken_live"]}' if d["broken_live"] is not None else "–", "broken references in data tests run",
+         f'{d["broken_dormant"]} more in data no test runs' if d["broken_live"] is not None
+         else "not checked: rules 14003/14004 were not part of this run"),
+    ]
+    if d.get("in_no_suite"):
+        n = d["in_no_suite"]
+        classes = ", ".join(n["classes"][:5]) + (" …" if len(n["classes"]) > 5 else "")
+        tiles.append((f'{n["count"]}<small> of {n["of"]}</small>', "distinct scenarios no suite runs",
+                      f"Classes outside every suite: {classes}" if classes else "every class is in a suite"))
+    cells = "".join(f'<div class="data-tile"><div class="data-big">{big}</div><div class="data-label">{_html_escape(label)}</div>'
+                    f'<div class="data-sub">{_html_escape(sub)}</div></div>' for big, label, sub in tiles)
+    return f'  <div class="data"><h2>Test data</h2><div class="data-grid">{cells}</div></div>\n'
+
+
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
-                  suppressed_count: int = 0) -> str:
-    """Generate a dashboard-style HTML health check report."""
+                  suppressed_count: int = 0, screens=None, data=None, products=None, since=None,
+                  states=None, suite_reach=None) -> str:
+    """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
+    output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Compute summary stats with weighted scoring
-    # Rules have different severity weights:
-    #   - Informational (Statistics): not scored — always have data, not issues
-    #   - Low (ClassNames, Methods): suggestions, nice-to-have
-    #   - Medium (Inheritance, Selenium, Complexity, CenterTest): should fix
-    #   - High (Quality, Security): must fix
-    _SEVERITY = {
-        "Statistics": None,    # informational — excluded from scoring
-        "ClassNames": "low",
-        "Methods":    "low",
-        "Inheritance": "medium",
-        "Selenium":   "medium",
-        "Complexity": "medium",
-        "CenterTest": "medium",
-        "Quality":    "high",
-        "Security":   "high",
-    }
-    _WEIGHT = {"low": 1, "medium": 2, "high": 3}
 
     total_issues = 0
     rules_passed = 0
     rules_failed = 0
     rules_error = 0
-    score_earned = 0.0
-    score_possible = 0.0
     categories: dict[str, dict] = {}
 
     for r in results:
         count = _count_items(r)
         total_issues += count
-        severity = _SEVERITY.get(r.category, "medium")
-
         if r.error:
             rules_error += 1
         elif count > 0:
             rules_failed += 1
         else:
             rules_passed += 1
-
-        # Weighted scoring (skip informational rules)
-        if severity is not None:
-            weight = _WEIGHT[severity]
-            score_possible += weight
-            if count == 0 and not r.error:
-                score_earned += weight
-            elif not r.error:
-                # Partial credit: few findings in a large codebase is still mostly healthy
-                # Deduct proportionally but never below 0
-                penalty = min(count / max(total_files, 1), 1.0)
-                score_earned += weight * max(0, 1.0 - penalty)
 
         cat = r.category
         if cat not in categories:
@@ -368,13 +897,17 @@ def generate_html(results: list[RuleResult], output_dir: str,
         categories[cat]["issues"] += count
 
     total_rules = len(results)
-    health_score = round(score_earned / score_possible * 100) if score_possible > 0 else 0
+    score = health_score(results, total_files)
+    blockers, trust_not_checked, trust_dormant = trust_blockers(results)
 
     # Determine score color
-    if health_score >= 80:
+    if blockers:
+        score_color = "#ef4444"  # red
+        score_label = "At risk"
+    elif score >= 80:
         score_color = "#22c55e"  # green
         score_label = "Healthy"
-    elif health_score >= 60:
+    elif score >= 60:
         score_color = "#f59e0b"  # amber
         score_label = "Needs Attention"
     else:
@@ -426,13 +959,14 @@ def generate_html(results: list[RuleResult], output_dir: str,
   }}
 
   /* Stat cards */
+  .breadth {{ margin: 24px 0 8px; }} .breadth h2 {{ margin: 0 0 12px; }}
   .stats-grid {{
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
     gap: 16px;
   }}
   .stat-card {{
     background: var(--surface); border-radius: 12px; padding: 20px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere;
   }}
   .stat-value {{ font-size: 28px; font-weight: 700; }}
   .stat-label {{ font-size: 12px; color: var(--text-muted); text-transform: uppercase;
@@ -443,6 +977,58 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .stat-blue {{ color: var(--accent); }}
 
   /* Category bars */
+  .trust {{ margin: 28px 0 0; background: var(--surface); border: 1px solid var(--border);
+    border-left: 4px solid var(--red); border-radius: 12px; padding: 18px 22px; }}
+  .trust.ok {{ border-left-color: var(--green); }}
+  .trust h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 4px; }}
+  .trust .trust-sub {{ color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }}
+  .blocker {{ display: grid; grid-template-columns: 56px 1fr; gap: 4px 14px; padding: 12px 0;
+    border-top: 1px solid var(--surface2); cursor: pointer; }}
+  .blocker-count {{ font-size: 28px; font-weight: 800; color: var(--red); line-height: 1;
+    font-variant-numeric: tabular-nums; }}
+  .blocker-title {{ font-weight: 600; }}
+  .blocker-why {{ color: var(--text-muted); font-size: 14px; }}
+  .blocker ul {{ grid-column: 2; margin: 4px 0 0 18px; font-size: 13px; color: var(--text);
+    font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }}
+  a.ide {{ color: inherit; text-decoration: underline; text-decoration-color: var(--border); }}
+  a.ide:hover {{ text-decoration-color: var(--accent); }}
+  .data {{ margin: 28px 0 0; }}
+  .data h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 12px; }}
+  .data-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }}
+  .data-tile {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; min-width: 0; }}
+  .data-big {{ font-size: 30px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }}
+  .data-big small {{ font-size: 14px; font-weight: 500; color: var(--text-muted); }}
+  .data-label {{ font-weight: 600; font-size: 14px; margin-top: 2px; }}
+  .data-sub {{ color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }}
+  ul.since {{ margin: 6px 0 12px 18px; padding: 0; font-size: 13px; color: var(--text-muted); }}
+  ul.since code {{ font-size: 12px; overflow-wrap: anywhere; }}
+  .screens {{ margin: 28px 0 0; }}
+  .screens h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 4px; }}
+  .screens-note {{ color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }}
+  .app-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; }}
+  .app-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; min-width: 0; }}
+  .app-name {{ font-weight: 600; }}
+  .app-big {{ font-size: 32px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }}
+  .app-big small {{ font-size: 14px; font-weight: 500; color: var(--text-muted); }}
+  .app-bar {{ height: 6px; border-radius: 4px; background: var(--surface2); margin: 8px 0 6px; overflow: hidden; }}
+  .app-bar i {{ display: block; height: 100%; background: var(--accent); }}
+  .app-sub {{ color: var(--text-muted); font-size: 13px; }}
+  .chips-label {{ font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }}
+  .chips {{ display: flex; flex-wrap: wrap; gap: 4px; }}
+  .chip {{ font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-muted); overflow-wrap: anywhere; }}
+  .chip.on {{ color: var(--text); border-color: var(--accent); }}
+  .chip.warn {{ color: var(--text); border-color: var(--amber); }}
+  .table-wrap {{ overflow-x: auto; }}
+  table.suite-reach {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  table.suite-reach th, table.suite-reach td {{ padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }}
+  table.suite-reach .num {{ text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }}
+  .share {{ display: inline-block; width: 70px; height: 6px; margin-right: 8px; border-radius: 3px;
+            background: var(--surface2); vertical-align: middle; overflow: hidden; }}
+  .share i {{ display: block; height: 100%; background: var(--accent); }}
+  details.more {{ width: 100%; }}
+  details.more summary {{ cursor: pointer; font-size: 12px; color: var(--accent); margin: 4px 0; }}
+  .trust-dormant {{ color: var(--text-muted); font-size: 13px; margin-top: 10px; }}
+  .trust-unchecked {{ color: var(--amber); font-size: 13px; margin-top: 10px; }}
   .categories {{ margin: 32px 0; }}
   .categories h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 16px; }}
   .cat-row {{
@@ -461,6 +1047,19 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .cat-bar-fill.red {{ background: var(--red); }}
   .cat-bar-fill.amber {{ background: var(--amber); }}
   .cat-issues {{ width: 80px; text-align: right; font-size: 14px; color: var(--text-muted); }}
+  .tier-note {{ color: var(--text-muted); font-size: 14px; margin: -8px 0 12px; }}
+  .tier {{ padding: 10px 0; border-bottom: 1px solid var(--surface2); }}
+  .tier-head {{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }}
+  .tier-title {{ font-weight: 600; }}
+  .tier-count {{ font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }}
+  .tier .cat-bar-bg {{ margin: 6px 0; height: 8px; flex: none; }}
+  .tier-fill {{ height: 100%; border-radius: 4px; }}
+  .tier-trust .tier-fill {{ background: var(--red); }} .tier-trust .tier-count {{ color: var(--red); }}
+  .tier-high .tier-fill {{ background: var(--amber); }}
+  .tier-medium .tier-fill {{ background: var(--accent); }}
+  .tier-low .tier-fill {{ background: var(--text-muted); opacity: .6; }}
+  .tier-why {{ color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }}
+  .tier-why a {{ color: var(--text); text-decoration: underline; text-decoration-color: var(--border); }}
 
   /* Rules table */
   .rules-section {{ margin: 32px 0; }}
@@ -548,7 +1147,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
   <div class="score-row">
     <div class="score-card">
-      <div class="score-number">{health_score}</div>
+      <div class="score-number">{score}</div>
       <div class="score-label">Health Score</div>
       <div class="score-badge">{score_label}</div>
     </div>
@@ -585,24 +1184,18 @@ def generate_html(results: list[RuleResult], output_dir: str,
   </div>
 """
 
-    # Category breakdown
-    html += '  <div class="categories">\n    <h2>By Category</h2>\n'
-    max_issues = max((c["issues"] for c in categories.values()), default=1) or 1
-    for cat_name, cat_data in categories.items():
-        total_cat = cat_data["passed"] + cat_data["failed"]
-        pct = cat_data["passed"] / total_cat * 100 if total_cat > 0 else 100
-        bar_pct = cat_data["issues"] / max_issues * 100
-        bar_class = "green" if cat_data["issues"] == 0 else ("amber" if cat_data["issues"] < 10 else "red")
-        cat_id = cat_name.lower().replace(" ", "-")
-        html += f"""    <div class="cat-row" style="cursor:pointer" onclick="navigateTo('cat-{cat_id}')">
-      <div class="cat-name">{_html_escape(cat_name)}</div>
-      <div class="cat-bar-bg">
-        <div class="cat-bar-fill {bar_class}" style="width:{bar_pct:.0f}%"></div>
-      </div>
-      <div class="cat-issues">{cat_data['issues']} issue{"s" if cat_data["issues"] != 1 else ""}</div>
-    </div>
-"""
-    html += '  </div>\n'
+    html += _breadth_tiles_html(data, products, states, suite_reach)
+    repo_root = os.path.dirname(os.path.abspath(output_dir))
+    from eir_since import panel_html as _since_panel
+    html += _since_panel(since, _html_escape)
+    html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
+    # what to act on before what the suite exercises: the order the skill reports in
+    html += _fix_order_html(results)
+    html += _data_panel_html(data)
+    html += _screens_panel_html(screens)
+    html += _products_panel_html(products)
+    html += _states_panel_html(states)
+    html += _suites_panel_html(suite_reach)
 
     # Rules summary table (collapsible)
     html += """  <div class="rules-section">
@@ -693,10 +1286,12 @@ def generate_html(results: list[RuleResult], output_dir: str,
                 for h in r.headers:
                     html += f'<th>{_html_escape(h)}</th>'
                 html += '</tr></thead><tbody>\n'
+                loc_i = r.headers.index("Location") if "Location" in r.headers else None
                 for row in r.rows[:100]:
                     html += '              <tr>'
-                    for val in row:
-                        html += f'<td>{_html_escape(val)}</td>'
+                    for i, val in enumerate(row):
+                        cell = _ide_link(repo_root, str(val), str(val)) if i == loc_i else _html_escape(val)
+                        html += f'<td>{cell}</td>'
                     html += '</tr>\n'
                 if len(r.rows) > 100:
                     html += f'              <tr><td colspan="{len(r.headers)}" style="color:var(--text-muted);text-align:center">... and {len(r.rows) - 100} more (see Excel)</td></tr>\n'
@@ -817,4 +1412,18 @@ def print_terminal_summary(results: list[RuleResult], suppressed_count: int = 0)
     print("-" * 60)
     sup_text = f"  |  Suppressed: {suppressed_count}" if suppressed_count > 0 else ""
     print(f"  Total issues: {total_issues}{sup_text}  |  Errors: {errors}  |  Rules: {len(results)}")
+    print("=" * 60)
+    blockers, not_checked, dormant = trust_blockers(results, sample_size=3)
+    if blockers:
+        print("  TRUST BLOCKERS: tests can pass while the app is broken, or cannot run")
+        for b in blockers:
+            print(f"  !! {b['count']:>3} x {b['title']} ({b['rule_id']})")
+            for x in b["samples"]:
+                print(f"         {x}")
+    else:
+        print("  No trust blockers.")
+    if dormant:
+        print(f"  Not blockers: {dormant} data finding(s) no test runs (unused workbook or disabled row)")
+    if not_checked:
+        print(f"  Not checked in this run: {', '.join(not_checked)}")
     print("=" * 60)

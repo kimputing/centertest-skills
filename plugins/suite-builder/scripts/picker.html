@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suite picker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Run sheet: a quiet tree of tests on the left, the run ledger (what the suite will run) on the right. */
+:root {
+  --ground: #e9eeec; --sheet: #ffffff; --ink: #16201c; --soft: #5b6b65; --rule: #d3dcd8;
+  --teal: #0f6e64; --teal-tint: #dcefe9; --added: #0f6e64; --removed: #a83a26; --amber: #a55a07;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #101614; --sheet: #18201d; --ink: #e3ebe7; --soft: #93a49d; --rule: #2a3531;
+    --teal: #4fc2b1; --teal-tint: #1c3a34; --added: #4fc2b1; --removed: #f08a73; --amber: #f0b45c;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.45 var(--sans); }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
+  padding: 18px max(16px, 3vw) 14px; border-bottom: 1px solid var(--rule); }
+header h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+header .project { color: var(--soft); font-size: 14px; overflow-wrap: anywhere; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 20px;
+  padding: 18px max(16px, 3vw) 40px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+/* Tree */
+.tests { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; min-width: 0; }
+.tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+.tools input[type=search] { flex: 1 1 220px; font: inherit; color: var(--ink); background: var(--ground);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 7px 10px; }
+.tools label { color: var(--soft); font-size: 14px; display: flex; gap: 6px; align-items: center; }
+.tree { padding: 6px 0 10px; }
+.pkg { padding: 14px 14px 4px; color: var(--soft); font-size: 13px; overflow-wrap: anywhere; }
+.row { display: grid; grid-template-columns: 18px 18px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 4px 14px; }
+.row:hover { background: var(--teal-tint); }
+.row.method { padding-left: 40px; } .row.code { padding-left: 66px; }
+.row .twist { border: 0; background: none; color: var(--soft); cursor: pointer; padding: 0; font: inherit; width: 18px; }
+.row .twist:focus-visible, .row input:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.row input { margin: 0; accent-color: var(--teal); width: 16px; height: 16px; }
+.name { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; cursor: pointer; }
+.row.class .name { font-weight: 500; }
+.desc { color: var(--soft); font-family: var(--sans); font-size: 13px; margin-left: 8px; }
+.count { color: var(--soft); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.in { color: var(--soft); font-size: 12px; margin-left: 8px; font-family: var(--sans); }
+.in.none { color: var(--amber); }
+.row.disabled .name { text-decoration: line-through; color: var(--soft); }
+.err { color: var(--amber); font-size: 13px; padding: 2px 14px 2px 66px; }
+.empty { padding: 40px 14px; color: var(--soft); text-align: center; }
+
+/* Ledger */
+.ledger { position: sticky; top: 16px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
+.ledger label { font-size: 13px; color: var(--soft); display: grid; gap: 4px; }
+.ledger select, .ledger input[type=text] { font: inherit; color: var(--ink); background: var(--ground);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 7px 10px; width: 100%; }
+.runs { border-top: 1px solid var(--rule); padding-top: 12px; }
+.runs .big { font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.runs .big .was { font-size: 22px; color: var(--soft); font-weight: 500; margin-right: 6px; }
+.runs .what { color: var(--soft); font-size: 14px; margin-top: 4px; }
+.delta { font-size: 14px; font-variant-numeric: tabular-nums; }
+.delta .plus { color: var(--added); } .delta .minus { color: var(--removed); }
+.entries { list-style: none; margin: 0; padding: 0; max-height: 38vh; overflow: auto; border-top: 1px solid var(--rule); }
+.entries li { font-family: var(--mono); font-size: 13px; padding: 5px 0 5px 18px; border-bottom: 1px solid var(--rule);
+  position: relative; overflow-wrap: anywhere; }
+.entries li::before { position: absolute; left: 2px; font-family: var(--sans); font-weight: 700; }
+.entries li.add { color: var(--added); } .entries li.add::before { content: "+"; }
+.entries li.del { color: var(--removed); text-decoration: line-through; } .entries li.del::before { content: "−"; }
+.entries li.bad { color: var(--amber); } .entries li.bad::before { content: "!"; }
+.note { font-size: 13px; color: var(--soft); margin: 0; }
+.note.bad { color: var(--amber); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: inherit; border-radius: 6px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--rule); background: var(--sheet); color: var(--ink); }
+button.primary { background: var(--teal); border-color: var(--teal); color: var(--sheet); font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+pre.cmd { margin: 0; font-family: var(--mono); font-size: 12px; background: var(--ground); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 8px 10px; max-height: 20vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.status { font-size: 13px; min-height: 1.3em; color: var(--added); }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { .runs .big { transition: color .2s; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Suite picker</h1>
+  <span class="project" id="project"></span>
+</header>
+<main class="layout">
+  <section class="tests" aria-label="Tests">
+    <div class="tools">
+      <input type="search" id="q" placeholder="Filter by class, method, code, description or data (TX, Truck, Liquor…)" aria-label="Filter tests">
+      <label><input type="checkbox" id="showDisabled"> Show disabled rows</label>
+      <label><input type="checkbox" id="onlyGaps"> Only tests no suite runs</label>
+    </div>
+    <div class="tree" id="tree"></div>
+  </section>
+
+  <aside class="ledger" aria-label="Suite">
+    <label>Suite
+      <select id="suite"><option value="">New suite</option></select>
+    </label>
+    <label id="nameRow">Name of the new suite
+      <input type="text" id="name" placeholder="e.g. TexasSmoke" autocomplete="off">
+    </label>
+    <div class="runs">
+      <div class="big" id="big">0</div>
+      <div class="what" id="what">scenarios selected</div>
+      <div class="delta" id="delta"></div>
+    </div>
+    <ul class="entries" id="entries" aria-label="Entries"></ul>
+    <p class="note" id="note"></p>
+    <div class="actions">
+      <button class="primary" id="copy">Copy command for Claude</button>
+      <button id="reset">Reset to saved</button>
+    </div>
+    <pre class="cmd" id="cmd" aria-label="Command"></pre>
+    <div class="status" id="status" role="status"></div>
+  </aside>
+</main>
+
+<script id="data" type="application/json">/*__DATA__*/</script>
+<script>
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const $ = id => document.getElementById(id);
+const KEY = (c, m, k) => c + "\t" + m + "\t" + k;
+const META = new Set(".^$*+?()[]{}|\\".split(""));
+const lit = s => [...s].map(ch => META.has(ch) ? "\\" + ch : ch).join("").replace(/ /g, "\\s");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+// Runnable scenarios, as the engine counts them: one per enabled row, or one ("") for a method without data.
+function runnable(includeDisabled) {
+  const out = [];
+  for (const t of DATA.tests) for (const m of t.methods) {
+    if (m.datasource && !m.error) {
+      for (const c of m.codes) if (includeDisabled || !c.disabled) out.push([t.class, m.name, c.code]);
+    } else out.push([t.class, m.name, ""]);
+  }
+  return out;
+}
+const ALL = runnable(false), ALL_WITH_DISABLED = runnable(true);
+
+// An entry read as CenterTest reads it: each part a case-insensitive regex on the whole name.
+function full(pattern, value) {
+  try { return new RegExp("^(?:" + pattern + ")$", "i").test(value); }
+  catch (e) { return pattern.toLowerCase() === value.toLowerCase(); }
+}
+function resolveEntry(entry) {
+  const p = String(entry).trim().split(/\s+/);
+  if (!p[0]) return [];
+  const code = p.slice(2).join(" ");
+  return ALL.filter(([c, m, k]) => full(p[0], c) && (p.length < 2 || full(p[1], m)) && (p.length < 3 || full(code, k)));
+}
+
+// Compact entries for a set of keys: "Class" / "Class method" / "Class method (a|b)".
+function compact(keys) {
+  const out = [];
+  for (const t of DATA.tests) {
+    const per = t.methods.map(m => {
+      const run = ALL.filter(([c, mm]) => c === t.class && mm === m.name).map(x => x[2]);
+      const chosen = run.filter(k => keys.has(KEY(t.class, m.name, k)));
+      return { m, run, chosen };
+    });
+    if (per.every(x => x.run.length && x.chosen.length === x.run.length)) { out.push(lit(t.class)); continue; }
+    for (const { m, run, chosen } of per) {
+      if (!chosen.length) continue;
+      if (chosen.length === run.length) out.push(lit(t.class) + " " + lit(m.name));
+      else {
+        const codes = chosen.filter(k => k).sort();
+        const leftOut = run.filter(k => k && !chosen.includes(k)).sort();
+        const alt = leftOut.length < codes.length
+          ? "(?!(?:" + leftOut.map(lit).join("|") + ")$).*"  // every row except these (same rule as suite.py)
+          : codes.length === 1 ? lit(codes[0]) : "(" + codes.map(lit).join("|") + ")";
+        out.push(lit(t.class) + " " + lit(m.name) + " " + alt);
+      }
+    }
+  }
+  return out;
+}
+
+const state = { sel: new Set(), open: new Set(), saved: [], savedKeys: new Set() };
+
+function suiteByName(n) { return DATA.suites.find(s => (s.Name || "") === n); }
+
+function loadSuite() {
+  const s = suiteByName($("suite").value);
+  state.saved = s ? (s.List || []).slice() : [];
+  state.savedKeys = new Set(state.saved.flatMap(e => resolveEntry(e).map(x => KEY(...x))));
+  state.sel = new Set(state.savedKeys);
+  $("nameRow").hidden = !!s;
+  render();
+}
+
+// The List after the edit: untouched entries kept verbatim, an entry partly deselected rewritten to what it keeps,
+// newly selected scenarios appended as compact entries. Same rules as suite.py add / remove.
+function newList() {
+  const kept = [], covered = new Set();
+  for (const e of state.saved) {
+    const hit = resolveEntry(e).map(x => KEY(...x));
+    if (!hit.length) { kept.push(e); continue; }
+    const stay = hit.filter(k => state.sel.has(k));
+    if (stay.length === hit.length) kept.push(e);
+    else if (stay.length) kept.push(...compact(new Set(stay)));
+    hit.forEach(k => covered.add(k));
+  }
+  const fresh = new Set([...state.sel].filter(k => !covered.has(k)));
+  return kept.concat(compact(fresh));
+}
+
+function tristate(keys) {
+  const n = keys.filter(k => state.sel.has(k)).length;
+  return n === 0 ? "none" : n === keys.length ? "all" : "some";
+}
+
+function render() {
+  const q = $("q").value.trim().toLowerCase();
+  const showDisabled = $("showDisabled").checked;
+  const onlyGaps = $("onlyGaps").checked;
+  const MEM = DATA.membership || {};
+  const gap = (c, m, k) => !(MEM[KEY(c, m, k)] || []).length;
+  let html = "", pkg = null, shown = 0;
+  for (const t of DATA.tests) {
+    const methods = t.methods.map(m => {
+      let rows = m.datasource && !m.error ? m.codes.filter(c => showDisabled || !c.disabled) : [];
+      if (onlyGaps) rows = rows.filter(c => c.disabled || gap(t.class, m.name, c.code));
+      const hitCls = !q || t.class.toLowerCase().includes(q), hitM = hitCls || m.name.toLowerCase().includes(q);
+      const rowsShown = hitM ? rows : rows.filter(c => c.code.toLowerCase().includes(q) || (c.desc || "").toLowerCase().includes(q)
+        || (c.data || "").toLowerCase().includes(q));
+      const methodGap = !(m.datasource && !m.error) && gap(t.class, m.name, "");
+      const visible = (hitM || rowsShown.length) && (!onlyGaps || rows.length || methodGap);
+      return { m, rows, rowsShown, visible };
+    }).filter(x => x.visible);
+    if (!methods.length) continue;
+    shown++;
+    if (t.package !== pkg) { pkg = t.package; html += `<div class="pkg">${esc(pkg || "(default package)")}</div>`; }
+    const clsKeys = ALL.filter(x => x[0] === t.class).map(x => KEY(...x));
+    const nRows = t.methods.reduce((n, m) => n + m.codes.filter(c => !c.disabled).length, 0);
+    const open = q || state.open.has(t.class);
+    const inSuites = [...new Set(clsKeys.flatMap(k => MEM[k] || []))].sort();
+    const uncovered = clsKeys.filter(k => !(MEM[k] || []).length).length;
+    const where = !inSuites.length ? `<span class="in none">in no suite</span>`
+      : `<span class="in" title="${esc(inSuites.join(", "))}">in ${esc(inSuites.slice(0, 3).join(", "))}${inSuites.length > 3 ? ` +${inSuites.length - 3}` : ""}${uncovered ? `; ${uncovered} scenario${uncovered > 1 ? "s" : ""} in none` : ""}</span>`;
+    html += row("class", t.class, "", "", t.class, "", nRows ? `${nRows} row${nRows > 1 ? "s" : ""}` : `${t.methods.length} method${t.methods.length > 1 ? "s" : ""}`, clsKeys, open, where);
+    if (!open) continue;
+    for (const { m, rows, rowsShown } of methods) {
+      const mKeys = ALL.filter(x => x[0] === t.class && x[1] === m.name).map(x => KEY(...x));
+      const mOpen = q || state.open.has(t.class + "#" + m.name);
+      const file = m.datasource ? m.datasource.split("/").pop() : "no data";
+      html += row("method", t.class, m.name, "", m.name, file, rows.length ? `${rows.length}` : "", mKeys, rows.length ? mOpen : null);
+      if (m.error) html += `<div class="err">${esc(m.error)}</div>`;
+      if (rows.length && mOpen) for (const c of rowsShown)
+        html += row("code" + (c.disabled ? " disabled" : ""), t.class, m.name, c.code, c.code, c.desc || "", c.disabled ? "disabled" : "", [KEY(t.class, m.name, c.code)], null, dataHit(c.data, q));
+    }
+  }
+  $("tree").innerHTML = shown ? html : `<div class="empty">${DATA.tests.length ? "No tests match the filter." : "No @CenterTest classes were found under " + esc(DATA.sourceRoot) + "."}</div>`;
+  for (const box of $("tree").querySelectorAll("input[data-state]")) box.indeterminate = box.dataset.state === "some";
+  ledger();
+}
+
+function dataHit(data, q) {
+  // the row's cells that match the filter, so a scenario found by its data shows why
+  if (!q || !data) return "";
+  const cells = data.split(" · ").filter(c => c.toLowerCase().includes(q)).slice(0, 3);
+  return cells.length ? `<span class="desc">${esc(cells.join(" · "))}</span>` : "";
+}
+
+function row(level, cls, method, code, label, desc, count, keys, open, extra = "") {
+  const st = tristate(keys);
+  const tw = open === null ? "" : `<button class="twist" data-open="${esc(level === "class" ? cls : cls + "#" + method)}" aria-label="${open ? "Collapse" : "Expand"} ${esc(label)}">${open ? "▾" : "▸"}</button>`;
+  return `<div class="row ${level}"><span>${tw}</span>
+    <input type="checkbox" data-keys="${esc(JSON.stringify(keys))}" data-state="${st}" ${st === "all" ? "checked" : ""} aria-label="Run ${esc(label)}">
+    <span class="name" data-toggle>${esc(label)}${desc ? `<span class="desc">${esc(desc)}</span>` : ""}${extra}</span>
+    <span class="count">${esc(count)}</span></div>`;
+}
+
+function ledger() {
+  const list = newList();
+  const existing = suiteByName($("suite").value);
+  const before = state.savedKeys.size, after = state.sel.size;
+  const added = [...state.sel].filter(k => !state.savedKeys.has(k)).length;
+  const removed = [...state.savedKeys].filter(k => !state.sel.has(k)).length;
+  $("big").innerHTML = existing && (added || removed) ? `<span class="was">${before} →</span>${after}` : `${after}`;
+  $("what").textContent = existing ? `scenarios ${existing.Name} runs` : "scenarios selected";
+  $("delta").innerHTML = existing && (added || removed) ? `<span class="plus">+${added}</span> <span class="minus">−${removed}</span> against the saved suite` : "";
+  const unmatched = new Set(state.saved.filter(e => !resolveEntry(e).length));
+  const items = [...state.saved.filter(e => !list.includes(e)).map(e => `<li class="del">${esc(e)}</li>`),
+                 ...list.map(e => `<li class="${unmatched.has(e) ? "bad" : state.saved.includes(e) ? "" : "add"}">${esc(e)}</li>`)];
+  $("entries").innerHTML = items.join("");
+  const notes = [];
+  if (unmatched.size) notes.push(`${unmatched.size} entr${unmatched.size > 1 ? "ies match" : "y matches"} no test — CenterTest reports ${unmatched.size > 1 ? "them" : "it"} as failed. They are kept; remove them in Claude if they are stale.`);
+  if (existing && (existing.Packages || existing.Suites)) notes.push("Packages and child suites of this suite are kept as they are; only its List changes.");
+  $("note").textContent = notes.join(" ");
+  $("note").className = "note" + (unmatched.size ? " bad" : "");
+  const name = existing ? existing.Name : $("name").value.trim();
+  const changed = existing ? (added || removed) : after > 0;
+  $("copy").disabled = !changed || !name;
+  $("cmd").textContent = changed && name ? command(existing, name, list) : (existing ? "Tick or untick tests to change this suite." : "Name the suite and tick the tests it should run.");
+}
+
+function command(existing, name, list) {
+  const base = `"$PYTHON" "${DATA.engine}" --project "${DATA.project}"`;
+  const body = list.join("\n");
+  if (!existing) return `${base} create "${name}" ${list.map(e => `--entry "${e.replace(/"/g, '\\"')}"`).join(" ")}`;
+  return `${base} set "${name}" --entries-file - <<'ENTRIES'\n${body}\nENTRIES`;
+}
+
+$("tree").addEventListener("click", e => {
+  const tw = e.target.closest("[data-open]");
+  if (tw) { const k = tw.dataset.open; state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); return; }
+  if (e.target.closest("[data-toggle]")) e.target.closest(".row").querySelector("input").click();
+});
+$("tree").addEventListener("change", e => {
+  const box = e.target.closest("input[data-keys]");
+  if (!box) return;
+  const keys = JSON.parse(box.dataset.keys);
+  const on = box.dataset.state !== "all";
+  keys.forEach(k => on ? state.sel.add(k) : state.sel.delete(k));
+  render();
+});
+$("q").addEventListener("input", render);
+$("showDisabled").addEventListener("change", render);
+$("onlyGaps").addEventListener("change", render);
+$("suite").addEventListener("change", loadSuite);
+$("name").addEventListener("input", ledger);
+$("reset").addEventListener("click", loadSuite);
+$("copy").addEventListener("click", async () => {
+  const text = "Apply this suite change (dry run first, then --write after I confirm):\n" + $("cmd").textContent;
+  try { await navigator.clipboard.writeText(text); $("status").textContent = "Copied. Paste it to Claude."; }
+  catch (err) { const r = document.createRange(); r.selectNodeContents($("cmd")); getSelection().removeAllRanges(); getSelection().addRange(r); $("status").textContent = "Select-all done: press Cmd/Ctrl+C."; }
+});
+
+$("project").textContent = `${DATA.projectName}: ${DATA.tests.length} test classes, ${ALL.length} scenarios, suites in ${DATA.suiteFile}`;
+$("suite").innerHTML = '<option value="">New suite</option>' + DATA.suites.map(s => `<option>${esc(s.Name || "")}</option>`).join("");
+if (DATA.preselect && suiteByName(DATA.preselect)) $("suite").value = DATA.preselect;
+loadSuite();
+if (DATA.start && !DATA.preselect) {
+  // a suggested selection (a branch's rerun plan, the scenarios that use a value): adjust it, then copy the command
+  $("suite").value = suiteByName(DATA.start.name) ? DATA.start.name : "";
+  loadSuite();
+  if (!suiteByName(DATA.start.name)) $("name").value = DATA.start.name || "";
+  state.sel = new Set(DATA.start.keys.filter(k => ALL.some(x => KEY(...x) === k)));
+  render();
+}
+</script>
+</body>
+</html>

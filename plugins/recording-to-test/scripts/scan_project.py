@@ -605,6 +605,31 @@ def negative_protocol(java):
 SUITE_KEYS = ("List", "Suites", "Packages")
 
 
+def _json_lenient(text):
+    """json.loads that also accepts a trailing comma before ] or }: hand-edited suite files have them
+    and CenterTest runs them."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+            continue
+        if ch == ",":
+            k = i + 1
+            while k < n and text[k] in " \t\r\n":
+                k += 1
+            if k < n and text[k] in "]}":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return json.loads("".join(out))
+
+
 def suites(root):
     """Suites of CenterTestSuiteList.json: {Name: {List, Suites, Packages}} (only the keys a suite has)."""
     path = os.path.join(root, *SUITE_FILE.split("/"))
@@ -612,7 +637,7 @@ def suites(root):
         return missing(f"no {SUITE_FILE}")
     try:
         with open(path, encoding="utf-8-sig") as f:
-            data = json.load(f)
+            data = _json_lenient(f.read())
     except (OSError, ValueError) as error:
         return missing(f"{SUITE_FILE} is not readable JSON: {error}")
     listed = data.get("CenterTestSuites") if isinstance(data, dict) else None

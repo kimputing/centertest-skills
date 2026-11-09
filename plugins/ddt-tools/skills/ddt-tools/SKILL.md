@@ -30,7 +30,7 @@ On first run, the scripts will prompt for the project path and save it to `~/.ce
 
 ```bash
 # Set/override project path
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt_config.py" --set-path "/path/to/centertest-project"
 
 # Show current path
@@ -110,7 +110,7 @@ directly rather than going through the CLI's `run_analysis`.
 Validates that DC DataCombination sheets only reference codes that exist in their reference data sheets.
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 
 # Validate all DC files
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-validate-refs.py"
@@ -126,7 +126,11 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 - Columns starting with `@` (DC→DC relationships, e.g. `@Submission`) resolve to an existing
   target DC file and an existing `Code` in it — the identifier comes from the DC's `$identifiers`
   default or a `Prefix.` on the value, resolved via `$relationships` in `DataDrivenHierarchy.json`
-- Handles comma-separated codes
+- Columns written `@Submission.#Coverage` (relationship hops) hold a code that must exist in the
+  **related** DC's scope — the DC this row's `@Submission` cell points at
+- Overrides (`#Policy.EffectiveDate`, `@Submission.#Policy.EffectiveDate`), joins
+  (`#LocationInfo<>#Coverage`) and sentinels (`<blank>`) hold values, not codes, and are not checked
+- Handles comma-separated codes; `Coupe(2)` is the second copy of record `Coupe` on the row (join scenarios), so it resolves to `Coupe`
 - Supports hierarchy via `testdata/DataDrivenHierarchy.json` (child DCs inherit parent codes)
 - Provides case-sensitivity hints when a near-match exists
 
@@ -137,7 +141,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 Smart cell-level diff for xlsx test data files.
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 
 # Diff working copy vs origin/main
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-diff.py" testdata/WorkersCompDC.xlsx
@@ -153,10 +157,14 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 
 ### 3. Report Unused Codes (`xlsx-cleanup-unused.py`) — fallback when Data Studio is unavailable
 
-Reports codes in Data files that are not referenced by any DC DataCombination sheet. This is a **report-only** tool — it never modifies files.
+Reports codes in Data files that nothing uses. This is a **report-only** tool — it never modifies files.
+A code counts as used when a DC `#Ref` column, a relationship hop (`@Submission.#Coverage`), another
+sheet's `#Ref` column (e.g. `LocationInfo.#Address`) or a `DDTHelper.getSharedDataX("code")` call in
+non-generated Java names it; the report prints how many codes each way accounts for. A code used only
+by an unused reference row is kept until that row is removed — run the report again after a cleanup.
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-cleanup-unused.py"
 ```
 
@@ -165,7 +173,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 Validates that hardcoded string codes in `DDTHelper.getXxx("code")` Java calls reference codes that actually exist in the corresponding xlsx files. This is a **report-only** tool.
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 
 # Check all Java source files
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-check-code-usages.py"
@@ -187,7 +195,7 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 Converts xlsx to human-readable text. Useful as a git textconv driver.
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/xlsx-textconv.py" testdata/WorkersCompDC.xlsx
 ```
 
@@ -198,6 +206,20 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 - **DC files**: Named `*DC.xlsx` in `testdata/` or subdirectories
 - **Data files**: Named `*Data.xlsx` in `testdata/`
 - **Reference columns**: Start with `#` in the DataCombination sheet — the part after `#` maps to a sheet name
+
+## Python with the packages
+
+Each command above picks the first interpreter that can import the packages: the private
+CenterTest environment `~/.centertest/venv` first, then `python3`, then `python`. If `$PYTHON` comes
+out empty, none has them — a plain `pip install` is refused by Homebrew and other
+"externally managed" Pythons, so ask the user before creating the private environment once:
+
+```bash
+python3 -m venv "$HOME/.centertest/venv" && "$HOME/.centertest/venv/bin/python" -m pip install openpyxl javalang
+# Windows (Git Bash): python -m venv "$HOME/.centertest/venv" && "$HOME/.centertest/venv/Scripts/python.exe" -m pip install openpyxl javalang
+```
+
+Every CenterTest skill finds it there afterwards.
 
 ## Prerequisites
 

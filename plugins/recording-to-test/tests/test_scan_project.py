@@ -619,6 +619,11 @@ class ConventionsTest(ProjectTestCase):
         self.assertIsNone(result["value"])
         self.assertIn("reason", result)
 
+    def test_trailing_commas_are_read_as_centertest_reads_them(self):
+        write(self.root, "src/main/resources/CenterTestSuiteList.json",
+              '{"CenterTestSuites": [{"Name": "Smoke", "List": ["A_Test", "B_Test",]},]}')
+        self.assertEqual(self.scan()["suites"]["value"]["suites"], {"Smoke": {"List": ["A_Test", "B_Test"]}})
+
     def test_invalid_suite_file_is_missing(self):
         write(self.root, "src/main/resources/CenterTestSuiteList.json", "{not json")
         self.assertIn("reason", self.scan()["suites"])
