@@ -90,6 +90,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monthly", action="store_true", help="Sample one commit per month")
     p.add_argument("--pr", nargs=2, metavar=("TARGET", "SOURCE"),
                    help="PR diff mode: analyze diff between branches")
+    p.add_argument("--fix", metavar="RULE", choices=["15018"],
+                   help="Rewrite findings of RULE (15018: discarded .equals() -> assertion); prints a diff, "
+                        "writes only with --write")
+    p.add_argument("--write", action="store_true", help="With --fix: apply the changes")
     p.add_argument("--cssids", metavar="DIR",
                    help="Generated project's src/main/resources (or its cssids/) for the screens panel; "
                         "default: <project>-generated next to the project, then the cssid-finder config")
@@ -249,6 +253,9 @@ def main():
     if not config.has_git_options():
         from eir_locate import annotate_locations
         annotate_locations(results, commits, config.repository_dir)
+    if args.fix:
+        from eir_fix import run_fix
+        sys.exit(run_fix(config.repository_dir, results, args.write))
 
     # Step 3: Apply suppressions
     output_dir = os.path.join(config.repository_dir, "healthcheck")
