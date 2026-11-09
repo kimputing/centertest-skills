@@ -189,6 +189,29 @@ class EndToEnd(unittest.TestCase):
                 page = fh.read()
             self.assertIn("PickOrganization.java:5", page)  # Organization Name, resolved from the fixture cssids
 
+    def test_each_recording_of_a_folder_gets_a_report_and_the_index_ranks_them(self):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, "src/main/java/com/x/steps/shared/PickOrganization.java", ORG)
+            out = os.path.join(root, "reports")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = coverage.main([os.path.join(FIXTURES, "recordings"), "--each", "--cssids",
+                                      os.path.join(FIXTURES, "cssids"), "--project", root, "--html", out])
+            self.assertEqual(code, 0)
+            files = sorted(os.listdir(out))
+            self.assertIn("index.html", files)
+            self.assertGreaterEqual(len(files), 4)  # narrated, real-174907, real-180418, synthetic + index
+            with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+                index = fh.read()
+            self.assertIn("Recorded flows: how much is automated", index)
+            self.assertIn("2026-10-01_174907", index)
+            self.assertIn("Index:", buf.getvalue())
+
+    def test_recordings_in_expands_a_folder(self):
+        found = coverage.recordings_in([os.path.join(FIXTURES, "recordings")])
+        self.assertIn(os.path.join(FIXTURES, "recordings", "real-174907"), found)
+        self.assertEqual(coverage.recordings_in(["x.zip"]), ["x.zip"])
+
     def test_missing_directories_exit_2(self):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(coverage.main(["x", "--cssids", "/nonexistent", "--project", "/nonexistent"]), 2)

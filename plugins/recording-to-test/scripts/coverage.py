@@ -279,11 +279,20 @@ def classify(step: dict, action: dict, index: dict, classes: dict, literals: dic
     return row
 
 
+_PROJECT_CACHE: dict = {}
+
+
+def _project_facts(project: str, only: str | None):
+    """(java index, classes, literals, data cells), read once per project and scope."""
+    key = (os.path.abspath(project), only)
+    if key not in _PROJECT_CACHE:
+        index = java_index(project, only)
+        _PROJECT_CACHE[key] = (index, _by_class(index), java_literals(index), data_strings(project))
+    return _PROJECT_CACHE[key]
+
+
 def coverage(plan: dict, project: str, only: str | None = None) -> dict:
-    index = java_index(project, only)
-    classes = _by_class(index)
-    literals = java_literals(index)
-    cells = data_strings(project)
+    index, classes, literals, cells = _project_facts(project, only)
     rows = [classify(step, action, index, classes, literals, cells)
             for step in plan.get("steps") or [] for action in step.get("actions") or []]
     screens = {}
@@ -390,6 +399,40 @@ def render_html(result: dict) -> str:
     return "".join(parts)
 
 
+def recordings_in(paths: list[str]) -> list[str]:
+    """The recordings named, a folder of recordings expanded to the ones directly inside it."""
+    out = []
+    for p in paths:
+        if os.path.isdir(p) and not os.path.isfile(os.path.join(p, "session.json")):
+            for name in sorted(os.listdir(p)):
+                sub = os.path.join(p, name)
+                if os.path.isfile(os.path.join(sub, "session.json")) or name.endswith(".zip"):
+                    out.append(sub)
+        else:
+            out.append(p)
+    return out
+
+
+def render_index(results: list[dict], only: str | None) -> str:
+    esc = html.escape
+    rows = []
+    for r in sorted(results, key=lambda r: (r["percent"] is None, r["percent"] or 0, r["file"])):
+        t = r["totals"]
+        pct = "–" if r["percent"] is None else f"{r['percent']}%"
+        rows.append(f"<tr><td><a href='{esc(r['file'])}'>{esc(str(r['name'] or r['recording'][0]))}</a>"
+                    f"<div style='color:var(--mute);font-size:12px'>{esc(str(r['recording'][0]))}</div></td>"
+                    f"<td>{len([s for s in r['screens'].values() if sum(s[k] for k in COUNTED)])}</td>"
+                    f"<td>{r['handled']}/{r['counted']}</td><td><b>{pct}</b></td>"
+                    f"<td>{t['missing']}</td><td>{t['partial']}</td><td>{t['hardcoded']}</td></tr>")
+    return (f"<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,"
+            f"initial-scale=1'><title>Recording coverage</title><style>{_CSS}</style></head><body><main>"
+            f"<h1>Recorded flows: how much is automated</h1><p class=sub>{len(results)} recordings, each looked up in the "
+            "project's own step classes" + (f" (paths matching <code>{esc(only)}</code>)" if only else "")
+            + ". Biggest gaps first; open one for its field-by-field report.</p><div class=wrap><table><tr><th>Recording</th>"
+            "<th>Screens</th><th>Automated</th><th>%</th><th>Missing</th><th>Partial</th><th>Hardcoded</th></tr>"
+            + "".join(rows) + "</table></div></main></body></html>")
+
+
 def main(argv=None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -400,10 +443,15 @@ def main(argv=None) -> int:
     ap.add_argument("--only", help="regex: search only step files whose path matches (e.g. one LOB folder)")
     ap.add_argument("--html", help="HTML report path (default ~/.centertest/reports/recording-coverage-<id>.html)")
     ap.add_argument("--json", action="store_true", help="print the result as JSON instead of text")
+    ap.add_argument("--each", action="store_true",
+                    help="each recording (or each one in a folder) is its own flow: one report each and an index; "
+                         "--html is then a folder (default ~/.centertest/reports/recording-coverage/)")
     args = ap.parse_args(argv)
     if not os.path.isdir(args.cssids) or not os.path.isdir(args.project):
         print("Error: --cssids and --project must be directories", file=sys.stderr)
         return 2
+    if args.each:
+        return _each(args)
     try:
         sessions = [parse_recording.load_session(p) for p in args.recording]
     except (parse_recording.RecordingError, ValueError, OSError) as error:
@@ -423,6 +471,43 @@ def main(argv=None) -> int:
     else:
         print(render_text(result))
         print(f"\nReport: {out}")
+    return 0
+
+
+def _each(args) -> int:
+    out_dir = args.html or os.path.join(os.path.expanduser("~"), ".centertest", "reports", "recording-coverage")
+    os.makedirs(out_dir, exist_ok=True)
+    results, skipped, seen = [], [], set()
+    for path in recordings_in(args.recording):
+        try:
+            session = parse_recording.load_session(path)
+        except (parse_recording.RecordingError, ValueError, OSError) as error:
+            skipped.append((path, str(error)))
+            continue
+        if session.get("id") and session["id"] in seen:  # a recording kept as its folder and its .zip
+            continue
+        seen.add(session.get("id"))
+        plan = parse_recording.build_plan(session, args.cssids, parse_recording.file_reader(path), None,
+                                          parse_recording.file_bytes(path))
+        result = coverage(plan, args.project, args.only)
+        result["file"] = re.sub(r"[^\w.-]+", "_", str(result["recording"][0] or os.path.basename(path))) + ".html"
+        with open(os.path.join(out_dir, result["file"]), "w", encoding="utf-8") as fh:
+            fh.write(render_html(result))
+        results.append(result)
+    index = os.path.join(out_dir, "index.html")
+    with open(index, "w", encoding="utf-8") as fh:
+        fh.write(render_index(results, args.only))
+    if args.json:
+        print(json.dumps([{k: r[k] for k in ("recording", "name", "handled", "counted", "percent", "totals", "file")}
+                          for r in results], indent=2))
+    else:
+        for r in sorted(results, key=lambda r: (r["percent"] is None, r["percent"] or 0)):
+            pct = "  -" if r["percent"] is None else f"{r['percent']:>3}%"
+            print(f"  {pct}  {r['handled']:>3}/{r['counted']:<3} missing {r['totals']['missing']:<3} "
+                  f"{r['name'] or r['recording'][0]}")
+        for path, error in skipped:
+            print(f"  skipped {path}: {error}")
+        print(f"\nIndex: {index}")
     return 0
 
 

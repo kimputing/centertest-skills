@@ -259,5 +259,6 @@ coverages from test data, no row names this one yet), missing or not counted (lo
 tab-bar menus). Ask which folder holds the flow's steps (e.g. its LOB and `shared`) for `--only`:
 without it a field set by another LOB's step counts as automated. Report the percentage, the
 screens with gaps and every partial and missing row with its reason; give the HTML report's path.
-The project is only read.
+The project is only read. For a folder of recordings (one flow each), add `--each`: a report per
+recording and an `index.html` ranked by gap in the `--html` folder.
 
