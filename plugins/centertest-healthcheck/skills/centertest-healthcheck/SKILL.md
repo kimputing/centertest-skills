@@ -26,7 +26,7 @@ Code quality assessment for CenterTest test automation projects. Checks framewor
 Analyze the current project with the Full ruleset:
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl, javalang" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/centertest/project"
 ```
 
@@ -147,6 +147,20 @@ verdict. When reporting results to the user, lead with these blockers.
 Reports are saved to `{project}/results/`:
 - **Excel**: `HealthCheck_YYYYMMDD_HHMMSS.xlsx` — Summary sheet + one sheet per rule
 - **Markdown**: `HealthCheck_YYYYMMDD_HHMMSS.md` — Full report in Markdown
+
+## Python with the packages
+
+Each command above picks the first interpreter that can import the packages: the private
+CenterTest environment `~/.centertest/venv` first, then `python3`, then `python`. If `$PYTHON` comes
+out empty, none has them — a plain `pip install` is refused by Homebrew and other
+"externally managed" Pythons, so ask the user before creating the private environment once:
+
+```bash
+python3 -m venv "$HOME/.centertest/venv" && "$HOME/.centertest/venv/bin/python" -m pip install openpyxl javalang
+# Windows (Git Bash): python -m venv "$HOME/.centertest/venv" && "$HOME/.centertest/venv/Scripts/python.exe" -m pip install openpyxl javalang
+```
+
+Every CenterTest skill finds it there afterwards.
 
 ## Prerequisites
 

@@ -19,7 +19,12 @@ from ddt_config import get_project_dir, run_with_pr_review_report
 try:
     import openpyxl  # noqa: F401  (the engine needs it; fail here with a clear message)
 except ImportError:
-    print("ERROR: openpyxl is required. Install with: pip install openpyxl", file=sys.stderr)
+    print(f"ERROR: openpyxl is not installed for {sys.executable}.\n"
+          f"  Install it for this Python: \"{sys.executable}\" -m pip install openpyxl\n"
+          "  If pip refuses (Homebrew and other externally managed Pythons), create the CenterTest\n"
+          "  environment once; the skills use it automatically:\n"
+          "    python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang",
+          file=sys.stderr)
     sys.exit(1)
 
 from ddt_refcheck import validate_dc, validate_all_reference_sheets, find_all_dc_files

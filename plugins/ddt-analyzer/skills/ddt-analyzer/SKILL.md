@@ -32,7 +32,7 @@ Trigger this skill when the user:
 ### Step 1: probe for Data Studio, fall back if absent
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 
 # The binary was renamed to CenterTest-DataStudio. Installs predating that rename keep the
 # old filename permanently — the self-update writes over argv[0] rather than renaming it —
@@ -126,7 +126,7 @@ unused.
 ### Fallback path: `ddt-analyzer.py`
 
 ```bash
-PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
+PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 
 # Analyze everything
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/ddt-analyzer.py"
@@ -362,6 +362,20 @@ numbered the two new sheets 16-17 rather than 12-13.)
 - **Fallback path:** `ddt-analyzer.py` uses the same project path as ddt-tools
   (`~/.centertest/ddt-tools.json`), prompting for it on first run if unset. The
   `CENTERTEST_PROJECT_DIR` environment variable overrides the saved config.
+
+## Python with the packages
+
+Each command above picks the first interpreter that can import the packages: the private
+CenterTest environment `~/.centertest/venv` first, then `python3`, then `python`. If `$PYTHON` comes
+out empty, none has them — a plain `pip install` is refused by Homebrew and other
+"externally managed" Pythons, so ask the user before creating the private environment once:
+
+```bash
+python3 -m venv "$HOME/.centertest/venv" && "$HOME/.centertest/venv/bin/python" -m pip install openpyxl javalang
+# Windows (Git Bash): python -m venv "$HOME/.centertest/venv" && "$HOME/.centertest/venv/Scripts/python.exe" -m pip install openpyxl javalang
+```
+
+Every CenterTest skill finds it there afterwards.
 
 ## Prerequisites
 

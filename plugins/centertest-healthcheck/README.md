@@ -22,6 +22,13 @@ See [`skills/centertest-healthcheck/SKILL.md`](skills/centertest-healthcheck/SKI
   ```
 - `git` CLI (only needed for git history analysis modes)
 
+If `pip install` is refused (Homebrew and other "externally managed" Pythons), create the shared
+CenterTest environment once — every skill finds it automatically:
+
+```bash
+python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang
+```
+
 ## Features
 
 - **20+ analysis rules** — code statistics, naming conventions, complexity, security, CenterTest compliance

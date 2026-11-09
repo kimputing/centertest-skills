@@ -74,7 +74,12 @@ try:
     from openpyxl import load_workbook
     from openpyxl import Workbook
 except ImportError:
-    print("ERROR: openpyxl is required. Install with: pip install openpyxl", file=sys.stderr)
+    print(f"ERROR: openpyxl is not installed for {sys.executable}.\n"
+          f"  Install it for this Python: \"{sys.executable}\" -m pip install openpyxl\n"
+          "  If pip refuses (Homebrew and other externally managed Pythons), create the CenterTest\n"
+          "  environment once; the skills use it automatically:\n"
+          "    python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang",
+          file=sys.stderr)
     sys.exit(1)
 
 
