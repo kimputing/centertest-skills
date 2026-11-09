@@ -105,6 +105,36 @@ class ProductCoverage(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class OutsideSuitesTest(unittest.TestCase):
+    def test_a_coverage_only_a_suite_less_scenario_selects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = os.path.join(tmp, "gen")
+            os.makedirs(res)
+            with open(os.path.join(res, "GLLine_coverage_structure.json"), "w") as fh:
+                json.dump(GL, fh)
+            root = os.path.join(tmp, "proj")
+            os.makedirs(os.path.join(root, "testdata", "gl"))
+            with open(os.path.join(root, "testdata", "DataDrivenHierarchy.json"), "w") as fh:
+                json.dump({"$references": {"testdata/GLData.xlsx": ["testdata/gl/.*DC\\.xlsx"]}}, fh)
+            make_xlsx(os.path.join(root, "testdata", "GLData.xlsx"), {"Coverage": [
+                ["Code", "Coverage"], ["c1", "Liquor Liability Endorsement"], ["c2", "Cyber Suite"]]})
+            make_xlsx(os.path.join(root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {"DataCombination": [
+                ["Code", "#Coverage"], ["InSuite", "c1"], ["Seed", "c2"]]})
+            src = os.path.join(root, "src", "main", "java", "com", "x")
+            os.makedirs(src)
+            with open(os.path.join(src, "GL_SubmissionTest.java"), "w") as fh:
+                fh.write('@CenterTest public final class GL_SubmissionTest { @CenterTestCase() '
+                         '@DataDriven(datasource = "testdata/gl/GL_SubmissionDC.xlsx") public void run() { } }')
+            os.makedirs(os.path.join(root, "src", "main", "resources"))
+            with open(os.path.join(root, "src", "main", "resources", "CenterTestSuiteList.json"), "w") as fh:
+                json.dump({"CenterTestSuites": [{"Name": "Regression", "List": ["GL_SubmissionTest run InSuite"]}]}, fh)
+            gl = eir_products.product_coverage(root, res)[0]
+            self.assertEqual([c["name"] for c in gl["named"]], ["Cyber Suite", "Liquor Liability Endorsement"])
+            self.assertEqual(gl["outside_suites"], ["Cyber Suite"])
+            self.assertIn("Selected only by scenarios no suite runs", eir_report._products_panel_html([gl]))
+
+
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
 class CoverageDeltaTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

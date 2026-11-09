@@ -138,14 +138,18 @@ def _value_columns(t: dict) -> list[int]:
     return [i for i, h in enumerate(t["headers"]) if h and h[0] not in "#@" and ddt_refcheck.JOIN_SEPARATOR not in h]
 
 
-def reached_values(repo_dir: str) -> set[str]:
-    """Lower-cased value cells (codes included) of every row an enabled DataCombination row reaches,
+def reached_values(repo_dir: str, start: set | None = None) -> set[str]:
+    """Lower-cased value cells (codes included) of every row the start rows reach -- by default every
+    enabled DataCombination row, or `start` (("dc", rel path, code) keys) --
     itself included, and the headers of its filled value columns (a term set as its own column):
     what the scenarios actually select, not what merely sits in a sheet."""
     tables, links = _graph(repo_dir)
     out_of = dict(links)
-    start = set()
-    for t in tables:
+    if start is not None:
+        start = set(start)
+    else:
+        start = set()
+    for t in tables if not start else ():
         if not t["dc"]:
             continue
         di = next((i for i, h in enumerate(t["headers"]) if h.lower() == "disabled"), None)
@@ -166,6 +170,23 @@ def reached_values(repo_dir: str) -> set[str]:
                 values |= {cells[i].strip().lower() for i in filled}
                 values |= {t["headers"][i].lower() for i in filled}  # a term set as its own column
     return values
+
+
+def suite_rows(repo_dir: str, source_root: str) -> set | None:
+    """("dc", datasource, code) keys of the DataCombination rows some suite runs; None without a suite file."""
+    import suite as suites
+    path = suites.find_suite_file(repo_dir)
+    if not os.path.isfile(path):
+        return None
+    try:
+        doc, _text = suites.load_suites(path)
+    except (OSError, ValueError):
+        return None
+    tests = suites.scan(repo_dir, source_root)
+    left = suites.uncovered(doc, tests)
+    ds = {(t["class"], m["name"]): m["datasource"] for t in tests for m in t["methods"]}
+    return {("dc", ds[(c, m)], code) for c, m, code in set(suites.scenarios_of(tests)) - left
+            if code and ds.get((c, m))}
 
 
 def scenarios_using(repo_dir: str, pattern: str) -> dict[str, set[str]]:

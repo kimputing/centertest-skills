@@ -87,9 +87,13 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
     if not files:
         return None
     data, java = data_names(repo_dir), java_names(repo_dir, source_root)
+    in_suites = None
     try:
-        from eir_uses import reached_values
+        from eir_uses import reached_values, suite_rows
         exercised = reached_values(repo_dir)
+        rows = suite_rows(repo_dir, source_root)
+        if rows is not None:
+            in_suites = reached_values(repo_dir, rows) if rows else set()
     except Exception:  # no openpyxl or an unreadable hierarchy: fall back to "named anywhere"
         exercised = data
     lines = []
@@ -120,7 +124,10 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
             else:
                 missing.append(name)
         line = os.path.basename(path)[:-len("_coverage_structure.json")]
+        outside = None if in_suites is None else sorted(
+            c["name"] for c in named if not any(_named(e, in_suites) for e in by_name[c["name"]]))
         lines.append({"line": line, "coverages": len(by_name), "named": named, "unused": unused, "java": in_java,
+                      "outside_suites": outside,
                       "missing": missing, "terms": terms_total, "terms_set": terms_set})
     return lines
 
@@ -128,7 +135,8 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
 def print_products(lines: list[dict]) -> None:
     print("  PRODUCT COVERAGES THE SCENARIOS SELECT (per line; enabled rows and what they reference)")
     for l in lines:
-        extra = (f" +{len(l['unused'])} in rows no scenario reaches" if l.get("unused") else "") \
+        extra = (f" ({len(l['outside_suites'])} only outside every suite)" if l.get("outside_suites") else "") \
+            + (f" +{len(l['unused'])} in rows no scenario reaches" if l.get("unused") else "") \
             + (f" +{len(l['java'])} only in Java" if l["java"] else "")
         terms = f"   terms {l['terms_set']}/{l['terms']}" if l["terms"] else ""
         print(f"  {l['line']:<24} coverages {len(l['named']):>4}/{l['coverages']:<4}{extra}{terms}")
@@ -138,8 +146,10 @@ def excel_rows(lines: list[dict]) -> list[list]:
     """Line, coverage, status, terms set — every coverage of every line."""
     rows = []
     for l in lines:
-        rows += [[l["line"], c["name"], "Selected by a scenario", f"{len(c['terms_set'])}/{c['terms']}",
-                  ", ".join(c["terms_set"])] for c in l["named"]]
+        outside = set(l.get("outside_suites") or [])
+        rows += [[l["line"], c["name"],
+                  "Selected only by scenarios no suite runs" if c["name"] in outside else "Selected by a scenario",
+                  f"{len(c['terms_set'])}/{c['terms']}", ", ".join(c["terms_set"])] for c in l["named"]]
         rows += [[l["line"], n, "In a data row no scenario reaches", "", ""] for n in l.get("unused", [])]
         rows += [[l["line"], n, "Only in Java", "", ""] for n in l["java"]]
         rows += [[l["line"], n, "Not named", "", ""] for n in l["missing"]]

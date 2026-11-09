@@ -670,6 +670,7 @@ def _products_panel_html(lines) -> str:
             named += (f'<details class="more"><summary>+{len(chips) - 10} more</summary>'
                       f'<div class="chips">{rest}</div></details>')
         java = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l["java"][:12])
+        outside = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in (l.get("outside_suites") or [])[:12])
         unused = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l.get("unused", [])[:12])
         if len(l.get("unused", [])) > 12:
             unused += f'<span class="chip">+{len(l["unused"]) - 12} in Excel</span>'
@@ -680,6 +681,7 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
             f'<div class="app-sub">{terms}</div>'
             + (f'<div class="chips-label">{label}</div><div class="chips">{named}</div>' if named else "")
+            + (f'<div class="chips-label">Selected only by scenarios no suite runs</div><div class="chips">{outside}</div>' if outside else "")
             + (f'<div class="chips-label">In data rows no scenario reaches</div><div class="chips">{unused}</div>' if unused else "")
             + (f'<div class="chips-label">Named only in code: check</div><div class="chips">{java}</div>' if java else "")
             + "</div>")
