@@ -658,11 +658,11 @@ def _products_panel_html(lines) -> str:
         pct = len(l["named"]) / l["coverages"] * 100 if l["coverages"] else 0
         # the shorter list says more: what a thin line covers, or what a well-covered line still misses
         if len(l["named"]) <= len(l["missing"]):
-            label = "Named in test data"
+            label = "Selected by a scenario"
             chips = [f'<span class="chip on" title="{_html_escape(c["code"] or "")}: terms set '
                      f'{len(c["terms_set"])}/{c["terms"]}">{_html_escape(c["name"])}</span>' for c in l["named"]]
         else:
-            label = "Not named in any test data"
+            label = "No scenario selects"
             chips = [f'<span class="chip">{_html_escape(n)}</span>' for n in l["missing"]]
         named = "".join(chips[:10])
         if len(chips) > 10:
@@ -670,6 +670,9 @@ def _products_panel_html(lines) -> str:
             named += (f'<details class="more"><summary>+{len(chips) - 10} more</summary>'
                       f'<div class="chips">{rest}</div></details>')
         java = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l["java"][:12])
+        unused = "".join(f'<span class="chip">{_html_escape(n)}</span>' for n in l.get("unused", [])[:12])
+        if len(l.get("unused", [])) > 12:
+            unused += f'<span class="chip">+{len(l["unused"]) - 12} in Excel</span>'
         terms = f'{l["terms_set"]} of {l["terms"]} terms of those coverages set' if l["terms"] else "no terms on those coverages"
         cards.append(
             f'<div class="app-card"><div class="app-name">{_html_escape(l["line"])}</div>'
@@ -677,12 +680,14 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-bar"><i style="width:{pct:.0f}%"></i></div>'
             f'<div class="app-sub">{terms}</div>'
             + (f'<div class="chips-label">{label}</div><div class="chips">{named}</div>' if named else "")
+            + (f'<div class="chips-label">In data rows no scenario reaches</div><div class="chips">{unused}</div>' if unused else "")
             + (f'<div class="chips-label">Named only in code: check</div><div class="chips">{java}</div>' if java else "")
             + "</div>")
-    return ('  <div class="screens"><h2>Product coverages the test data names</h2>'
-            '<p class="screens-note">From the generated product model, per line of business: a coverage counts when an '
-            'enabled test data row names it (name or code). Names are counted once per line, and a name several lines '
-            'share counts for each. Every coverage, named or not, is in the Excel sheet "Product coverage".</p>'
+    return ('  <div class="screens"><h2>Product coverages the scenarios select</h2>'
+            '<p class="screens-note">From the generated product model, per line of business: a coverage counts when a '
+            'row an enabled scenario reaches (its DataCombination row and what it references) names it, by name or code. '
+            'Names are counted once per line, and a name several lines share counts for each. Every coverage is in the '
+            'Excel sheet "Product coverage".</p>'
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 

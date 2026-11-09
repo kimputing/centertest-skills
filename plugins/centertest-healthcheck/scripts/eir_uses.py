@@ -61,10 +61,14 @@ def _codes(cell: str) -> list[str]:
     return [c.strip() for c in cell.split(",") if c.strip()]
 
 
-def scenarios_using(repo_dir: str, pattern: str) -> dict[str, set[str]]:
-    """{DC rel path: codes of its DataCombination rows that use a value matching `pattern`}."""
+_graph_cache: dict = {}
+
+
+def _graph(repo_dir: str):
+    """(tables, [(row key, [row keys it references])]) -- one reference graph per project."""
+    if repo_dir in _graph_cache:
+        return _graph_cache[repo_dir]
     from ddt_reference_scope import default_identifier_for, identifier_of, parse_relationships, strip_identifier
-    rx = re.compile(pattern, re.I)
     tables = _tables(repo_dir)
     previous = os.getcwd()
     links = []  # (hit key of the row, [hit keys it points at])
@@ -121,15 +125,59 @@ def scenarios_using(repo_dir: str, pattern: str) -> dict[str, set[str]]:
                 links.append((key, out))
     finally:
         os.chdir(previous)
+    _graph_cache[repo_dir] = (tables, links)
+    return tables, links
+
+
+def _key(t: dict, code: str) -> tuple:
+    return ("dc", t["rel"], code) if t["dc"] else ("row", os.path.basename(t["rel"]).lower(), t["sheet"], code)
+
+
+def _value_columns(t: dict) -> list[int]:
+    """Columns that hold values; reference cells hold another sheet's codes."""
+    return [i for i, h in enumerate(t["headers"]) if h and h[0] not in "#@" and ddt_refcheck.JOIN_SEPARATOR not in h]
+
+
+def reached_values(repo_dir: str) -> set[str]:
+    """Lower-cased value cells (codes included) of every row an enabled DataCombination row reaches,
+    itself included, and the headers of its filled value columns (a term set as its own column):
+    what the scenarios actually select, not what merely sits in a sheet."""
+    tables, links = _graph(repo_dir)
+    out_of = dict(links)
+    start = set()
+    for t in tables:
+        if not t["dc"]:
+            continue
+        di = next((i for i, h in enumerate(t["headers"]) if h.lower() == "disabled"), None)
+        start |= {_key(t, code) for code, cells in t["rows"]
+                  if di is None or di >= len(cells) or cells[di].strip().lower() not in ("true", "yes", "y", "x", "1")}
+    reached, frontier = set(start), list(start)
+    while frontier:
+        for nxt in out_of.get(frontier.pop(), ()):
+            if nxt not in reached:
+                reached.add(nxt)
+                frontier.append(nxt)
+    values = set()
+    for t in tables:
+        cols = _value_columns(t)
+        for code, cells in t["rows"]:
+            if _key(t, code) in reached:
+                filled = [i for i in cols if i < len(cells) and cells[i].strip()]
+                values |= {cells[i].strip().lower() for i in filled}
+                values |= {t["headers"][i].lower() for i in filled}  # a term set as its own column
+    return values
+
+
+def scenarios_using(repo_dir: str, pattern: str) -> dict[str, set[str]]:
+    """{DC rel path: codes of its DataCombination rows that use a value matching `pattern`}."""
+    rx = re.compile(pattern, re.I)
+    tables, links = _graph(repo_dir)
     hits = set()
     for t in tables:
-        base = os.path.basename(t["rel"]).lower()
-        # reference cells hold another sheet's codes, not values: the walk below follows them
-        values = [i for i, h in enumerate(t["headers"])
-                  if h and h[0] not in "#@" and ddt_refcheck.JOIN_SEPARATOR not in h]
+        values = _value_columns(t)
         for code, cells in t["rows"]:
             if any(i < len(cells) and cells[i] and rx.fullmatch(cells[i].strip()) for i in values):
-                hits.add(("dc", t["rel"], code) if t["dc"] else ("row", base, t["sheet"], code))
+                hits.add(_key(t, code))
     changed = True
     while changed:
         changed = False

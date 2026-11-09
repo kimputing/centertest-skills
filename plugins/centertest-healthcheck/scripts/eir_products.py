@@ -2,9 +2,10 @@
 Which of the product's coverages the test data exercises, per line of business.
 
 The generated project ships the product model as <Line>_coverage_structure.json next to its
-cssids (codeIdentifier, name, covTerms per coverage). A coverage counts as exercised when an
-enabled row of a testdata workbook names it, by name or code, as a value or a plain column
-header; reference columns (#X, @X) are not names. A coverage named only in hand-written Java
+cssids (codeIdentifier, name, covTerms per coverage). A coverage counts as exercised when a row an
+enabled DataCombination row reaches (through #Ref, joins and @Rel, as eir_uses follows them)
+names it, by name or code. A coverage named only in rows no scenario reaches (a Coverage sheet row
+nothing references) is listed apart; so is one named only in hand-written Java. A coverage named only in hand-written Java
 is listed apart. A term counts only under an exercised coverage, so a generic term name such
 as "Limit" does not make every coverage look tested. Coverage names repeat across sub-lines
 (the same exclusion on several parts); each name is counted once per line.
@@ -86,6 +87,11 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
     if not files:
         return None
     data, java = data_names(repo_dir), java_names(repo_dir, source_root)
+    try:
+        from eir_uses import reached_values
+        exercised = reached_values(repo_dir)
+    except Exception:  # no openpyxl or an unreadable hierarchy: fall back to "named anywhere"
+        exercised = data
     lines = []
     for path in files:
         try:
@@ -97,30 +103,33 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
         for c in coverages if isinstance(coverages, list) else []:
             if isinstance(c, dict) and c.get("name"):
                 by_name.setdefault(c["name"].strip(), []).append(c)
-        named, in_java, missing = [], [], []
+        named, unused, in_java, missing = [], [], [], []
         terms_total = terms_set = 0
         for name, entries in sorted(by_name.items(), key=lambda kv: kv[0].lower()):
-            if any(_named(c, data) for c in entries):
+            if any(_named(c, exercised) for c in entries):
                 terms = {t["name"].strip(): t for c in entries for t in c.get("covTerms") or [] if t.get("name")}
-                done = sorted(n for n, t in terms.items() if _named(t, data))
+                done = sorted(n for n, t in terms.items() if _named(t, exercised))
                 terms_total += len(terms)
                 terms_set += len(done)
                 named.append({"name": name, "code": entries[0].get("codeIdentifier"),
                               "terms": len(terms), "terms_set": done})
+            elif any(_named(c, data) for c in entries):
+                unused.append(name)
             elif any(_named(c, java) for c in entries):
                 in_java.append(name)
             else:
                 missing.append(name)
         line = os.path.basename(path)[:-len("_coverage_structure.json")]
-        lines.append({"line": line, "coverages": len(by_name), "named": named, "java": in_java,
+        lines.append({"line": line, "coverages": len(by_name), "named": named, "unused": unused, "java": in_java,
                       "missing": missing, "terms": terms_total, "terms_set": terms_set})
     return lines
 
 
 def print_products(lines: list[dict]) -> None:
-    print("  PRODUCT COVERAGES THE TEST DATA NAMES (per line; enabled rows)")
+    print("  PRODUCT COVERAGES THE SCENARIOS SELECT (per line; enabled rows and what they reference)")
     for l in lines:
-        extra = f" +{len(l['java'])} only in Java" if l["java"] else ""
+        extra = (f" +{len(l['unused'])} in rows no scenario reaches" if l.get("unused") else "") \
+            + (f" +{len(l['java'])} only in Java" if l["java"] else "")
         terms = f"   terms {l['terms_set']}/{l['terms']}" if l["terms"] else ""
         print(f"  {l['line']:<24} coverages {len(l['named']):>4}/{l['coverages']:<4}{extra}{terms}")
 
@@ -129,8 +138,9 @@ def excel_rows(lines: list[dict]) -> list[list]:
     """Line, coverage, status, terms set — every coverage of every line."""
     rows = []
     for l in lines:
-        rows += [[l["line"], c["name"], "Named in test data", f"{len(c['terms_set'])}/{c['terms']}",
+        rows += [[l["line"], c["name"], "Selected by a scenario", f"{len(c['terms_set'])}/{c['terms']}",
                   ", ".join(c["terms_set"])] for c in l["named"]]
+        rows += [[l["line"], n, "In a data row no scenario reaches", "", ""] for n in l.get("unused", [])]
         rows += [[l["line"], n, "Only in Java", "", ""] for n in l["java"]]
         rows += [[l["line"], n, "Not named", "", ""] for n in l["missing"]]
     return rows

@@ -7,11 +7,16 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGINS = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
-sys.path.insert(0, os.path.join(PLUGINS, "suite-builder", "tests"))
+sys.path.insert(0, os.path.join(PLUGINS, "ddt-tools", "tests"))
 
 import eir_products  # noqa: E402
 import eir_report  # noqa: E402
-from xlsx_fixture import make_xlsx  # noqa: E402  (stdlib writer)
+
+try:
+    from refcheck_fixture import make_xlsx  # openpyxl: the reference walk reads it
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
 
 GL = [
     {"codeIdentifier": "GLLiquorCov", "name": "Liquor Liability Endorsement",
@@ -26,6 +31,7 @@ GL = [
 ]
 
 
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
 class ProductCoverage(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -34,12 +40,17 @@ class ProductCoverage(unittest.TestCase):
         os.makedirs(os.path.join(self.resources, "cssids", "pc"))
         with open(os.path.join(self.resources, "GLLine_coverage_structure.json"), "w") as fh:
             json.dump(GL, fh)
-        os.makedirs(os.path.join(root, "testdata"))
+        os.makedirs(os.path.join(root, "testdata", "gl"))
+        with open(os.path.join(root, "testdata", "DataDrivenHierarchy.json"), "w") as fh:
+            json.dump({"$references": {"testdata/GeneralLiabilityData.xlsx": ["testdata/gl/.*DC\\.xlsx"]}}, fh)
         make_xlsx(os.path.join(root, "testdata", "GeneralLiabilityData.xlsx"), {
-            "Coverage": [["Code", "Coverage", "Limit", "Disabled", "#Cyber Suite"],
-                         ["c1", "Liquor Liability Endorsement", "100,000", "", "x"],
-                         ["c2", "Only In A Disabled Row", "", "true", ""],
-                         ["c3", "GLPollutionCov2", "", "", ""]]})
+            "Coverage": [["Code", "Coverage", "Limit", "#Cyber Suite"],
+                         ["c1", "Liquor Liability Endorsement", "100,000", "x"],
+                         ["c2", "Only In A Disabled Row", "", ""],
+                         ["c3", "GLPollutionCov2", "", ""]]})
+        # c1 and c3 are selected by an enabled scenario; c2 only by a disabled one
+        make_xlsx(os.path.join(root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {
+            "DataCombination": [["Code", "#Coverage", "Disabled"], ["Default", "c1,c3", ""], ["Off", "c2", "true"]]})
         java = os.path.join(root, "src", "main", "java", "com", "x", "Step.java")
         os.makedirs(os.path.dirname(java))
         with open(java, "w") as fh:
@@ -57,8 +68,8 @@ class ProductCoverage(unittest.TestCase):
         gl = self.line(os.path.join(self.resources, "cssids"))  # GW10: the files sit beside cssids/
         self.assertEqual(gl["coverages"], 5)  # Pollution Coverage counted once
         self.assertEqual([c["name"] for c in gl["named"]], ["Liquor Liability Endorsement", "Pollution Coverage"])
-        self.assertIn("Only In A Disabled Row", gl["missing"])
-        self.assertIn("Cyber Suite", gl["missing"])  # a #reference header is not a name
+        self.assertEqual(gl["unused"], ["Only In A Disabled Row"])  # in a row no enabled scenario reaches
+        self.assertEqual(gl["missing"], ["Cyber Suite"])  # a #reference header is not a name
 
     def test_only_in_java_is_apart(self):
         gl = self.line(self.resources)  # GW9: the resources folder itself
@@ -79,17 +90,18 @@ class ProductCoverage(unittest.TestCase):
         gl = self.line(self.resources)
         page = eir_report._products_panel_html([gl])
         self.assertIn("2<small> of 5 coverages", page)
-        self.assertIn("Named in test data", page)  # 2 named vs 2 not named: the named ones
+        self.assertIn('No scenario selects</div><div class="chips"><span class="chip">Cyber Suite', page)  # the shorter list
+        self.assertIn("In data rows no scenario reaches", page)
         self.assertIn("Named only in code: check", page)
         rows = eir_products.excel_rows([gl])
         self.assertEqual(len(rows), 5)
-        self.assertEqual(rows[0][:4], ["GLLine", "Liquor Liability Endorsement", "Named in test data", "1/2"])
+        self.assertEqual(rows[0][:4], ["GLLine", "Liquor Liability Endorsement", "Selected by a scenario", "1/2"])
         self.assertEqual(eir_report._products_panel_html(None), "")
 
     def test_a_well_covered_line_lists_what_is_missing(self):
         gl = self.line(self.resources)
         gl["missing"] = ["Cyber Suite"]
-        self.assertIn("Not named in any test data", eir_report._products_panel_html([gl]))
+        self.assertIn("No scenario selects", eir_report._products_panel_html([gl]))
 
 
 if __name__ == "__main__":
