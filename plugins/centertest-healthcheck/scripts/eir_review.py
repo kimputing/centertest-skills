@@ -206,6 +206,27 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         for c in fixed:
             out.append(f"- **{len(c['fixed'])} × {c['trust'] or c['description']}** ({c['rule_id']})")
         out.append("")
+    data = meta.get("data") or []
+    if data:
+        out += ["### Data changes", ""]
+        for d in data[:limit * 2]:
+            name = f"`{os.path.basename(d['file'])} › {d['sheet']}`"
+            parts = []
+            if d["added"]:
+                parts.append("added " + ", ".join(f"**{c}**" for c in d["added"][:limit]) +
+                             (f" +{len(d['added']) - limit}" if len(d["added"]) > limit else ""))
+            if d["removed"]:
+                parts.append("removed " + ", ".join(f"**{c}**" for c in d["removed"][:limit]) +
+                             (f" +{len(d['removed']) - limit}" if len(d["removed"]) > limit else ""))
+            out.append(f"- {name}: " + ("; ".join(parts) if parts else f"{len(d['changed'])} row(s) changed"))
+            for code, cols in d["changed"][:limit]:
+                diffs = "; ".join("{} `{}` → `{}`".format(col, *_diff_pair(old, new)) for col, old, new in cols[:6])
+                out.append(f"  - **{code}**: {diffs}" + (f" (+{len(cols) - 6} columns)" if len(cols) > 6 else ""))
+            if len(d["changed"]) > limit:
+                out.append(f"  - … and {len(d['changed']) - limit} more changed rows")
+        if len(data) > limit * 2:
+            out.append(f"- … and {len(data) - limit * 2} more sheets")
+        out.append("")
     rerun = meta.get("rerun") or []
     if rerun:
         from eir_impact import command_for
@@ -232,6 +253,34 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
     return "\n".join(out)
 
 
+def _short(value: str, width: int = 40) -> str:
+    value = str(value).replace("`", "'")
+    return value if len(value) <= width else value[: width - 1] + "…"
+
+
+def _diff_pair(old: str, new: str, width: int = 40, context: int = 12) -> tuple[str, str]:
+    """old and new cut to the region where they differ (with a little context), so a long cell
+    whose change sits past the first characters still shows the change."""
+    old, new = str(old).replace("`", "'"), str(new).replace("`", "'")
+    if len(old) <= width and len(new) <= width:
+        return old, new
+    p = 0
+    while p < min(len(old), len(new)) and old[p] == new[p]:
+        p += 1
+    q = 0
+    while q < min(len(old), len(new)) - p and old[-1 - q] == new[-1 - q]:
+        q += 1
+    start = max(0, p - context)
+
+    def cut(v):
+        end = min(len(v), len(v) - q + context)
+        part = v[start:end]
+        if len(part) > width:
+            part = part[:width - 1] + "…"
+        return ("…" if start > 0 else "") + part + ("…" if end < len(v) else "")
+    return cut(old), cut(new)
+
+
 def print_review(changes: list[dict], meta: dict) -> None:
     line, _ = verdict(changes)
     print("\n" + "=" * 60)
@@ -248,6 +297,11 @@ def print_review(changes: list[dict], meta: dict) -> None:
     for c in changes:
         if c.get("error"):
             print(f"  ?? not compared  {c['rule_id']}: {c['error']}")
+    data = meta.get("data") or []
+    if data:
+        files = len({d["file"] for d in data})
+        print(f"  ~~ data: {files} workbook(s), {sum(len(d['added']) for d in data)} rows added, "
+              f"{sum(len(d['changed']) for d in data)} changed, {sum(len(d['removed']) for d in data)} removed")
     rerun = meta.get("rerun") or []
     if rerun:
         print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
@@ -283,15 +337,16 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
             export_tree(repo, sha, tree, paths)
             print(f"  Analyzing {side} {sha[:8]}...")
             results[side] = analyze_tree(tree, config, suppressions)
-        from eir_impact import changed_files, rerun_plan, run_commands
+        from eir_impact import changed_files, data_changes, rerun_plan, run_commands
         changed = changed_files(repo, start, head_sha)
         rerun = rerun_plan(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed, config.source_root)
+        data = data_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed)
     changes = diff_results(results["base"][0], results["head"][0])
     meta = {"base_name": base_rev, "head_name": head_rev,
             "base_short": start[:8], "head_short": head_sha[:8],
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
-            "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed)}
+            "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data}
     out_dir = os.path.join(repo, "healthcheck")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")

@@ -60,6 +60,8 @@ and lists only the findings that changed, trust blockers first:
   (new non-blocking findings), **Clean**, or **Not verified** (a trust rule could not run on both sides, exit 1).
 - Reviews committed state; uncommitted changes are not included. Branch names fall back to `origin/<name>`.
 - Use it in a pipeline to block merges that add tests that cannot fail or data that cannot load.
+- **Data changes**: every workbook the branch changed, per sheet, by Code — rows added, removed, and
+  changed column by column (old → new, cut to where the cell differs). Read it like a code diff.
 - **Rerun to verify**: the comment also lists the tests the branch reaches — through changed Java
   (followed per method, so a facade like `BC` only passes on the methods that use the change), changed
   DataCombination rows (with their codes) and changed reference-data codes (through the DC rows that

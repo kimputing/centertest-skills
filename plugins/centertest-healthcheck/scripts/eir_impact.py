@@ -135,6 +135,58 @@ def _sheet_rows(path: str) -> dict[str, dict[str, tuple]]:
     return out
 
 
+def _sheet_tables(path: str) -> dict[str, tuple[list[str], dict[str, tuple]]]:
+    """{sheet: (headers, {code: row values})} for every sheet with a Code column."""
+    from openpyxl import load_workbook
+    out = {}
+    if not os.path.isfile(path):
+        return out
+    try:
+        wb = load_workbook(path, read_only=True, data_only=True)
+    except Exception:
+        return out
+    for ws in wb.worksheets:
+        rows = [r for r in ws.iter_rows(values_only=True) if any(c not in (None, "") for c in r)]
+        if not rows:
+            continue
+        headers = ["" if h is None else str(h).strip() for h in rows[0]]
+        lowered = [h.lower() for h in headers]
+        if "code" not in lowered:
+            continue
+        ci = lowered.index("code")
+        table = {}
+        for r in rows[1:]:
+            code = r[ci] if ci < len(r) else None
+            if code not in (None, ""):
+                table[str(code).strip()] = tuple("" if v is None else str(v) for v in r)
+        out[ws.title] = (headers, table)
+    wb.close()
+    return out
+
+
+def data_changes(base_tree: str, head_tree: str, changed: list[str]) -> list[dict]:
+    """[{file, sheet, added: [code], removed: [code], changed: [(code, [(column, old, new)])]}]
+    for every workbook the branch changed, by Code."""
+    out = []
+    for rel in sorted(p for p in changed if p.startswith("testdata/") and p.endswith(".xlsx")):
+        base, head = _sheet_tables(os.path.join(base_tree, rel)), _sheet_tables(os.path.join(head_tree, rel))
+        for sheet in sorted(set(base) | set(head)):
+            bh, brows = base.get(sheet, ([], {}))
+            hh, hrows = head.get(sheet, ([], {}))
+            entry = {"file": rel, "sheet": sheet,
+                     "added": sorted(c for c in hrows if c not in brows),
+                     "removed": sorted(c for c in brows if c not in hrows), "changed": []}
+            for code in sorted(c for c in hrows if c in brows and hrows[c] != brows[c]):
+                old = dict(zip(bh, brows[code]))
+                new = dict(zip(hh, hrows[code]))
+                cols = [(col, old.get(col, ""), new.get(col, "")) for col in hh if old.get(col, "") != new.get(col, "")]
+                cols += [(col, old[col], "") for col in bh if col not in new and old[col]]
+                entry["changed"].append((code, cols))
+            if entry["added"] or entry["removed"] or entry["changed"]:
+                out.append(entry)
+    return out
+
+
 def changed_codes(base_tree: str, head_tree: str, rel: str) -> dict[str, set[str]]:
     """{sheet: codes added or changed} between the two versions of a workbook."""
     base, head = _sheet_rows(os.path.join(base_tree, rel)), _sheet_rows(os.path.join(head_tree, rel))

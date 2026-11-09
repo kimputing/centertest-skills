@@ -50,6 +50,15 @@ def git(cwd, *args):
                         "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
 
 
+class DiffPairTest(unittest.TestCase):
+    def test_a_long_cell_shows_where_it_changed(self):
+        from eir_review import _diff_pair
+        old = "Waiver Type:Schedule Waiver,Holder:TestCo,Location:Retail - Texas"
+        new = "Waiver Type:Schedule Waiver,Holder:TestCo,Location:Retail - California"
+        self.assertEqual(_diff_pair(old, new), ("…on:Retail - Texas", "…on:Retail - California"))
+        self.assertEqual(_diff_pair("a", "b"), ("a", "b"))
+
+
 class FindingKeysTest(unittest.TestCase):
     def test_counts_inside_grouped_items_do_not_make_a_new_finding(self):
         from eir_review import finding_keys
@@ -112,6 +121,7 @@ class BranchReviewTest(unittest.TestCase):
             md = fh.read()
         self.assertIn("DelinquencyCheck.validate (src/main/java/com/acme/tests/DelinquencyCheck.java:5): shown.equals(expected);", md)
         self.assertIn("WC_PolicyChangeDC.xlsx row 3: #Company 'Ghost' (in PolicyChangeTest)", md)
+        self.assertIn("- `WC_PolicyChangeDC.xlsx › DataCombination`: added **New**", md)
         # The changed row, not the whole workbook, is what to rerun.
         self.assertIn("**PolicyChangeTest** — rows New (WC_PolicyChangeDC.xlsx rows changed)", md)
 
