@@ -15,6 +15,7 @@ review can gate a pipeline.
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -72,6 +73,48 @@ def export_tree(repo_dir: str, sha: str, dest: str, paths: list[str]) -> list[st
         except TypeError:  # Python < 3.12 has no extraction filters
             tar.extractall(dest)
     return present
+
+
+_FINGERPRINT: list = []
+
+
+def _fingerprint() -> str:
+    """Hash of the plugin's own scripts: a cached analysis is only reused by the code that made it."""
+    if not _FINGERPRINT:
+        h = hashlib.sha256()
+        here = os.path.dirname(os.path.abspath(__file__))
+        for root, _dirs, files in sorted(os.walk(here)):
+            for name in sorted(f for f in files if f.endswith(".py")):
+                with open(os.path.join(root, name), "rb") as fh:
+                    h.update(name.encode() + fh.read())
+        _FINGERPRINT.append(h.hexdigest()[:16])
+    return _FINGERPRINT[0]
+
+
+def analyze_commit(repo: str, sha: str, tree_dir: str, config, suppressions) -> tuple[list[RuleResult], int]:
+    """analyze_tree for a commit, cached in ~/.centertest/cache/analysis/: a commit never changes, so the
+    same commit, rules, settings and plugin code give the same findings (reviews, --weekly and --trend
+    re-analyse the same merge-bases and month-ends)."""
+    import pickle
+    simple = (str, int, float, bool, type(None), list, tuple, dict, set)
+    knobs = sorted((k, repr(v)) for k, v in vars(config).items()
+                   if isinstance(v, simple) and k not in ("repository_dir", "output_dir", "output_formats"))
+    settings = repr((os.path.abspath(repo), sha, knobs, repr(suppressions), _fingerprint()))
+    key = hashlib.sha256(settings.encode()).hexdigest()[:32]
+    path = os.path.join(os.path.expanduser("~"), ".centertest", "cache", "analysis", key + ".pkl")
+    try:
+        with open(path, "rb") as fh:
+            return pickle.load(fh)
+    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ImportError):
+        pass
+    result = analyze_tree(tree_dir, config, suppressions)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            pickle.dump(result, fh)
+    except OSError:
+        pass  # no cache, same answer
+    return result
 
 
 def analyze_tree(tree_dir: str, config, suppressions) -> tuple[list[RuleResult], int]:
@@ -523,7 +566,7 @@ def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: s
             os.makedirs(tree)
             export_tree(repo, sha, tree, paths)
             print(f"  Analyzing {side} {sha[:8]}...")
-            results[side] = analyze_tree(tree, config, suppressions)
+            results[side] = analyze_commit(repo, sha, tree, config, suppressions)
         from eir_impact import changed_files, data_changes, rerun_plan, rerun_suite, run_commands, suite_command
         changed = changed_files(repo, start, head_sha)
         rerun = rerun_plan(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed, config.source_root)

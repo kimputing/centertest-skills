@@ -16,7 +16,7 @@ import tempfile
 from datetime import datetime
 
 from eir_report import _count_items, _html_escape, health_score, trust_blockers
-from eir_review import analyze_tree, export_tree
+from eir_review import analyze_commit, analyze_tree, export_tree
 
 
 def monthly_commits(repo_dir: str, months: int, rev: str = "HEAD") -> list[tuple[str, str, int]]:
@@ -65,7 +65,7 @@ def collect(config, months: int, suppressions, product_dir: str | None = None) -
             os.makedirs(tree)
             export_tree(config.repository_dir, sha, tree, [config.source_root, "testdata"])
             print(f"  {month}  {sha[:8]}  analyzing...")
-            results, files = analyze_tree(tree, config, suppressions)
+            results, files = analyze_commit(config.repository_dir, sha, tree, config, suppressions)
             point = snapshot_metrics(results, files)
             point.update(month=month, sha=sha[:8], date=datetime.fromtimestamp(epoch).strftime("%Y-%m-%d"))
             point["coverages"] = None

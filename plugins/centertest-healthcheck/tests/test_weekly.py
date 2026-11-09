@@ -35,6 +35,10 @@ def git(cwd, *args, date=None):
 class WeeklyTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        from unittest import mock
+        home = mock.patch.dict(os.environ, {"HOME": os.path.join(self.tmp.name, "home")})  # analysis cache
+        home.start()
+        self.addCleanup(home.stop)
         self.repo = os.path.join(self.tmp.name, "suite")
         src = os.path.join(self.repo, "src", "main", "java", "com", "x", "tests")
         os.makedirs(src)
