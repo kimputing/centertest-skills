@@ -31,6 +31,27 @@ class SinceTest(unittest.TestCase):
         self.assertIn("Since your last check", page)
         self.assertIn("Added 1", page)
 
+    def test_flows_and_jurisdictions_that_left_the_run_are_named(self):
+        import contextlib
+        import io
+        states = [{"line": "CA", "states": {"AZ": 3, "NV": 1}}, {"line": "GL", "states": {"AZ": 2}}]
+        with tempfile.TemporaryDirectory() as out:
+            eir_since.since_last(out, eir_since.snapshot([], 10, states=states, flows=["A.run", "B.run"]))
+            fewer = [{"line": "CA", "states": {"AZ": 3}}, {"line": "GL", "states": {"AZ": 2, "TX": 1}}]
+            d = eir_since.since_last(out, eir_since.snapshot([], 10, states=fewer, flows=["A.run"]))
+        self.assertEqual(d["flows"], (2, 1))
+        self.assertEqual(d["jurisdictions"], (2, 2))  # NV left, TX came: distinct states stay 2
+        self.assertEqual(d["lost"], [("flow", "B.run"), ("jurisdiction", "CA NV")])
+        page = eir_since.panel_html(d, lambda x: x)
+        self.assertIn("Left the run 2", page)
+        self.assertIn("No longer runs: <code>B.run</code>", page)
+        self.assertIn("Line no longer runs in: <code>CA NV</code>", page)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            eir_since.print_since(d)
+        self.assertIn("flows that run 2 → 1, jurisdictions 2 (same)", out.getvalue())
+        self.assertIn("-- line no longer runs in: CA NV", out.getvalue())
+
     def test_a_finding_whose_details_changed_is_not_added_and_fixed(self):
         prev = {"findings": {"9010": {"k1": 1}}, "labels": {"9010": {"k1": "T.run (T.java:3)"}}, "titles": {}}
         now = {"findings": {"9010": {"k2": 1}}, "labels": {"9010": {"k2": "T.run (T.java:3)"}}, "titles": {},

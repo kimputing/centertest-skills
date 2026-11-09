@@ -36,7 +36,9 @@ PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Sc
 The terminal summary ends with the trust blockers, the test data, the screens and the product coverages. Reply in this order:
 
 0. **Since your last check** (when the terminal prints it): score and trust blockers before → after, and the
-   findings added (trust ones first, with `path:line`) and fixed since the previous run in this project.
+   findings added (trust ones first, with `path:line`) and fixed since the previous run in this project,
+   and what **left the run** (a flow that no longer runs, a line no longer run in a jurisdiction) with the
+   flows and jurisdictions before → after.
 1. **Can these tests be trusted?** Each trust blocker group with its count and `path:line` locations —
    these are the things to fix first. Say plainly when there are none.
 2. **What to fix first**: the tiers (must fix, should fix, suggestions) as counts with their top rules;

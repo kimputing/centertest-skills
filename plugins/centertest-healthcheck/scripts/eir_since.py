@@ -1,8 +1,9 @@
 """
 "Since your last check": each local health check saves a small summary next to its reports
 (healthcheck/last-run.json) and compares itself with the previous one: score, live trust blockers,
-scenarios per run, product coverages selected, and the findings added and fixed -- keyed the way
---review keys them (eir_review._findings), so a moved row or a grown count is not "new".
+scenarios per run, product coverages selected, flows that run, jurisdictions, and the findings added
+and fixed -- keyed the way --review keys them (eir_review._findings), so a moved row or a grown count is
+not "new". Flows and line/jurisdiction pairs are kept by name, so the ones that left are named.
 """
 
 from __future__ import annotations
@@ -14,7 +15,16 @@ from datetime import datetime
 FILE = "last-run.json"
 
 
-def snapshot(results, files: int, data=None, products=None) -> dict:
+def flows_running(repo_dir: str, source_root: str) -> list[str] | None:
+    """'Class.method' of every test method that runs at least one scenario (vendored suite engine)."""
+    try:
+        import suite as suites
+        return sorted({f"{c}.{m}" for c, m, _code in suites.scenarios_of(suites.scan(repo_dir, source_root))})
+    except Exception:
+        return None
+
+
+def snapshot(results, files: int, data=None, products=None, states=None, flows=None) -> dict:
     from eir_report import TRUST_RULES, health_score, trust_blockers
     from eir_review import _INFORMATIONAL, _findings
     blockers, _not_checked, _dormant = trust_blockers(results)
@@ -34,6 +44,8 @@ def snapshot(results, files: int, data=None, products=None) -> dict:
         "blockers": sum(b["count"] for b in blockers),
         "scenarios": (data or {}).get("scenarios"),
         "coverages": sum(len(l["named"]) for l in products) if products else None,
+        "flows": flows,
+        "jurisdictions": sorted(f"{l['line']} {s}" for l in states for s in l["states"]) if states else None,
         "findings": findings, "labels": labels,
         "titles": {r.rule_id: (TRUST_RULES.get(r.rule_id, (None,))[0] or r.description) for r in results},
         "trust": sorted(rid for rid in findings if rid in TRUST_RULES),
@@ -58,10 +70,19 @@ def compare(prev: dict, now: dict) -> dict:
         fixed.remove(next(f for f in fixed if (f[0], f[2]) == (item[0], item[2])))
     added.sort(key=lambda x: (not x[3], x[0]))
     fixed.sort(key=lambda x: (not x[3], x[0]))
+    count = lambda snap, k: None if snap.get(k) is None else len({j.rsplit(" ", 1)[-1] for j in snap[k]}
+                                                                  if k == "jurisdictions" else snap[k])
+    lost = [("flow", f) for f in sorted(set(prev.get("flows") or []) - set(now.get("flows") or []))
+            if now.get("flows") is not None]
+    lost += [("jurisdiction", j) for j in sorted(set(prev.get("jurisdictions") or []) - set(now.get("jurisdictions") or []))
+             if now.get("jurisdictions") is not None]
     return {"when": prev.get("when"), "score": (prev.get("score"), now["score"]),
             "blockers": (prev.get("blockers"), now["blockers"]),
             "scenarios": (prev.get("scenarios"), now["scenarios"]),
-            "coverages": (prev.get("coverages"), now["coverages"]), "added": added, "fixed": fixed}
+            "coverages": (prev.get("coverages"), now["coverages"]),
+            "flows": (count(prev, "flows"), count(now, "flows")),
+            "jurisdictions": (count(prev, "jurisdictions"), count(now, "jurisdictions")),
+            "lost": lost, "added": added, "fixed": fixed}
 
 
 def since_last(output_dir: str, now: dict) -> dict | None:
@@ -91,6 +112,11 @@ def print_since(d: dict) -> None:
           f"{len(d['added'])} finding(s) added, {len(d['fixed'])} fixed")
     for rid, title, label, trust in d["added"][:6]:
         print(f"      {'!!' if trust else '+ '} {rid} {title}: {label}")
+    if d.get("flows", (None, None)) != (None, None) or d.get("jurisdictions", (None, None)) != (None, None):
+        print(f"      flows that run {_arrow(d.get('flows', (None, None)))}, "
+              f"jurisdictions {_arrow(d.get('jurisdictions', (None, None)))}")
+    for kind, name in (d.get("lost") or [])[:8]:
+        print(f"      -- {'no longer runs' if kind == 'flow' else 'line no longer runs in'}: {name}")
 
 
 def panel_html(d: dict | None, esc) -> str:
@@ -98,6 +124,8 @@ def panel_html(d: dict | None, esc) -> str:
         return ""
     tiles = [("Score", _arrow(d["score"])), ("Trust blockers", _arrow(d["blockers"])),
              ("Scenarios per run", _arrow(d["scenarios"])), ("Coverages selected", _arrow(d["coverages"]))]
+    tiles += [(label, _arrow(d[k])) for k, label in (("flows", "Flows that run"), ("jurisdictions", "Jurisdictions"))
+              if d.get(k, (None, None)) != (None, None)]
     cells = "".join(f'<div class="data-tile"><div class="data-big" style="font-size:22px">{esc(v)}</div>'
                     f'<div class="data-label">{esc(k)}</div></div>' for k, v in tiles)
 
@@ -109,4 +137,13 @@ def panel_html(d: dict | None, esc) -> str:
 
     return (f'  <div class="data"><h2>Since your last check</h2><p class="screens-note">Compared with the health check '
             f'of {esc(d["when"] or "–")} (healthcheck/{FILE}).</p><div class="data-grid">{cells}</div>'
-            f'{items(d["added"], "Added")}{items(d["fixed"], "Fixed")}</div>\n')
+            f'{_lost_html(d.get("lost") or [], esc)}{items(d["added"], "Added")}{items(d["fixed"], "Fixed")}</div>\n')
+
+
+def _lost_html(lost: list, esc) -> str:
+    if not lost:
+        return ""
+    shown = "".join(f'<li>{"No longer runs" if kind == "flow" else "Line no longer runs in"}: <code>{esc(name)}</code></li>'
+                    for kind, name in lost[:8])
+    more = f"<li>… and {len(lost) - 8} more</li>" if len(lost) > 8 else ""
+    return f'<div class="data-sub">Left the run {len(lost)}</div><ul class="since">{shown}{more}</ul>'

@@ -366,7 +366,9 @@ def main():
         from eir_cover import suite_breadth
         suite_reach = suite_breadth(config.repository_dir, config.source_root, cssids)
         from eir_since import since_last, snapshot
-        since = since_last(output_dir, snapshot(results, total_files, data, products))
+        from eir_since import flows_running
+        since = since_last(output_dir, snapshot(results, total_files, data, products, states,
+                                                flows_running(config.repository_dir, config.source_root)))
 
     # Excel first (appendix — referenced by HTML)
     excel_filename = ""
