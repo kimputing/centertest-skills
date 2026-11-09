@@ -114,7 +114,7 @@ class EirConfig:
         # Layer 4: defaults
         self.repository_dir = os.getcwd()
         self.source_root = "src/main/java"
-        self.ruleset = "Full"
+        self.ruleset = "CenterTestFull"  # every rule: the trust verdict needs the trust rules
         self.rules = None  # specific rule IDs override ruleset
         self.exclude_packages = [".*datadriven.*"]  # generated code, skip by default
         self.exclude_files = []

@@ -23,12 +23,28 @@ Code quality assessment for CenterTest test automation projects. Checks framewor
 
 ### Quick Health Check (local directory)
 
-Analyze the current project with the Full ruleset:
+Analyze the current project with every rule (`CenterTestFull`, the default — the trust verdict needs
+the trust rules; a smaller ruleset reports them as "not checked"):
 
 ```bash
 PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl, javalang" >/dev/null 2>&1 && { echo "$c"; break; }; done)
 "$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --path "/path/to/centertest/project"
 ```
+
+### Reporting to the user
+
+The terminal summary ends with the trust blockers, the test data and the screens. Reply in this order:
+
+1. **Can these tests be trusted?** Each trust blocker group with its count and `path:line` locations —
+   these are the things to fix first. Say plainly when there are none.
+2. **What to fix first**: the tiers (must fix, should fix, suggestions) as counts with their top rules;
+   do not list suggestions one by one.
+3. **Test data and suites**: scenario runs, unread workbooks, unused codes, scenarios no suite runs.
+4. **Offer the next step that fits** (and run it only when asked):
+   discarded `.equals()` → `--fix 15018` (diff first); suite entries that run nothing → the
+   `suite-builder` skill's `doctor`; unused codes → `ddt-tools` cleanup report; a branch to merge →
+   `--review main <branch>`; a status report → `--trend 6`.
+5. Point to the HTML report for the details and the Excel (its Verdict sheet) for sharing.
 
 ### Choose a Ruleset
 
@@ -127,7 +143,7 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 
 | Ruleset | Rules | Purpose |
 |---------|-------|---------|
-| **Full** | 0001-4002 (11 rules) | Core health check rules |
+| **Full** | 0001-4002 (11 rules) | The original Eir core set (no trust rules) |
 | **Statistics** | 0001, 1001 | General code and naming statistics |
 | **PackageStatistics** | 0002 | Package-level metrics |
 | **FixSet** | 1002-2002 | Code improvement suggestions |
@@ -136,7 +152,7 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 | **CenterTest** | 9001, 9003, 9007, 3001 | CenterTest framework compliance |
 | **Quality** | 5001, 5002, 15001, 15004, 15017, 15018, 7001 | Code quality and security |
 | **Security** | 7001 | Hardcoded credentials detection |
-| **CenterTestFull** | All 20 rules | Complete health check |
+| **CenterTestFull** | Every rule | **Default.** Complete health check, trust verdict included |
 
 ## Individual Rules
 

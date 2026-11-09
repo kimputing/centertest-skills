@@ -57,14 +57,14 @@ scripts/
 - **Location** is added after the rules run (local mode and `--review`), not by each rule: a new rule with `Class`/`Method` (and optionally `Line`/`Snippet` code) columns gets it for free. `--review` ignores it when matching findings.
 - **Severity** is per category (`_SEVERITY`) with per-rule overrides (`_RULE_SEVERITY`: 15001/15002 medium — a loud failure with an unhelpful message, 15006 low — clutter); `severity_of()` feeds both the score and the fix order.
 - **`health_score()`** in `eir_report.py` is the only score formula; the dashboard and `--trend` both call it.
-- **Trust blockers** (`TRUST_RULES` in `eir_report.py`: 15018, 15005, 14002-14004) are listed first in HTML, Markdown and terminal and cap the score at `TRUST_SCORE_CAP` (59). Only add a rule there when a finding means a test can pass while the app is broken, or cannot run.
+- **Trust blockers** (`TRUST_RULES` in `eir_report.py`: 15018, 15005, 14002-14005, 9003, 9010) are listed first in HTML, Markdown and terminal and cap the score at `TRUST_SCORE_CAP` (59). Only add a rule there when a finding means a test can pass while the app is broken, or cannot run.
 - **Score calculation** uses severity weights (Security/Quality=3x, CenterTest=2x, ClassNames=1x) with proportional penalty (few findings in big project = partial credit)
 
 ## Running
 
 ```bash
-# Full healthcheck
-python3 scripts/eir_analyzer.py --path /path/to/project --ruleset CenterTestFull
+# Full healthcheck (CenterTestFull, every rule, is the default ruleset: the trust verdict needs the trust rules)
+python3 scripts/eir_analyzer.py --path /path/to/project
 
 # Single rule
 python3 scripts/eir_analyzer.py --path /path/to/project --rules "15002"
