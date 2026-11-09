@@ -457,6 +457,56 @@ def _ide_link(repo_root: str, location: str, text: str) -> str:
     return f'<a class="ide" href="{_html_escape(url)}" title="Open in IntelliJ">{_html_escape(text)}</a>'
 
 
+_TIERS = (("trust", "Trust blockers", "tests that can pass while the app is broken, or cannot run"),
+          ("high", "Must fix", "quality and security defects"),
+          ("medium", "Should fix", "framework compliance, complexity, structure"),
+          ("low", "Suggestions", "naming and readability"))
+
+
+def fix_order(results: list[RuleResult]) -> list[dict]:
+    """Findings grouped by what they cost, most urgent first: [{tier, title, why, count, rules}].
+    Trust rules count only findings a test runs (dormant data findings are cleanup);
+    informational categories are left out."""
+    blockers, _nc, _dormant = trust_blockers(results)
+    live = {b["rule_id"]: b["count"] for b in blockers}
+    tiers = {key: [] for key, _t, _w in _TIERS}
+    for r in results:
+        if r.error:
+            continue
+        if r.rule_id in TRUST_RULES:
+            if live.get(r.rule_id):
+                tiers["trust"].append((r.rule_id, r.description, live[r.rule_id]))
+            continue
+        severity = _SEVERITY.get(r.category, "medium")
+        count = _count_items(r)
+        if severity and count:
+            tiers[severity].append((r.rule_id, r.description, count))
+    out = []
+    for key, title, why in _TIERS:
+        rules = sorted(tiers[key], key=lambda x: (-x[2], x[0]))
+        out.append({"tier": key, "title": title, "why": why, "count": sum(c for _i, _d, c in rules), "rules": rules})
+    return out
+
+
+def _fix_order_html(results: list[RuleResult]) -> str:
+    """'What to fix first': the same findings, ordered by cost rather than by count."""
+    tiers = fix_order(results)
+    top = max((t["count"] for t in tiers), default=1) or 1
+    rows = []
+    for t in tiers:
+        rules = ", ".join(f'<a href="#rule-{r}" onclick="navigateTo(\'rule-{r}\');return false">{_html_escape(d)}</a> {c}'
+                          for r, d, c in t["rules"][:4])
+        more = f" and {len(t['rules']) - 4} more rules" if len(t["rules"]) > 4 else ""
+        rows.append(
+            f'<div class="tier tier-{t["tier"]}"><div class="tier-head"><span class="tier-title">{t["title"]}</span>'
+            f'<span class="tier-count">{t["count"]}</span></div>'
+            f'<div class="cat-bar-bg"><div class="tier-fill" style="width:{t["count"] / top * 100:.0f}%"></div></div>'
+            f'<div class="tier-why">{_html_escape(t["why"])}{": " + rules + more if rules else " — none"}</div></div>')
+    return ('  <div class="categories">\n    <h2>What to fix first</h2>\n'
+            '    <p class="tier-note">The same findings as below, grouped by what they cost rather than by how many there are.</p>\n'
+            + "\n".join(rows) + "\n  </div>\n")
+
+
 def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int = 0,
                       repo_root: str = "") -> str:
     """The 'Can these tests be trusted?' panel shown under the score."""
@@ -727,6 +777,19 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .cat-bar-fill.red {{ background: var(--red); }}
   .cat-bar-fill.amber {{ background: var(--amber); }}
   .cat-issues {{ width: 80px; text-align: right; font-size: 14px; color: var(--text-muted); }}
+  .tier-note {{ color: var(--text-muted); font-size: 14px; margin: -8px 0 12px; }}
+  .tier {{ padding: 10px 0; border-bottom: 1px solid var(--surface2); }}
+  .tier-head {{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }}
+  .tier-title {{ font-weight: 600; }}
+  .tier-count {{ font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }}
+  .tier .cat-bar-bg {{ margin: 6px 0; height: 8px; flex: none; }}
+  .tier-fill {{ height: 100%; border-radius: 4px; }}
+  .tier-trust .tier-fill {{ background: var(--red); }} .tier-trust .tier-count {{ color: var(--red); }}
+  .tier-high .tier-fill {{ background: var(--amber); }}
+  .tier-medium .tier-fill {{ background: var(--accent); }}
+  .tier-low .tier-fill {{ background: var(--text-muted); opacity: .6; }}
+  .tier-why {{ color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }}
+  .tier-why a {{ color: var(--text); text-decoration: underline; text-decoration-color: var(--border); }}
 
   /* Rules table */
   .rules-section {{ margin: 32px 0; }}
@@ -856,24 +919,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
     html += _data_panel_html(data)
     html += _screens_panel_html(screens)
 
-    # Category breakdown
-    html += '  <div class="categories">\n    <h2>By Category</h2>\n'
-    max_issues = max((c["issues"] for c in categories.values()), default=1) or 1
-    for cat_name, cat_data in categories.items():
-        total_cat = cat_data["passed"] + cat_data["failed"]
-        pct = cat_data["passed"] / total_cat * 100 if total_cat > 0 else 100
-        bar_pct = cat_data["issues"] / max_issues * 100
-        bar_class = "green" if cat_data["issues"] == 0 else ("amber" if cat_data["issues"] < 10 else "red")
-        cat_id = cat_name.lower().replace(" ", "-")
-        html += f"""    <div class="cat-row" style="cursor:pointer" onclick="navigateTo('cat-{cat_id}')">
-      <div class="cat-name">{_html_escape(cat_name)}</div>
-      <div class="cat-bar-bg">
-        <div class="cat-bar-fill {bar_class}" style="width:{bar_pct:.0f}%"></div>
-      </div>
-      <div class="cat-issues">{cat_data['issues']} issue{"s" if cat_data["issues"] != 1 else ""}</div>
-    </div>
-"""
-    html += '  </div>\n'
+    html += _fix_order_html(results)
 
     # Rules summary table (collapsible)
     html += """  <div class="rules-section">

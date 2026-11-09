@@ -73,5 +73,22 @@ class HealthScoreTest(unittest.TestCase):
         self.assertIn("No trust blockers", html)
 
 
+
+class FixOrderTest(unittest.TestCase):
+    def test_tiers_order_by_cost_and_trust_counts_only_live_findings(self):
+        data_headers = ["File", "Row", "Column", "Code", "Issue", "Runs in"]
+        results = [
+            result("15018", headers=["Class", "Method", "Method Called", "Line"], rows=[["A", "v", "equals", "x.equals(y);"]]),
+            result("14003", "CenterTest", data_headers, [["f.xlsx", 2, "#C", "X", "code not found", "SomeTest"],
+                                                         ["g.xlsx", 3, "#C", "Y", "code not found", "not run: row disabled"]]),
+            result("15002", "Quality", ["Class"], [["B"], ["C"]]),
+            result("5001", "Complexity", ["Class"], [["D"]]),
+            result("4001", "Methods", ["Class"], [["E"], ["F"], ["G"]]),
+            result("0001", "Statistics", ["Commit"], [["local"]]),
+        ]
+        tiers = {t["tier"]: (t["count"], [r[0] for r in t["rules"]]) for t in eir_report.fix_order(results)}
+        self.assertEqual(tiers, {"trust": (2, ["14003", "15018"]), "high": (2, ["15002"]),
+                                 "medium": (1, ["5001"]), "low": (3, ["4001"])})
+
 if __name__ == "__main__":
     unittest.main()
