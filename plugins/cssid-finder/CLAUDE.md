@@ -53,3 +53,7 @@ which is why the script tries multiple variants.
 `scripts/find_getter.py` is copied byte for byte into `plugins/recording-to-test/scripts/` and
 `plugins/centertest-healthcheck/scripts/` (`--touches <widget id>`); their tests fail when a copy differs —
 copy it to both after every change.
+
+## Machine-readable
+
+`find_getter.py <app> "<css_id>" --json` prints {schema, app, css_id, layout, resolution: exact | partial | none, getters, matched} on stdout (exit 1 when nothing matches) — for the CenterTest MCP server and other tools to run this lookup instead of their own. Tests: `python3 -m unittest discover -s plugins/cssid-finder/tests` (uses recording-to-test's fixture cssids).
