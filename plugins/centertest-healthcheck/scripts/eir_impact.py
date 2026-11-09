@@ -69,15 +69,14 @@ def _methods(text: str) -> list[tuple[str, str]]:
             for m in _METHOD_DECL.finditer(text) if m.group(1) not in _NOT_METHODS]
 
 
-def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) -> dict[str, str]:
-    """{test class: the changed class it reaches} for tests that reach any of `classes`.
+_INDEX: list = []  # [(sources, index)]: the review asks once per changed class, over the same sources
 
-    Reach is followed per method, so a hub everyone uses (a facade like PC or BC) only passes
-    the change on through the facade methods that use the changed class, and on to the
-    classes that call those methods. A subclass of a changed class is changed as a whole.
-    `start` gives, per class, only the methods that changed (e.g. the ones that read a changed
-    workbook); a class missing from it is changed as a whole.
-    """
+
+def _index(sources: dict):
+    """(methods, own words, words with superclasses, texts with superclasses) per class, built once per sources."""
+    for known, index in _INDEX:
+        if known is sources:
+            return index
     methods = {name: _methods(text) for name, (_p, text) in sources.items()}
     own_words = {name: set(_WORD.findall(text)) for name, (_p, text) in sources.items()}
     parent = {}
@@ -94,6 +93,24 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
 
     words = {name: set().union(*(own_words[c] for c in lineage(name))) for name in sources}
     texts = {name: "\n".join(sources[c][1] for c in lineage(name)) for name in sources}
+    index = (methods, own_words, words, texts)
+    _INDEX[:] = [(sources, index)]  # one project at a time
+    return index
+
+
+def tests_reaching(classes: set[str], sources: dict, start: dict | None = None,
+                   every: dict | None = None) -> dict[str, str]:
+    """{test class: the changed class it reaches} for tests that reach any of `classes`.
+
+    Reach is followed per method, so a hub everyone uses (a facade like PC or BC) only passes
+    the change on through the facade methods that use the changed class, and on to the
+    classes that call those methods. A subclass of a changed class is changed as a whole.
+    `start` gives, per class, only the methods that changed (e.g. the ones that read a changed
+    workbook); a class missing from it is changed as a whole. Changed classes are followed in sorted
+    order (the result must not depend on set order); `every`, when given, gets {test: every changed
+    class that reaches it}.
+    """
+    methods, own_words, words, texts = _index(sources)
     reached: dict[str, str] = {}
 
     def closed(cls, names):
@@ -108,7 +125,7 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
                 return names
             names |= more
 
-    for begin in classes:
+    for begin in sorted(classes):
         # affected[class] = None (the whole class) or the set of its affected method names
         affected: dict[str, set | None] = {begin: closed(begin, (start or {}).get(begin))}
         frontier = [begin]
@@ -117,6 +134,8 @@ def tests_reaching(classes: set[str], sources: dict, start: dict | None = None) 
             names = affected[current]
             if current in sources and _is_test(sources[current][1]):
                 reached.setdefault(current, begin)
+                if every is not None:
+                    every.setdefault(current, set()).add(begin)
             alts = None if names is None else "|".join(map(re.escape, names))
             # a static call names its class (BC.createAccount, not PC.createAccount); a bare .name( counts
             # only where the class is used as an instance (new X(...), a variable or parameter of type X)
@@ -364,8 +383,11 @@ def rerun_plan(base_tree: str, head_tree: str, changed: list[str], source_root: 
             entry["reasons"].append(reason)
 
     java = {os.path.basename(p)[:-5] for p in changed if p.endswith(".java")}
-    for test, via in tests_reaching(java & set(sources), sources).items():
-        add(test, f"{via}.java changed" if via != test else "test changed")
+    every: dict[str, set] = {}
+    tests_reaching(java & set(sources), sources, every=every)
+    for test in sorted(every):
+        for via in sorted(every[test]):
+            add(test, f"{via}.java changed" if via != test else "test changed")
 
     dc_codes: dict[str, set[str]] = {}
     for rel in (p for p in changed if p.startswith("testdata/") and p.endswith(".xlsx")):

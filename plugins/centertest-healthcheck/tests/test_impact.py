@@ -38,6 +38,12 @@ class TestsReachingTest(unittest.TestCase):
     def test_a_changed_base_class_reaches_every_subclass_user(self):
         self.assertEqual(set(tests_reaching({"BaseScenarioBC"}, SOURCES)), {"DisbursementTest", "AccountTest"})
 
+    def test_every_change_that_reaches_a_test_is_credited(self):
+        every = {}
+        reached = tests_reaching({"BC", "AssertDisbursement"}, SOURCES, every=every)
+        self.assertEqual(reached["DisbursementTest"], "AssertDisbursement")  # sorted: the same every run
+        self.assertEqual(every["DisbursementTest"], {"AssertDisbursement", "BC"})
+
     def test_a_changed_test_reaches_itself(self):
         self.assertEqual(tests_reaching({"AccountTest"}, SOURCES), {"AccountTest": "AccountTest"})
 
