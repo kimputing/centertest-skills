@@ -81,5 +81,26 @@ class Gw9LayoutTest(unittest.TestCase):
         finally:
             shutil.rmtree(root)
 
+class ConfiguredCssidsTest(unittest.TestCase):
+    def test_the_cssid_finder_config_is_used_only_for_its_own_project(self):
+        import json
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            gen = os.path.join(tmp, "acme-generated")
+            os.makedirs(os.path.join(gen, "src", "main", "resources", "cssids", "pc"))
+            os.makedirs(os.path.join(gen, "src", "main", "java", "com", "acme", "generated", "pages"))
+            home = os.path.join(tmp, "home")
+            os.makedirs(os.path.join(home, ".centertest"))
+            with open(os.path.join(home, ".centertest", "cssid-finder.json"), "w") as fh:
+                json.dump({"cssids_dir": os.path.join(gen, "src", "main", "resources")}, fh)
+            for name, pkg in (("acme-suite", "com.acme"), ("other-suite", "com.other")):
+                write(os.path.join(tmp, name, "src", "main", "java", "T.java"),
+                      f"import {pkg}.generated.pages.pc.NewAccountPage;\nclass T {{}}")
+            with mock.patch.dict(os.environ, {"HOME": home}):
+                self.assertEqual(eir_screens.find_cssids_dir(os.path.join(tmp, "acme-suite")),
+                                 os.path.join(gen, "src", "main", "resources", "cssids"))
+                self.assertIsNone(eir_screens.find_cssids_dir(os.path.join(tmp, "other-suite")))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -36,17 +36,44 @@ def find_cssids_dir(repo_dir: str, explicit: str | None = None) -> str | None:
     repo = os.path.abspath(repo_dir)
     resources = os.path.join(repo + "-generated", "src", "main", "resources")
     candidates += [os.path.join(resources, "cssids"), resources]
-    try:
-        with open(os.path.expanduser("~/.centertest/cssid-finder.json"), encoding="utf-8") as fh:
-            configured = json.load(fh).get("cssids_dir")
-        if configured:
-            candidates += [os.path.join(configured, "cssids"), configured]
-    except (OSError, ValueError):
-        pass
     for c in candidates:
         if c and os.path.isdir(c) and _has_layout(c):
             return c
+    try:
+        with open(os.path.expanduser("~/.centertest/cssid-finder.json"), encoding="utf-8") as fh:
+            configured = json.load(fh).get("cssids_dir")
+    except (OSError, ValueError):
+        configured = None
+    # the cssid-finder config names whichever generated project was set up last: use it only when it is
+    # this project's (its generated Java holds the package the project imports pages from)
+    if configured and _belongs_to(repo, configured):
+        for c in (os.path.join(configured, "cssids"), configured):
+            if os.path.isdir(c) and _has_layout(c):
+                return c
     return None
+
+
+_PAGE_PACKAGE = re.compile(r"^import\s+([\w.]+?)\.generated\.pages\.", re.M)
+
+
+def _belongs_to(repo: str, resources: str) -> bool:
+    """Whether a generated project's resources go with this project: its src/main/java holds the
+    package the project imports generated pages from. False when that cannot be shown."""
+    prefixes = set()
+    for root, dirs, files in os.walk(os.path.join(repo, "src")):
+        dirs[:] = [d for d in dirs if d not in ("build", "generated", "datadriven")]
+        for name in files:
+            if name.endswith(".java"):
+                try:
+                    with open(os.path.join(root, name), encoding="utf-8", errors="replace") as fh:
+                        prefixes.update(_PAGE_PACKAGE.findall(fh.read()))
+                except OSError:
+                    continue
+    base = os.path.abspath(resources)
+    if os.path.basename(base) == "cssids":
+        base = os.path.dirname(base)
+    java = os.path.join(os.path.dirname(base), "java")
+    return any(os.path.isdir(os.path.join(java, *p.split("."), "generated")) for p in prefixes)
 
 
 def _screens(cssids_dir: str, app: str) -> dict[str, str]:
