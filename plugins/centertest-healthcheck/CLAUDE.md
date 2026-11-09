@@ -11,6 +11,7 @@ scripts/
 ├── eir_models.py        # Dataclasses: SourceCodeFile, ClassEntry, Method, Field, CommitInfo, RuleResult
 ├── eir_report.py        # HTML dashboard + Excel appendix + Markdown + terminal output
 ├── eir_trend.py         # --trend: month-end mainline commits via git archive -> score/blockers/tests chart page
+├── eir_locate.py        # Adds Location (path:line) to rows with a Class column; HTML renders idea:// links
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution
 ├── rule_core.py         # Shared utilities: get_test_list, divide_by_package, split_camel_case
@@ -46,6 +47,7 @@ scripts/
 - **`.*datadriven.*`** excluded by default — generated code, not actionable
 - **Method body extraction** via brace-balanced source-position slicing from javalang's `position.line` — javalang doesn't store method body text
 - **Runs in** (rule_ddt `_workbook_users`): a workbook's readers are non-generated classes with its `@DataDriven` path, a `DDTHelper` getter whose body names it, or its DC class name; DCs reached by `@Rel` columns inherit them. Findings in unread workbooks or `Disabled` rows are dormant (`eir_report.is_dormant`): listed, never blockers, and `--review` does not count them.
+- **Location** is added after the rules run (local mode and `--review`), not by each rule: a new rule with `Class`/`Method` (and optionally `Line`/`Snippet` code) columns gets it for free. `--review` ignores it when matching findings.
 - **`health_score()`** in `eir_report.py` is the only score formula; the dashboard and `--trend` both call it.
 - **Trust blockers** (`TRUST_RULES` in `eir_report.py`: 15018, 15005, 14002-14004) are listed first in HTML, Markdown and terminal and cap the score at `TRUST_SCORE_CAP` (59). Only add a rule there when a finding means a test can pass while the app is broken, or cannot run.
 - **Score calculation** uses severity weights (Security/Quality=3x, CenterTest=2x, ClassNames=1x) with proportional penalty (few findings in big project = partial credit)

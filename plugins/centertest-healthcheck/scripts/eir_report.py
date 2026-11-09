@@ -356,6 +356,8 @@ def _finding_label(headers: list, row: list) -> str:
         runs = cell.get("Runs in")
         return f"{where}: {what}" + (f" (in {runs})" if runs and not str(runs).startswith("not run") else "")
     label = ".".join(str(cell[k]) for k in ("Class", "Method") if cell.get(k))
+    if cell.get("Location"):
+        label += f" ({cell['Location']})"
     detail = cell.get("Line") or cell.get("Datasource Path") or ""
     return f"{label}: {detail}" if detail else label
 
@@ -381,8 +383,10 @@ def trust_blockers(results: list[RuleResult], sample_size: int = 5) -> tuple[lis
         dormant = len(r.rows) - len(live)
         if count:
             samples = [_finding_label(r.headers, row) for row in live[:sample_size]]
+            li = r.headers.index("Location") if "Location" in r.headers else None
+            locations = [str(row[li]) if li is not None and li < len(row) else "" for row in live[:sample_size]]
             blockers.append({"rule_id": rule_id, "title": title, "consequence": consequence,
-                             "count": count, "samples": samples, "dormant": dormant})
+                             "count": count, "samples": samples, "locations": locations, "dormant": dormant})
         elif dormant:
             dormant_only.append({"rule_id": rule_id, "title": title, "dormant": dormant})
     dormant = sum(b["dormant"] for b in blockers) + sum(d["dormant"] for d in dormant_only)
@@ -433,7 +437,20 @@ def health_score(results: list[RuleResult], total_files: int) -> int:
     return score
 
 
-def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int = 0) -> str:
+def _ide_link(repo_root: str, location: str, text: str) -> str:
+    """text as a link that opens path:line in IntelliJ (idea:// scheme); plain text without a location."""
+    if not location or ":" not in location or not repo_root:
+        return _html_escape(text)
+    rel, _, line = location.rpartition(":")
+    if not line.isdigit():
+        return _html_escape(text)
+    from urllib.parse import quote
+    url = f"idea://open?file={quote(os.path.join(repo_root, rel))}&line={line}"
+    return f'<a class="ide" href="{_html_escape(url)}" title="Open in IntelliJ">{_html_escape(text)}</a>'
+
+
+def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int = 0,
+                      repo_root: str = "") -> str:
     """The 'Can these tests be trusted?' panel shown under the score."""
     unchecked = ""
     if dormant:
@@ -454,7 +471,8 @@ def _trust_panel_html(blockers: list[dict], not_checked: list[str], dormant: int
            'until then the score is capped below Healthy.</div>']
     for b in blockers:
         more = b["count"] - len(b["samples"])
-        items = "".join(f"<li>{_html_escape(x)}</li>" for x in b["samples"])
+        locs = b.get("locations") or [""] * len(b["samples"])
+        items = "".join(f"<li>{_ide_link(repo_root, loc, x)}</li>" for x, loc in zip(b["samples"], locs))
         if more > 0:
             items += f"<li>… and {more} more</li>"
         out.append(
@@ -594,6 +612,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .blocker-why {{ color: var(--text-muted); font-size: 14px; }}
   .blocker ul {{ grid-column: 2; margin: 4px 0 0 18px; font-size: 13px; color: var(--text);
     font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }}
+  a.ide {{ color: inherit; text-decoration: underline; text-decoration-color: var(--border); }}
+  a.ide:hover {{ text-decoration-color: var(--accent); }}
   .trust-dormant {{ color: var(--text-muted); font-size: 13px; margin-top: 10px; }}
   .trust-unchecked {{ color: var(--amber); font-size: 13px; margin-top: 10px; }}
   .categories {{ margin: 32px 0; }}
@@ -738,7 +758,8 @@ def generate_html(results: list[RuleResult], output_dir: str,
   </div>
 """
 
-    html += _trust_panel_html(blockers, trust_not_checked, trust_dormant)
+    repo_root = os.path.dirname(os.path.abspath(output_dir))
+    html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
 
     # Category breakdown
     html += '  <div class="categories">\n    <h2>By Category</h2>\n'
@@ -848,10 +869,12 @@ def generate_html(results: list[RuleResult], output_dir: str,
                 for h in r.headers:
                     html += f'<th>{_html_escape(h)}</th>'
                 html += '</tr></thead><tbody>\n'
+                loc_i = r.headers.index("Location") if "Location" in r.headers else None
                 for row in r.rows[:100]:
                     html += '              <tr>'
-                    for val in row:
-                        html += f'<td>{_html_escape(val)}</td>'
+                    for i, val in enumerate(row):
+                        cell = _ide_link(repo_root, str(val), str(val)) if i == loc_i else _html_escape(val)
+                        html += f'<td>{cell}</td>'
                     html += '</tr>\n'
                 if len(r.rows) > 100:
                     html += f'              <tr><td colspan="{len(r.headers)}" style="color:var(--text-muted);text-align:center">... and {len(r.rows) - 100} more (see Excel)</td></tr>\n'

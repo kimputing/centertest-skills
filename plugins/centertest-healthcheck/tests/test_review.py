@@ -110,7 +110,7 @@ class BranchReviewTest(unittest.TestCase):
         md_dir = os.path.join(self.repo, "healthcheck")
         with open(os.path.join(md_dir, os.listdir(md_dir)[0]), encoding="utf-8") as fh:
             md = fh.read()
-        self.assertIn("DelinquencyCheck.validate: shown.equals(expected);", md)
+        self.assertIn("DelinquencyCheck.validate (src/main/java/com/acme/tests/DelinquencyCheck.java:5): shown.equals(expected);", md)
         self.assertIn("WC_PolicyChangeDC.xlsx row 3: #Company 'Ghost' (in PolicyChangeTest)", md)
 
     def test_the_fix_reads_as_fixed_not_new(self):

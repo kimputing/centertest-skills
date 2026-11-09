@@ -32,7 +32,7 @@ from eir_rules import run_rules
 from eir_suppressions import apply_suppressions
 
 # Columns that locate a finding or describe its context; they change without the finding changing.
-_POSITION_COLUMNS = {"Row", "Line No", "Line Number", "Runs in"}
+_POSITION_COLUMNS = {"Row", "Line No", "Line Number", "Runs in", "Location"}
 
 # Categories whose rows describe the project rather than problems in it.
 _INFORMATIONAL = {"Statistics"}
@@ -80,6 +80,8 @@ def analyze_tree(tree_dir: str, config, suppressions) -> tuple[list[RuleResult],
     files = parse_directory(tree_dir, cfg.source_root, cfg.exclude_packages,
                             cfg.exclude_files, cfg.compat_comment_lines, None)
     results = run_rules({LOCAL_COMMIT: files}, cfg)
+    from eir_locate import annotate_locations
+    annotate_locations(results, {LOCAL_COMMIT: files}, tree_dir)
     if suppressions:
         results, _ = apply_suppressions(results, suppressions)
     return results, len(files)

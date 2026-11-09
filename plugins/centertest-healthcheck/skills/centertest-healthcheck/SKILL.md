@@ -159,6 +159,13 @@ score at 59 ("At risk"). Trust rules that were not
 part of the run are listed as *not checked*, never as passed — use `CenterTestFull` for a complete
 verdict. When reporting results to the user, lead with these blockers.
 
+## Finding locations
+
+Every finding that names a class carries a **Location** (`src/.../X.java:42`): the flagged line when
+the rule reports a snippet, else the method declaration, else the class. Quote it as `path:line` when
+reporting — it is clickable in the terminal. In the HTML report locations open the file in IntelliJ
+(`idea://` links). Branch reviews include them in the PR comment.
+
 ## Report Output
 
 Reports are saved to `{project}/results/`:

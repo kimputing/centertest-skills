@@ -232,6 +232,9 @@ def main():
     # Step 2: Run rules
     print(f"\n[2/4] Running {len(active_ids)} analysis rule(s)...")
     results = run_rules(commits, config)
+    if not config.has_git_options():
+        from eir_locate import annotate_locations
+        annotate_locations(results, commits, config.repository_dir)
 
     # Step 3: Apply suppressions
     output_dir = os.path.join(config.repository_dir, "healthcheck")
