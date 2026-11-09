@@ -197,14 +197,14 @@ def generate_excel(results: list[RuleResult], output_dir: str, total_files: int 
     if products:
         from eir_products import excel_rows
         ws = wb.create_sheet(title="Product coverage")
-        for col, header in enumerate(["Line", "Coverage", "Status", "Terms set", "Terms"], 1):
+        for col, header in enumerate(["Line", "Coverage", "Status", "Terms set", "Terms", "Selected by"], 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.font = header_font
             cell.fill = header_fill
         for r, values in enumerate(excel_rows(products), 2):
             for col, value in enumerate(values, 1):
                 ws.cell(row=r, column=col, value=value)
-        for letter, width in zip("ABCDE", (22, 60, 20, 10, 60)):
+        for letter, width in zip("ABCDEF", (22, 60, 20, 10, 60, 80)):
             ws.column_dimensions[letter].width = width
         ws.auto_filter.ref = ws.dimensions
 
@@ -659,8 +659,10 @@ def _products_panel_html(lines) -> str:
         # the shorter list says more: what a thin line covers, or what a well-covered line still misses
         if len(l["named"]) <= len(l["missing"]):
             label = "Selected by a scenario"
+            from eir_products import _tests
             chips = [f'<span class="chip on" title="{_html_escape(c["code"] or "")}: terms set '
-                     f'{len(c["terms_set"])}/{c["terms"]}">{_html_escape(c["name"])}</span>' for c in l["named"]]
+                     f'{len(c["terms_set"])}/{c["terms"]}. Selected by: {_html_escape(_tests(c)) or "–"}">'
+                     f'{_html_escape(c["name"])}</span>' for c in l["named"]]
         else:
             label = "No scenario selects"
             chips = [f'<span class="chip">{_html_escape(n)}</span>' for n in l["missing"]]

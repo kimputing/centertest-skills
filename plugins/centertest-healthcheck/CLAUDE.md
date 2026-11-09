@@ -21,7 +21,7 @@ scripts/
 ├── find_getter.py      # vendored, byte-identical copy of cssid-finder's (widget id -> getter chain for --touches)
 ├── eir_uses.py         # --touches PAGE[.getX] | widget-id: tests reaching a generated page/widget (eir_impact.tests_reaching) + suite;
 │                        # --uses PATTERN: data rows naming a value -> DC rows reaching them (#Ref, joins, @Rel, engine scopes) -> tests + suite
-├── eir_products.py      # Product coverages (generated <Line>_coverage_structure.json) selected by scenarios (eir_uses.reached_values)
+├── eir_products.py      # Product coverages (generated <Line>_coverage_structure.json) selected by scenarios (eir_uses.reached_values, coverage-like tables only) + the tests that select each
 ├── eir_reach.py         # Forward reach from a test (per call: Facade.method, new Step, typed fields, superclasses); assertion vocabulary; rule 9010
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution

@@ -88,12 +88,20 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
         return None
     data, java = data_names(repo_dir), java_names(repo_dir, source_root)
     in_suites = None
+    by_value, readers = {}, {}
     try:
-        from eir_uses import reached_values, suite_rows
-        exercised = reached_values(repo_dir)
+        from eir_uses import reached_values, rows_by_value, suite_rows
+        exercised = reached_values(repo_dir, coverage_only=True)
+        by_value = rows_by_value(repo_dir, coverage_only=True)
+        # tests that read each workbook: @DataDriven, a DDTHelper getter or the DC class (rule 14003's readers)
+        from eir_impact import _is_test, _java_sources
+        from rules.rule_ddt import _workbook_users
+        sources = _java_sources(repo_dir, source_root)
+        for dc, classes in _workbook_users(repo_dir, source_root).items():
+            readers[dc] = {c for c in classes if c in sources and _is_test(sources[c][1])}
         rows = suite_rows(repo_dir, source_root)
         if rows is not None:
-            in_suites = reached_values(repo_dir, rows) if rows else set()
+            in_suites = reached_values(repo_dir, rows, coverage_only=True) if rows else set()
     except Exception:  # no openpyxl or an unreadable hierarchy: fall back to "named anywhere"
         exercised = data
     lines = []
@@ -115,8 +123,14 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
                 done = sorted(n for n, t in terms.items() if _named(t, exercised))
                 terms_total += len(terms)
                 terms_set += len(done)
+                rows = set().union(*(by_value.get(str(c.get(k) or "").strip().lower(), set())
+                                     for c in entries for k in ("name", "codeIdentifier")))
+                tests: dict[str, int] = {}
+                for _kind, dc, _code in rows:
+                    for test in readers.get(dc, ()):
+                        tests[test] = tests.get(test, 0) + 1
                 named.append({"name": name, "code": entries[0].get("codeIdentifier"),
-                              "terms": len(terms), "terms_set": done})
+                              "terms": len(terms), "terms_set": done, "tests": tests})
             elif any(_named(c, data) for c in entries):
                 unused.append(name)
             elif any(_named(c, java) for c in entries):
@@ -142,6 +156,12 @@ def print_products(lines: list[dict]) -> None:
         print(f"  {l['line']:<24} coverages {len(l['named']):>4}/{l['coverages']:<4}{extra}{terms}")
 
 
+def _tests(c: dict) -> str:
+    """'GL_SubmissionTest (2 rows), GL_PolicyChangeTest (1 row)': the tests whose scenarios select it."""
+    tests = sorted((c.get("tests") or {}).items(), key=lambda kv: (-kv[1], kv[0]))
+    return ", ".join(f"{t} ({n} row{'s' if n != 1 else ''})" for t, n in tests)
+
+
 def excel_rows(lines: list[dict]) -> list[list]:
     """Line, coverage, status, terms set — every coverage of every line."""
     rows = []
@@ -149,8 +169,8 @@ def excel_rows(lines: list[dict]) -> list[list]:
         outside = set(l.get("outside_suites") or [])
         rows += [[l["line"], c["name"],
                   "Selected only by scenarios no suite runs" if c["name"] in outside else "Selected by a scenario",
-                  f"{len(c['terms_set'])}/{c['terms']}", ", ".join(c["terms_set"])] for c in l["named"]]
-        rows += [[l["line"], n, "In a data row no scenario reaches", "", ""] for n in l.get("unused", [])]
-        rows += [[l["line"], n, "Only in Java", "", ""] for n in l["java"]]
-        rows += [[l["line"], n, "Not named", "", ""] for n in l["missing"]]
+                  f"{len(c['terms_set'])}/{c['terms']}", ", ".join(c["terms_set"]), _tests(c)] for c in l["named"]]
+        rows += [[l["line"], n, "In a data row no scenario reaches", "", "", ""] for n in l.get("unused", [])]
+        rows += [[l["line"], n, "Only in Java", "", "", ""] for n in l["java"]]
+        rows += [[l["line"], n, "Not named", "", "", ""] for n in l["missing"]]
     return rows

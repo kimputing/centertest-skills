@@ -131,6 +131,18 @@ class OutsideSuitesTest(unittest.TestCase):
             gl = eir_products.product_coverage(root, res)[0]
             self.assertEqual([c["name"] for c in gl["named"]], ["Cyber Suite", "Liquor Liability Endorsement"])
             self.assertEqual(gl["outside_suites"], ["Cyber Suite"])
+            liquor = next(c for c in gl["named"] if c["name"].startswith("Liquor"))
+            self.assertEqual(eir_products._tests(liquor), "GL_SubmissionTest (1 row)")
+            # a coverage's name in a sheet that is not about coverages (a prior-loss cause) is not a selection
+            make_xlsx(os.path.join(root, "testdata", "GLData.xlsx"), {
+                "Coverage": [["Code", "Coverage"], ["c1", "Liquor Liability Endorsement"], ["c2", "Cyber Suite"]],
+                "PriorLosses": [["Code", "Cause"], ["p1", "Pollution Coverage"]]})
+            make_xlsx(os.path.join(root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {"DataCombination": [
+                ["Code", "#Coverage", "#PriorLosses"], ["InSuite", "c1", "p1"], ["Seed", "c2", ""]]})
+            import eir_uses
+            eir_uses._graph_cache.clear()
+            gl = eir_products.product_coverage(root, res)[0]
+            self.assertNotIn("Pollution Coverage", [c["name"] for c in gl["named"]])
             self.assertIn("Selected only by scenarios no suite runs", eir_report._products_panel_html([gl]))
 
 

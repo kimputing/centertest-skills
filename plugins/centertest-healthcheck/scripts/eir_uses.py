@@ -138,7 +138,18 @@ def _value_columns(t: dict) -> list[int]:
     return [i for i, h in enumerate(t["headers"]) if h and h[0] not in "#@" and ddt_refcheck.JOIN_SEPARATOR not in h]
 
 
-def reached_values(repo_dir: str, start: set | None = None) -> set[str]:
+_COVERAGE_WORDS = ("coverage", "bundle", "package", "endorsement")
+
+
+def _coverage_table(t: dict) -> bool:
+    """A sheet, or a table with a (non-reference) column, named for coverages, bundles, packages or
+    endorsements: where coverage names live -- not a vehicle type or a prior-loss cause that happens to
+    share a coverage's name."""
+    return any(w in t["sheet"] for w in _COVERAGE_WORDS) or any(
+        w in h.lower() for h in t["headers"] if h and h[0] not in "#@" for w in _COVERAGE_WORDS)
+
+
+def reached_values(repo_dir: str, start: set | None = None, coverage_only: bool = False) -> set[str]:
     """Lower-cased value cells (codes included) of every row the start rows reach -- by default every
     enabled DataCombination row, or `start` (("dc", rel path, code) keys) --
     itself included, and the headers of its filled value columns (a term set as its own column):
@@ -163,6 +174,8 @@ def reached_values(repo_dir: str, start: set | None = None) -> set[str]:
                 frontier.append(nxt)
     values = set()
     for t in tables:
+        if coverage_only and not _coverage_table(t):
+            continue
         cols = _value_columns(t)
         for code, cells in t["rows"]:
             if _key(t, code) in reached:
@@ -170,6 +183,39 @@ def reached_values(repo_dir: str, start: set | None = None) -> set[str]:
                 values |= {cells[i].strip().lower() for i in filled}
                 values |= {t["headers"][i].lower() for i in filled}  # a term set as its own column
     return values
+
+
+def rows_by_value(repo_dir: str, coverage_only: bool = False) -> dict[str, set]:
+    """{lower-cased value: ("dc", rel path, code) keys of the enabled DataCombination rows that reach it}."""
+    tables, links = _graph(repo_dir)
+    out_of = dict(links)
+    cells = {}
+    for t in tables:
+        if coverage_only and not _coverage_table(t):
+            continue
+        cols = _value_columns(t)
+        for code, row in t["rows"]:
+            filled = [i for i in cols if i < len(row) and row[i].strip()]
+            cells[_key(t, code)] = [row[i].strip().lower() for i in filled] + [t["headers"][i].lower() for i in filled]
+    result: dict[str, set] = {}
+    for t in tables:
+        if not t["dc"]:
+            continue
+        di = next((i for i, h in enumerate(t["headers"]) if h.lower() == "disabled"), None)
+        for code, row in t["rows"]:
+            if di is not None and di < len(row) and row[di].strip().lower() in ("true", "yes", "y", "x", "1"):
+                continue
+            start = _key(t, code)
+            seen, frontier = {start}, [start]
+            while frontier:
+                for nxt in out_of.get(frontier.pop(), ()):
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        frontier.append(nxt)
+            for key in seen:
+                for value in cells.get(key, ()):
+                    result.setdefault(value, set()).add(start)
+    return result
 
 
 def suite_rows(repo_dir: str, source_root: str) -> set | None:
