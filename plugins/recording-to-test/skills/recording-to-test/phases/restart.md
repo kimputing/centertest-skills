@@ -110,6 +110,11 @@ Read `project.suites`: `{path, suites: {Name: {List|Suites|Packages}}}` (`List`:
 `Suites`: other suites listed by name; `Packages`: package regexes); when the file could not be
 parsed it is `{path, suites: {}, raw}`, so show the raw text and ask. Suites group by transaction.
 
+When the `suite-builder` skill is installed, use it (as a skill, never by script path) for the
+facts and the edit: its `list` gives each suite's real scenario count and its entries that match
+nothing, `add` registers the new test as a dry-run diff that changes only that suite's lines, and
+`show` afterwards confirms the entry runs the new test. Without it, count from `project.suites`.
+
 Offer the options with a recommendation and each one's **run cost** (how many scenarios the suite
 runs, whether it includes slow flows):
 
