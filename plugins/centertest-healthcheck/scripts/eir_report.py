@@ -523,10 +523,29 @@ def _screens_panel_html(coverage) -> str:
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 
+def _data_panel_html(d) -> str:
+    """'Test data': scenarios a full run executes, unread workbooks, unused codes, broken references."""
+    if not d:
+        return ""
+    unread = ", ".join(os.path.basename(u) for u in d["unread"][:6]) + (" …" if len(d["unread"]) > 6 else "")
+    tiles = [
+        (f'{d["scenarios"]}', "scenarios a full run executes",
+         f'{d["data_driven"]} data-driven of {d["test_classes"]} test classes; {d["disabled"]} rows disabled'),
+        (f'{len(d["unread"])}<small> of {d["dc_files"]}</small>', "DC workbooks no test reads", unread or "every workbook is read"),
+        (f'{d["unused_codes"]}<small> of {d["codes"]}</small>', "reference codes nothing uses",
+         "xlsx-cleanup-unused lists them"),
+        (f'{d["broken_live"]}', "broken references in data tests run",
+         f'{d["broken_dormant"]} more in data no test runs'),
+    ]
+    cells = "".join(f'<div class="data-tile"><div class="data-big">{big}</div><div class="data-label">{_html_escape(label)}</div>'
+                    f'<div class="data-sub">{_html_escape(sub)}</div></div>' for big, label, sub in tiles)
+    return f'  <div class="data"><h2>Test data</h2><div class="data-grid">{cells}</div></div>\n'
+
+
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
-                  suppressed_count: int = 0, screens=None) -> str:
+                  suppressed_count: int = 0, screens=None, data=None) -> str:
     """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
     output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -652,6 +671,14 @@ def generate_html(results: list[RuleResult], output_dir: str,
     font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }}
   a.ide {{ color: inherit; text-decoration: underline; text-decoration-color: var(--border); }}
   a.ide:hover {{ text-decoration-color: var(--accent); }}
+  .data {{ margin: 28px 0 0; }}
+  .data h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 12px; }}
+  .data-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }}
+  .data-tile {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; min-width: 0; }}
+  .data-big {{ font-size: 30px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }}
+  .data-big small {{ font-size: 14px; font-weight: 500; color: var(--text-muted); }}
+  .data-label {{ font-weight: 600; font-size: 14px; margin-top: 2px; }}
+  .data-sub {{ color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }}
   .screens {{ margin: 28px 0 0; }}
   .screens h2 {{ font-size: 18px; font-weight: 600; margin-bottom: 4px; }}
   .screens-note {{ color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }}
@@ -815,6 +842,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
     repo_root = os.path.dirname(os.path.abspath(output_dir))
     html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
+    html += _data_panel_html(data)
     html += _screens_panel_html(screens)
 
     # Category breakdown

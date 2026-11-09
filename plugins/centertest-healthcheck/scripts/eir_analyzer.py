@@ -265,8 +265,10 @@ def main():
             generated.append(filepath)
             print(f"  Excel:    {filepath}")
 
-    screens = None
+    screens = data = None
     if not config.has_git_options():
+        from eir_data import data_overview
+        data = data_overview(config.repository_dir, config.source_root, results)
         from eir_screens import find_cssids_dir, screen_coverage
         cssids = find_cssids_dir(config.repository_dir, args.cssids)
         screens = screen_coverage(config.repository_dir, config.source_root, cssids) if cssids else []
@@ -281,6 +283,7 @@ def main():
             excel_filename=excel_filename,
             suppressed_count=suppressed_count,
             screens=screens,
+            data=data,
         )
         if filepath:
             generated.append(filepath)
@@ -294,6 +297,9 @@ def main():
 
     if "terminal" in config.output_formats:
         print_terminal_summary(results, suppressed_count)
+        if data:
+            from eir_data import print_data
+            print_data(data)
         if screens:
             from eir_screens import print_screens
             print_screens(screens)

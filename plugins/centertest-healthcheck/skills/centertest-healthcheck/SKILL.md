@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "what is not covered", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "how many scenarios do we run", "what is not covered", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -167,6 +167,13 @@ reads, or in rows marked `Disabled`, are listed as cleanup, not blockers. Any bl
 score at 59 ("At risk"). Trust rules that were not
 part of the run are listed as *not checked*, never as passed — use `CenterTestFull` for a complete
 verdict. When reporting results to the user, lead with these blockers.
+
+## Test data
+
+The dashboard's **Test data** panel gives the scenarios a full run executes (enabled DataCombination
+rows of each `@DataDriven` test, times a row's `Multiplier`, plus one run per non-data-driven test),
+the DC workbooks no test reads, the reference codes nothing uses (the same count as
+`xlsx-cleanup-unused`), and broken references split into data tests run and data no test runs.
 
 ## Screens the suite opens
 
