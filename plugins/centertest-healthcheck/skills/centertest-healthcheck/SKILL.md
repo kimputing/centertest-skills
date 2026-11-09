@@ -101,7 +101,9 @@ and lists only the findings that changed, trust blockers first:
   and **switched off** (row disabled) named — say these: they shrink the run without failing anything.
 - **Product coverage**: when the branch changes test data and the generated product model is found
   (`--cssids` or `<project>-generated`), the coverages scenarios no longer select (say these first: a
-  reviewer should confirm each was meant) and those newly selected, per line of business.
+  reviewer should confirm each was meant) and those newly selected, per line of business, and the **term
+  values the branch introduces that are not an option in the product model** (a limit or deductible the
+  dropdown does not offer): name each with its options, so the author corrects the row before the run.
 - **All of it in one run**: from two tests up, the comment carries a suite `Rerun-<sha>` whose entries
   run exactly the plan's scenarios (a whole test, or `Class method (codeA|codeB)` for changed rows) and
   the one command to start it. Offer to add it with the `suite-builder` skill (`create Rerun-<sha>

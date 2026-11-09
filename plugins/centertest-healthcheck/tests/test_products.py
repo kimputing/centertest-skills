@@ -172,7 +172,8 @@ class CoverageDeltaTest(unittest.TestCase):
     def test_lost_and_gained_per_line(self):
         from eir_review import coverage_delta, render_markdown
         delta = coverage_delta(self.tree("base", "c1"), self.tree("head", "c2"), self.resources)
-        self.assertEqual(delta, [{"line": "GLLine", "gained": ["Cyber Suite"], "lost": ["Liquor Liability Endorsement"]}])
+        self.assertEqual(delta, [{"line": "GLLine", "gained": ["Cyber Suite"], "lost": ["Liquor Liability Endorsement"],
+                                  "not_offered": []}])
         self.assertEqual(coverage_delta(self.tree("b2", "c1"), self.tree("h2", "c1"), self.resources), [])
         meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
                 "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "coverage": delta}
@@ -189,7 +190,7 @@ TERMS = [
                                       {"codeIdentifier": "z3", "name": "$2,000,000"}]},
                   {"codeIdentifier": "GLLiquorDed", "name": "Deductible",
                    "covTermChoices": [{"codeIdentifier": "z4", "name": "No Deductible"},
-                                      {"codeIdentifier": "z5", "name": "500"}]}]},
+                                      {"codeIdentifier": "z5", "name": "500"}, {"codeIdentifier": "z7", "name": "10%"}]}]},
     {"codeIdentifier": "GLMedPay", "name": "Medical Payments",
      "covTerms": [{"codeIdentifier": "GLMedLimit", "name": "Limit",
                    "covTermChoices": [{"codeIdentifier": "z6", "name": "5,000"}]}]},
@@ -214,13 +215,14 @@ class TermOptions(unittest.TestCase):
             "Coverage": [["Code", "Coverage", "CovTerm", "CovtermValue"],
                          ["lim", "Liquor Liability Endorsement", "Limit", "1,000,000"],  # "$1,000,000"
                          ["ded", "Liquor Liability Endorsement", "Deductible", "No Deductible, 500"],  # a list
+                         ["pct", "Liquor Liability Endorsement", "Deductible", 0.1],  # a percent cell: "10%"
                          ["odd", "Liquor Liability Endorsement", "Limit", "750,000"],  # not an option
                          ["med", "Medical Payments", "Limit", "9,999"]],  # only a disabled row reaches it
             # an API payload's shape: its values are not dropdown labels, so it is not compared
             "CovTerm": [["Code", "Name", "PatternCode", "ChosenTerm"], ["api", "Limit", "GLLiquorLimit", "1000"]]})
         make_xlsx(os.path.join(root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {
             "DataCombination": [["Code", "#Coverage", "#CovTerm", "Disabled"],
-                                ["Default", "lim,ded", "api", ""], ["Odd", "odd", "", ""], ["Off", "med", "", "true"]]})
+                                ["Default", "lim,ded,pct", "api", ""], ["Odd", "odd", "", ""], ["Off", "med", "", "true"]]})
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -229,14 +231,39 @@ class TermOptions(unittest.TestCase):
         gl = eir_products.product_coverage(self.root, self.resources)[0]
         liquor = next(c for c in gl["named"] if c["name"] == "Liquor Liability Endorsement")
         self.assertEqual(liquor["options"], [
-            {"term": "Deductible", "options": ["No Deductible", "500"], "chosen": ["No Deductible", "500"],
+            {"term": "Deductible", "options": ["No Deductible", "500", "10%"], "chosen": ["No Deductible", "500", "10%"],
              "not_offered": []},
             {"term": "Limit", "options": ["$500,000", "$1,000,000", "$2,000,000"], "chosen": ["$1,000,000"],
              "not_offered": ["750,000"]}])
         self.assertNotIn("Medical Payments", [c["name"] for c in gl["named"]])
-        self.assertEqual((gl["option_terms"], gl["options_chosen"], gl["options_total"]), (2, 3, 5))
+        self.assertEqual((gl["option_terms"], gl["options_chosen"], gl["options_total"]), (2, 4, 6))
         self.assertEqual([(n["coverage"], n["term"], n["value"]) for n in gl["not_offered"]],
                          [("Liquor Liability Endorsement", "Limit", "750,000")])
+
+    def test_the_review_names_values_the_branch_introduces(self):
+        import shutil
+        from eir_review import coverage_delta, render_markdown
+        base = os.path.join(self.tmp.name, "base")
+        shutil.copytree(self.root, base)
+        make_xlsx(os.path.join(base, "testdata", "gl", "GL_SubmissionDC.xlsx"), {
+            "DataCombination": [["Code", "#Coverage"], ["Default", "lim,ded,pct"]]})  # no row sets 750,000 yet
+        delta = coverage_delta(base, self.root, self.resources)
+        self.assertEqual([(d["line"], [(n["term"], n["value"]) for n in d["not_offered"]]) for d in delta],
+                         [("GLLine", [("Limit", "750,000")])])
+        self.assertEqual(coverage_delta(self.root, self.root, self.resources), [])  # already there: not new
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "coverage": delta}
+        self.assertIn("- GLLine: Liquor Liability Endorsement / Limit = `750,000` (options: $500,000, $1,000,000, "
+                      "$2,000,000)", render_markdown([], meta))
+
+    def test_a_value_another_line_offers_for_the_same_coverage_is_not_flagged(self):
+        other = [{"codeIdentifier": "HOLiquor", "name": "Liquor Liability Endorsement",
+                  "covTerms": [{"name": "Limit", "covTermChoices": [{"codeIdentifier": "z9", "name": "$750,000"}]}]}]
+        with open(os.path.join(self.resources, "HOLine_coverage_structure.json"), "w") as fh:
+            json.dump(other, fh)
+        lines = {l["line"]: l for l in eir_products.product_coverage(self.root, self.resources)}
+        self.assertEqual(lines["GLLine"]["not_offered"], [])  # 750,000 is HO's Liquor Limit option
+        self.assertEqual(lines["HOLine"]["not_offered"], [])
 
     def test_shown_in_terminal_panel_and_excel(self):
         import contextlib
@@ -245,14 +272,14 @@ class TermOptions(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             eir_products.print_products(lines)
-        self.assertIn("options 3/5 of 2 option terms", out.getvalue())
+        self.assertIn("options 4/6 of 2 option terms", out.getvalue())
         self.assertIn("Liquor Liability Endorsement / Limit = 750,000   (options: $500,000, $1,000,000, $2,000,000)",
                       out.getvalue())
         html = eir_report._products_panel_html(lines)
-        self.assertIn("2 option terms set, 3 of their 5 options used", html)
+        self.assertIn("2 option terms set, 4 of their 6 options used", html)
         self.assertIn("Term values that are not an option in the product model", html)
         row = next(r for r in eir_products.excel_rows(lines) if r[1] == "Liquor Liability Endorsement")
-        self.assertEqual(row[6], "Deductible: No Deductible, 500 (2 of 2); "
+        self.assertEqual(row[6], "Deductible: No Deductible, 500, 10% (3 of 3); "
                                  "Limit: $1,000,000, 750,000 NOT AN OPTION (1 of 3)")
 
 

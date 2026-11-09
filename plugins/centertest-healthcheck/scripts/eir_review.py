@@ -359,6 +359,7 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
     if coverage:
         lost = [(c["line"], n) for c in coverage for n in c["lost"]]
         gained = [(c["line"], n) for c in coverage for n in c["gained"]]
+        odd = [(c["line"], n) for c in coverage for n in c.get("not_offered") or []]
         out += ["### Product coverage", "",
                 "Coverages of the product model the scenarios select (a row an enabled scenario reaches names them), "
                 "merge-base → branch tip.", ""]
@@ -367,6 +368,15 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
             out += [f"- {line}: {name}" for line, name in lost[:limit * 2]]
             if len(lost) > limit * 2:
                 out.append(f"- … and {len(lost) - limit * 2} more")
+            out.append("")
+        if odd:
+            out.append(f"**Term values that are not an option in the product model** ({len(odd)}, new on this "
+                       "branch: the dropdown offers no such value):")
+            out += [f"- {line}: {n['coverage']} / {n['term']} = `{n['value']}` (options: "
+                    + ", ".join(n["options"][:8]) + (", …" if len(n["options"]) > 8 else "") + ")"
+                    for line, n in odd[:limit * 2]]
+            if len(odd) > limit * 2:
+                out.append(f"- … and {len(odd) - limit * 2} more")
             out.append("")
         if gained:
             out.append(f"Newly selected ({len(gained)}): " + "; ".join(f"{l}: {n}" for l, n in gained[:limit])
@@ -447,6 +457,8 @@ def print_review(changes: list[dict], meta: dict) -> None:
         if c["gained"]:
             print(f"  ++ {c['line']}: {len(c['gained'])} coverage(s) newly selected: "
                   + ", ".join(c["gained"][:4]) + (" ..." if len(c["gained"]) > 4 else ""))
+        for n in c.get("not_offered") or []:
+            print(f"  !! {c['line']}: {n['coverage']} / {n['term']} = {n['value']} is not an option in the product model")
     rerun = meta.get("rerun") or []
     if rerun:
         print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
@@ -512,17 +524,20 @@ def run_scope(base_tree: str, head_tree: str, source_root: str) -> dict:
 
 def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[dict]:
     """Per line of business: product coverages the scenarios select on the branch tip that they did not
-    at the merge-base (gained), and the other way round (lost). [] without a product model."""
+    at the merge-base (gained), and the other way round (lost); and term values that are not an option in
+    the product model which the branch introduces (not_offered). [] without a product model."""
     from eir_products import product_coverage
     base, head = product_coverage(base_tree, cssids), product_coverage(head_tree, cssids)
     if not base or not head:
         return []
     before = {l["line"]: {c["name"] for c in l["named"]} for l in base}
+    odd_before = {(l["line"], n["coverage"], n["term"], n["value"]) for l in base for n in l.get("not_offered", [])}
     out = []
     for l in head:
         now, was = {c["name"] for c in l["named"]}, before.get(l["line"], set())
-        if now != was:
-            out.append({"line": l["line"], "gained": sorted(now - was), "lost": sorted(was - now)})
+        odd = [n for n in l.get("not_offered", []) if (l["line"], n["coverage"], n["term"], n["value"]) not in odd_before]
+        if now != was or odd:
+            out.append({"line": l["line"], "gained": sorted(now - was), "lost": sorted(was - now), "not_offered": odd})
     return out
 
 

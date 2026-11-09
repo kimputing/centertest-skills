@@ -12,7 +12,7 @@ as "Limit" does not make every coverage look tested. Coverage names repeat acros
 
 Option terms (a term with covTermChoices: a limit, a deductible) list which of their options the
 scenarios set (eir_uses.term_values: Coverage / CovTerm / CovtermValue rows they reach), matched by
-name or code ignoring $, commas and spaces (a cell may list several options, comma-separated); a value that is none of the options is listed as
+name or code ignoring $, commas and spaces (a cell may list several options, comma-separated; a percent cell read as 0.1 is "10%"); a value that is none of the options is listed as
 "not an option" in the product model -- the dropdown offers no such value.
 
 Naming a coverage is a floor for "the suite selects it": a disabled row is skipped, but a row
@@ -86,8 +86,34 @@ def _squeeze(value: str) -> str:
     return re.sub(r"[\s$,]", "", str(value or "").lower())
 
 
-def term_options(entries: list[dict], set_values: dict) -> list[dict]:
-    """[{term, options, chosen, not_offered}] for the option terms of one coverage that the scenarios set."""
+def _keys_of(value: str) -> list[str]:
+    """How a data cell may name an option: as written, or a percent cell (stored 0.1, shown "10%")."""
+    keys = [_squeeze(value)]
+    try:
+        number = float(value)
+    except ValueError:
+        return keys
+    if 0 < number <= 1:
+        keys.append(_squeeze(f"{number * 100:g}%"))
+    return keys
+
+
+def _offered(models: list) -> dict[tuple, set]:
+    """{(coverage name, term name) lower-cased: squeezed option names and codes} over every line: a coverage
+    name several lines share (Sewer Back-Up on HOP and HO) offers what any of them offers."""
+    out: dict[tuple, set] = {}
+    for coverages in models:
+        for c in coverages:
+            for t in c.get("covTerms") or []:
+                key = (str(c.get("name") or "").strip().lower(), str(t.get("name") or "").strip().lower())
+                out.setdefault(key, set()).update(_squeeze(k) for ch in t.get("covTermChoices") or []
+                                                  for k in (ch.get("name"), ch.get("codeIdentifier")) if k)
+    return out
+
+
+def term_options(entries: list[dict], set_values: dict, offered: dict | None = None) -> list[dict]:
+    """[{term, options, chosen, not_offered}] for the option terms of one coverage that the scenarios set.
+    A value no line offers (`offered`, from _offered) is not_offered."""
     keys = {str(c.get(k) or "").strip().lower() for c in entries for k in ("name", "codeIdentifier")} - {""}
     out = {}
     for c in entries:
@@ -109,10 +135,13 @@ def term_options(entries: list[dict], set_values: dict) -> list[dict]:
             chosen, not_offered = set(), []
             for v in values:
                 # the whole cell ("$1,000,000"), else a list of options ("No Coverage, Split Limit")
-                parts = [v] if _squeeze(v) in by_key else [p for p in v.split(",") if p.strip()]
-                if all(_squeeze(p) in by_key for p in parts):
-                    chosen |= {by_key[_squeeze(p)] for p in parts}
-                else:
+                match = lambda text: next((by_key[k] for k in _keys_of(text) if k in by_key), None)
+                parts = [v] if match(v) else [p for p in v.split(",") if p.strip()]
+                anywhere = (offered or {}).get((str(entries[0].get("name") or "").strip().lower(), name.lower()), set())
+                known = lambda text: any(k in anywhere for k in _keys_of(text))
+                if all(match(p) for p in parts):
+                    chosen |= {match(p) for p in parts}
+                elif not (known(v) or all(known(p) for p in v.split(",") if p.strip())):
                     not_offered.append(v)
             out[name] = {"term": name, "options": options, "chosen": [o for o in options if o in chosen],
                          "not_offered": sorted(not_offered)}
@@ -149,14 +178,18 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
     except Exception:  # no openpyxl or an unreadable hierarchy: fall back to "named anywhere"
         exercised = data
     lines = []
+    models = []
     for path in files:
         try:
             with open(path, encoding="utf-8") as fh:
                 coverages = json.load(fh)
         except (OSError, ValueError):
             continue
+        models.append((path, [c for c in coverages if isinstance(c, dict)] if isinstance(coverages, list) else []))
+    offered = _offered([coverages for _path, coverages in models])
+    for path, coverages in models:
         by_name: dict[str, list[dict]] = {}
-        for c in coverages if isinstance(coverages, list) else []:
+        for c in coverages:
             if isinstance(c, dict) and c.get("name"):
                 by_name.setdefault(c["name"].strip(), []).append(c)
         named, unused, in_java, missing = [], [], [], []
@@ -175,7 +208,7 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
                         tests[test] = tests.get(test, 0) + 1
                 named.append({"name": name, "code": entries[0].get("codeIdentifier"),
                               "terms": len(terms), "terms_set": done, "tests": tests,
-                              "options": term_options(entries, set_values)})
+                              "options": term_options(entries, set_values, offered)})
             elif any(_named(c, data) for c in entries):
                 unused.append(name)
             elif any(_named(c, java) for c in entries):
