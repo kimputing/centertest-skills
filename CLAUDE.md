@@ -35,7 +35,7 @@ plugins/<plugin-name>/
 | Plugin | Purpose | Scripts |
 |--------|---------|---------|
 | **centertest-healthcheck** | Trust verdict, rules, `--review` (PR verdict + rerun plan as one suite, by cause), `--trend`, `--portfolio`, `--uses` (scenarios that select a coverage/value; repeat to combine), `--touches` (tests that reach a screen/widget), `--weekly`, `--json` on any mode, since-last-check, `--fix 15018`, screens + product-coverage (term options, values not offered) + jurisdiction + test-data panels; HTML+Excel+MD | analyzer + report/review/trend/impact/locate/screens/products/states/uses/data modules + 11 rule files; vendors ddt-tools' engine, suite-builder's suite.py and cssid-finder's find_getter.py |
-| **cssid-finder** | Find getter chains for Guidewire CSS IDs | 1 script |
+| **cssid-finder** | Find getter chains for Guidewire CSS IDs, or by the words on screen (`--words`) | 1 script |
 | **ddt-analyzer** | DDT structure analysis, 28-sheet Excel report (17 without Data Studio) | 1 script; vendors ddt-tools' engine |
 | **ddt-tools** | Validate DC refs, diff xlsx, cleanup unused codes | 6 scripts + `ddt_refcheck.py` engine (source of the vendored copies) |
 | **suite-builder** | Build/edit suites in CenterTestSuiteList.json (create/add/remove/delete/rename, resolve as CenterTest does) | `suite.py` (pick by class/method/code/description/row data) + vendored xlsx_read.py |

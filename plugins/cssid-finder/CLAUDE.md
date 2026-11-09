@@ -54,6 +54,13 @@ which is why the script tries multiple variants.
 `plugins/centertest-healthcheck/scripts/` (`--touches <widget id>`); their tests fail when a copy differs —
 copy it to both after every change.
 
+## Word search
+
+`find_getter.py <app> --words "effective date" [--page PolicyInfo] [--json]` (`search_words`): every page
+file's ids, camel-case words of the last segment must hold every query word (exactly those first), else
+any segment; `--page` is a case-insensitive substring of any non-last segment (a wizard screen counts).
+One result per getter, 15 shown, `total` in JSON. No labels exist in the generated files, only ids.
+
 ## Machine-readable
 
 `find_getter.py <app> "<css_id>" --json` prints {schema, app, css_id, layout, resolution: exact | partial | none, getters, matched} on stdout (exit 1 when nothing matches) — for the CenterTest MCP server and other tools to run this lookup instead of their own. Tests: `python3 -m unittest discover -s plugins/cssid-finder/tests` (uses recording-to-test's fixture cssids).

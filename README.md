@@ -9,7 +9,7 @@ A Claude Code plugin marketplace distributing skills for CenterTest test automat
 | Plugin | Description | Status |
 |--------|-------------|--------|
 | [centertest-healthcheck](plugins/centertest-healthcheck/) | Suite health for QA architects: a trust verdict (checks that can never fail, data that cannot load), findings at `path:line`, branch review with a PR verdict and what to rerun (as one suite), monthly trend, screens and wizards the suite opens, which product coverages and limit/deductible options the scenarios select (and values the product does not offer), the states or provinces each line runs in, which scenarios use a coverage or values (combined) and which tests touch a screen, what changed since the last check, a weekly page across client suites, and JSON on any mode for other tools | Active |
-| [cssid-finder](plugins/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs | Active |
+| [cssid-finder](plugins/cssid-finder/) | Find Java getter chains for Guidewire UI CSS IDs, or by the words on screen (`--words "effective date" --page PolicyInfo`) | Active |
 | [ddt-analyzer](plugins/ddt-analyzer/) | Analyze DDT structure — 28-sheet Excel report via Data Studio (17 from the fallback script) | Active |
 | [ddt-tools](plugins/ddt-tools/) | Validate DC references (relationship hops included), diff xlsx, report codes nothing uses | Active |
 | [suite-builder](plugins/suite-builder/) | Build and edit suites: pick classes, methods and DDT rows; add, remove, delete, rename; see what each suite runs and which entries match nothing | Active |

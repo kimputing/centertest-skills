@@ -26,6 +26,7 @@ document is the only thing on stdout.
 | Broken data references | `plugins/ddt-tools/scripts/xlsx-validate-refs.py --json` (`CENTERTEST_PROJECT_DIR=P`) | 1 when any is broken |
 | Unused reference codes | `plugins/ddt-tools/scripts/xlsx-cleanup-unused.py --json` | 0 |
 | Cell-level workbook diff | `plugins/ddt-tools/scripts/xlsx-diff.py FILE [--ref REF] --json` or `OLD NEW --json` | 0 |
+| Widgets by the words on screen | `plugins/cssid-finder/scripts/find_getter.py APP --words "WORDS" [--page PAGE] --json` | 1 when nothing matches |
 | Getter chain for a CSS id | `plugins/cssid-finder/scripts/find_getter.py APP "CSS_ID" --json` (`CENTERTEST_CSSIDS_DIR`) | 1 when nothing matches |
 | Suites: list, resolve, pick, edit (dry run without `--write`) | `plugins/suite-builder/scripts/suite.py --project P --json <command> ...` | 0 |
 | How much of a recording the project automates | `plugins/recording-to-test/scripts/ct.py coverage REC --cssids DIR --project P --json [--each]` | 0 |

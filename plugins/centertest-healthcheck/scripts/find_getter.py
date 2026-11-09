@@ -374,6 +374,53 @@ def lookup_json(app: str, css_id: str) -> dict:
     return out
 
 
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+
+
+def _words(text: str) -> set[str]:
+    """'PolicyInfo_DV-EffectiveDate' -> {'policy', 'info', 'dv', 'effective', 'date'}."""
+    return {w.lower() for w in _WORD.findall(text or "")}
+
+
+def search_words(app: str, words: str, page: str | None = None, limit: int = 15) -> dict:
+    """Widgets whose id names every word you see on screen ("effective date"), optionally on pages whose
+    name contains `page`: the element itself first (its last id segment holds all the words), then ids
+    whose other segments supply some. `page` matches any segment of the id: a page, a wizard screen
+    (SubmissionWizard-..._PolicyInfoScreen-...) or a panel. {schema, app, words, page, total, matches: [{css_id, page, getter}]}."""
+    app_lower = app.lower()
+    out = {"schema": 1, "app": app_lower, "words": words, "page": page, "matches": []}
+    if app_lower not in APP_MAP:
+        return dict(out, error=f"unknown app '{app}' (pc, cc, bc, ab, cm)")
+    layout, path = detect_layout(get_cssids_dir(), APP_MAP[app_lower][0])
+    if layout != "properties":
+        return dict(out, error="word search needs the properties layout (cssids/<app>/*.properties)")
+    wanted = _words(words)
+    if not wanted:
+        return dict(out, error="no words to search for")
+    page_files = []
+    for root, _, files in os.walk(path):
+        page_files += [os.path.join(root, name) for name in sorted(files) if name.endswith(".properties")]
+    ranked, seen = [], set()
+    for key, value, _raw_key, _raw_value in _load_entries(tuple(page_files))[0]:
+        segments = re.split(r"[-:]", key)
+        if page and not any(page.lower() in s.lower() for s in segments[:-1]):
+            continue
+        element = segments[-1]
+        if wanted <= _words(element):
+            rank = 0 if _words(element) == wanted else 1  # exactly those words, then more
+        elif wanted <= _words(key):
+            rank = 2
+        else:
+            continue
+        if value not in seen:
+            seen.add(value)
+            ranked.append((rank, len(key), key, value))
+    ranked.sort()
+    out["total"] = len(ranked)
+    out["matches"] = [{"css_id": key, "page": get_page_name(key), "getter": value} for _r, _n, key, value in ranked[:limit]]
+    return out
+
+
 def find_getter(app: str, css_id: str) -> None:
     app_lower = app.lower()
     if app_lower not in APP_MAP:
@@ -445,6 +492,22 @@ if __name__ == "__main__":
         set_path(sys.argv[2])
         sys.exit(0)
 
+    if len(sys.argv) >= 4 and sys.argv[2] == "--words" and not sys.argv[1].startswith("-"):
+        rest = sys.argv[4:]
+        as_json = "--json" in rest
+        page = rest[rest.index("--page") + 1] if "--page" in rest and rest.index("--page") + 1 < len(rest) else None
+        answer = search_words(sys.argv[1], sys.argv[3], page)
+        if as_json:
+            print(json.dumps(answer, ensure_ascii=False))
+        elif answer.get("error"):
+            print(f"Error: {answer['error']}")
+        else:
+            where = f" on pages matching '{page}'" if page else ""
+            print(f"Widgets named '{sys.argv[3]}'{where}: {answer['total']}" + (" (best 15)" if answer["total"] > 15 else ""))
+            for m in answer["matches"]:
+                print(f"  {m['css_id']}\n      {m['getter']}")
+        sys.exit(0 if answer.get("matches") else 1)
+
     if len(sys.argv) == 4 and sys.argv[3] == "--json" and not sys.argv[1].startswith("-"):
         import json
         answer = lookup_json(sys.argv[1], sys.argv[2])
@@ -455,6 +518,7 @@ if __name__ == "__main__":
         print("Usage:")
         print("  python3 find_getter.py <app> \"<css_id>\"   # search for getter")
         print("  python3 find_getter.py <app> \"<css_id>\" --json   # the same as one JSON document")
+        print("  python3 find_getter.py <app> --words \"effective date\" [--page PolicyInfo] [--json]   # by the words on screen")
         print("  python3 find_getter.py --set-path <path>   # set resources path")
         print("  python3 find_getter.py --show-path          # show current path")
         print()
