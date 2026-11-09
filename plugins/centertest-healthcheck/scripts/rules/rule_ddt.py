@@ -191,14 +191,19 @@ def _workbook_tokens(repo_dir: str, source_root: str) -> dict:
 
 
 def _follow_relationships(repo_dir: str, users: dict) -> None:
-    """Give each DC reached through an @Rel column the readers of the DC that reaches it."""
+    """Give each DC reached through an @Rel column the readers of the DC that reaches it.
+
+    A relationship names one target per identifier ($relationships: {Submission: {WC: ..., CA: ...}}):
+    a DC reaches the target of its own identifier (its path's $identifiers match) and of any
+    `IDENT.code` written in the column -- not every target of the relationship. With no identifier
+    at all, every target is kept."""
     import ddt_refcheck
-    from ddt_reference_scope import parse_relationships
+    from ddt_reference_scope import default_identifier_for, identifier_of, parse_relationships
     previous = os.getcwd()
     try:
         os.chdir(repo_dir)
         ddt_refcheck.reset_caches()
-        by_relationship, _ids = parse_relationships(ddt_refcheck.load_hierarchy())
+        by_relationship, identifiers = parse_relationships(ddt_refcheck.load_hierarchy())
         if not by_relationship:
             return
         pending = list(users)
@@ -209,14 +214,28 @@ def _follow_relationships(repo_dir: str, users: dict) -> None:
             try:
                 wb = load_workbook(path, read_only=True, data_only=True)
                 sheet = next((n for n in wb.sheetnames if n.lower() == "datacombination"), None)
-                header = [str(h) for h in next(wb[sheet].iter_rows(max_row=1, values_only=True)) if h] if sheet else []
+                rows = list(wb[sheet].iter_rows(values_only=True)) if sheet else []
                 wb.close()
             except Exception:
                 continue
+            header = [ddt_refcheck.format_value(h) for h in rows[0]] if rows else []
             _refs, rels, hops = ddt_refcheck.classify_headers(header)
-            names = {c[1:].lower() for c in rels} | {rel.lower() for _c, rel, _s in hops}
-            for rel in names:
-                for target in by_relationship.get(rel, {}).values():
+            try:
+                default_id = default_identifier_for(path.replace("\\", "/"), identifiers)
+            except ValueError:
+                default_id = ""
+            wanted: dict[str, set] = {}
+            for col in rels:  # @Rel cells may name another identifier: IDENT.code
+                i = header.index(col)
+                ids = {identifier_of(c.strip(), default_id) for r in rows[1:] if i < len(r) and r[i] not in (None, "")
+                       for c in ddt_refcheck.format_value(r[i]).split(",") if c.strip()}
+                wanted.setdefault(col[1:].lower(), set()).update(ids or {default_id.upper()})
+            for _c, rel, _s in hops:
+                wanted.setdefault(rel.lower(), set()).add(default_id.upper())
+            for rel, ids in wanted.items():
+                targets = by_relationship.get(rel, {})
+                chosen = [targets[i] for i in ids if i in targets] if ids - {""} else []
+                for target in chosen or targets.values():
                     before = len(users.get(target, ()))
                     users.setdefault(target, set()).update(users[path])
                     if len(users[target]) != before:
