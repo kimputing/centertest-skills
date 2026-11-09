@@ -191,8 +191,10 @@ the DC workbooks no test reads, the reference codes nothing uses (the same count
 
 The dashboard shows, per application, how many wizards (business transactions) and screens the
 suite's own code opens, and lists the wizards no test opens — the gaps to plan against. It reads the
-generated project's `cssids/` (found as `<project>-generated` next to the project, else the
-cssid-finder config, else pass `--cssids <generated src/main/resources>`). Screens opened only inside
+generated project's cssids — Guidewire 10's `cssids/<app>/` or Guidewire 9's `<app>.cssids` (found as
+`<project>-generated` next to the project, else the cssid-finder config, else pass
+`--cssids <generated src/main/resources>`). A screen counts when the suite's code builds or holds its
+page object (`new X(`, `X page =`), not when its name merely appears. Screens opened only inside
 framework-provided steps are not seen, so the numbers are floors; say so when quoting them.
 
 ## Finding locations

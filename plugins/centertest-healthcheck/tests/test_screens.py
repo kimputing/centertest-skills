@@ -56,5 +56,30 @@ class ScreenCoverageTest(unittest.TestCase):
         self.assertEqual(eir_report._screens_panel_html(None), "")
 
 
+
+class Gw9LayoutTest(unittest.TestCase):
+    """Guidewire 9 keeps every screen of an app in one <app>.cssids JSON list; page classes have no Page suffix."""
+
+    def test_gw9_screens_and_page_classes(self):
+        root = tempfile.mkdtemp()
+        try:
+            repo = os.path.join(root, "client")
+            res = os.path.join(root, "client-generated", "src", "main", "resources")
+            write(os.path.join(res, "pc.cssids"), """[
+  {"cssId": "SubmissionWizard:Next"},
+  {"cssId": "SubmissionWizard:Quote", "hierarchyPath": "new SubmissionWizard(getContext()).getQuote()"},
+  {"cssId": "CancellationWizard:Next", "hierarchyPath": "new CancellationWizard(getContext()).getNext()"},
+  {"cssId": "#misc", "hierarchyPath": "new Misc(getContext())"}
+]""")
+            write(os.path.join(repo, "src", "main", "java", "a", "CreateSubmission.java"),
+                  "class CreateSubmission { void run() { new SubmissionWizard(getContext()).getQuote(); } }")
+            found = eir_screens.find_cssids_dir(repo)
+            self.assertEqual(found, res)
+            pc = eir_screens.screen_coverage(repo, "src/main/java", found)[0]
+            self.assertEqual((pc["screens"], pc["used"]), (2, 1))
+            self.assertEqual(pc["unused_wizards"], ["CancellationWizard"])
+        finally:
+            shutil.rmtree(root)
+
 if __name__ == "__main__":
     unittest.main()

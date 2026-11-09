@@ -18,17 +18,24 @@ import re
 
 APPS = {"pc": "PolicyCenter", "bc": "BillingCenter", "cc": "ClaimCenter", "ab": "ContactManager"}
 _FIRST_PAGE = re.compile(r"=\s*new\s+(\w+)\s*\(")
-_PAGE_WORD = re.compile(r"\b(\w+Page)\b")
+
+
+def _has_layout(folder: str) -> bool:
+    """Guidewire 10 (cssids/<app>/*.properties) or Guidewire 9 (<app>.cssids files)."""
+    return any(os.path.isdir(os.path.join(folder, a)) or os.path.isfile(os.path.join(folder, f"{a}.cssids"))
+               for a in APPS)
 
 
 def find_cssids_dir(repo_dir: str, explicit: str | None = None) -> str | None:
-    """The generated cssids/ folder: --cssids, <project>-generated next to the project, or the
-    cssid-finder config (~/.centertest/cssid-finder.json)."""
+    """The generated cssids: --cssids, <project>-generated next to the project, or the
+    cssid-finder config (~/.centertest/cssid-finder.json). Guidewire 10 keeps them in
+    src/main/resources/cssids/<app>/, Guidewire 9 in src/main/resources/<app>.cssids."""
     candidates = []
     if explicit:
-        candidates += [explicit, os.path.join(explicit, "cssids")]
+        candidates += [os.path.join(explicit, "cssids"), explicit]
     repo = os.path.abspath(repo_dir)
-    candidates.append(os.path.join(repo + "-generated", "src", "main", "resources", "cssids"))
+    resources = os.path.join(repo + "-generated", "src", "main", "resources")
+    candidates += [os.path.join(resources, "cssids"), resources]
     try:
         with open(os.path.expanduser("~/.centertest/cssid-finder.json"), encoding="utf-8") as fh:
             configured = json.load(fh).get("cssids_dir")
@@ -37,13 +44,27 @@ def find_cssids_dir(repo_dir: str, explicit: str | None = None) -> str | None:
     except (OSError, ValueError):
         pass
     for c in candidates:
-        if c and os.path.isdir(c) and any(os.path.isdir(os.path.join(c, a)) for a in APPS):
+        if c and os.path.isdir(c) and _has_layout(c):
             return c
     return None
 
 
 def _screens(cssids_dir: str, app: str) -> dict[str, str]:
-    """{screen name: page class} for one app."""
+    """{screen name: page class} for one app, from either layout."""
+    gw9 = os.path.join(cssids_dir, f"{app}.cssids")
+    if not os.path.isdir(os.path.join(cssids_dir, app)) and os.path.isfile(gw9):
+        out = {}
+        try:
+            with open(gw9, encoding="utf-8", errors="replace") as fh:
+                entries = json.load(fh)
+        except (OSError, ValueError):
+            return out
+        for e in entries if isinstance(entries, list) else []:
+            path, cssid = e.get("hierarchyPath") or "", e.get("cssId") or ""
+            m = re.match(r"\s*new\s+(\w+)\s*\(", path)
+            if m and cssid and not cssid.startswith("#"):
+                out.setdefault(re.split(r"[:\-]", cssid, maxsplit=1)[0], m.group(1))
+        return dict(sorted(out.items()))
     out = {}
     folder = os.path.join(cssids_dir, app)
     for name in sorted(os.listdir(folder)):
@@ -56,8 +77,14 @@ def _screens(cssids_dir: str, app: str) -> dict[str, str]:
     return out
 
 
-def _page_users(repo_dir: str, source_root: str) -> dict[str, set[str]]:
-    """{page class: classes in non-generated code that refer to it}."""
+# A page object is used where code builds it or holds one: "new AccountFile(", "AccountFile file =".
+# A bare word ("Admin" in a string or comment) is not a use.
+_PAGE_USE = re.compile(r"\bnew\s+([A-Z]\w*)\s*\(|\b([A-Z]\w*)(?:<[^<>;]*>)?\s+[a-z]\w*\s*[=;,)]")
+
+
+def _page_users(repo_dir: str, source_root: str, pages: set[str]) -> dict[str, set[str]]:
+    """{page class: classes in non-generated code that refer to it}, for the given page classes
+    (Guidewire 10 names end in Page, Guidewire 9 names are the screen's own)."""
     users: dict[str, set[str]] = {}
     for root, _dirs, files in os.walk(os.path.join(repo_dir, source_root)):
         parts = root.replace("\\", "/").split("/")
@@ -66,19 +93,20 @@ def _page_users(repo_dir: str, source_root: str) -> dict[str, set[str]]:
         for name in files:
             if name.endswith(".java"):
                 with open(os.path.join(root, name), encoding="utf-8", errors="replace") as fh:
-                    for page in set(_PAGE_WORD.findall(fh.read())):
+                    used = {a or b for a, b in _PAGE_USE.findall(fh.read())}
+                    for page in used & pages:
                         users.setdefault(page, set()).add(name[:-5])
     return users
 
 
 def screen_coverage(repo_dir: str, source_root: str, cssids_dir: str) -> list[dict]:
     """Per app: {app, name, screens, used, wizards: [(screen, users)], unused_wizards, used_screens}."""
-    users = _page_users(repo_dir, source_root)
+    by_app = {app: _screens(cssids_dir, app) for app in APPS
+              if os.path.isdir(os.path.join(cssids_dir, app)) or os.path.isfile(os.path.join(cssids_dir, f"{app}.cssids"))}
+    users = _page_users(repo_dir, source_root, {p for screens in by_app.values() for p in screens.values()})
     out = []
-    for app, label in APPS.items():
-        if not os.path.isdir(os.path.join(cssids_dir, app)):
-            continue
-        screens = _screens(cssids_dir, app)
+    for app, screens in by_app.items():
+        label = APPS[app]
         used = {s: sorted(users[p]) for s, p in screens.items() if p in users}
         wizards = [s for s in screens if s.endswith("Wizard")]
         out.append({
