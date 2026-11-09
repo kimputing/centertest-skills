@@ -12,6 +12,7 @@ scripts/
 ├── eir_report.py        # HTML dashboard + Excel appendix + Markdown + terminal output
 ├── eir_trend.py         # --trend: month-end mainline commits via git archive -> score/blockers/tests chart page
 ├── eir_locate.py        # Adds Location (path:line) to rows with a Class column; HTML renders idea:// links
+├── eir_impact.py        # Rerun plan for --review: per-method Java reach, changed DC rows, changed reference codes
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution
 ├── rule_core.py         # Shared utilities: get_test_list, divide_by_package, split_camel_case

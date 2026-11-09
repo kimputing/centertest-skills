@@ -112,6 +112,8 @@ class BranchReviewTest(unittest.TestCase):
             md = fh.read()
         self.assertIn("DelinquencyCheck.validate (src/main/java/com/acme/tests/DelinquencyCheck.java:5): shown.equals(expected);", md)
         self.assertIn("WC_PolicyChangeDC.xlsx row 3: #Company 'Ghost' (in PolicyChangeTest)", md)
+        # The changed row, not the whole workbook, is what to rerun.
+        self.assertIn("**PolicyChangeTest** — rows New (WC_PolicyChangeDC.xlsx rows changed)", md)
 
     def test_the_fix_reads_as_fixed_not_new(self):
         from refcheck_fixture import make_xlsx

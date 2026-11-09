@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "health trend", "is the suite getting better", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -60,6 +60,12 @@ and lists only the findings that changed, trust blockers first:
   (new non-blocking findings), **Clean**, or **Not verified** (a trust rule could not run on both sides, exit 1).
 - Reviews committed state; uncommitted changes are not included. Branch names fall back to `origin/<name>`.
 - Use it in a pipeline to block merges that add tests that cannot fail or data that cannot load.
+- **Rerun to verify**: the comment also lists the tests the branch reaches — through changed Java
+  (followed per method, so a facade like `BC` only passes on the methods that use the change), changed
+  DataCombination rows (with their codes) and changed reference-data codes (through the DC rows that
+  use them) — and the `bootRun` commands to run them when the project's `build.gradle` forwards
+  `-PcenterTest` and `-Pfilter` (a `Code=^(...)$` row filter). Offer to run them against the user's
+  environment; never run them unasked.
 
 ### Health trend (for a status report)
 

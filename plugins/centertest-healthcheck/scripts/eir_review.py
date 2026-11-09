@@ -206,6 +206,21 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         for c in fixed:
             out.append(f"- **{len(c['fixed'])} × {c['trust'] or c['description']}** ({c['rule_id']})")
         out.append("")
+    rerun = meta.get("rerun") or []
+    if rerun:
+        from eir_impact import command_for
+        out += ["### Rerun to verify", "",
+                f"{len(rerun)} test{'s' if len(rerun) != 1 else ''} reach this branch's {meta.get('changed', 0)} changed "
+                "files (code they call, rows they run, reference data those rows use).", ""]
+        for entry in rerun[:limit * 2]:
+            rows = f" — rows {', '.join(entry['codes'])}" if entry["codes"] else " — all rows"
+            out.append(f"- **{entry['test']}**{rows} ({'; '.join(entry['reasons'])})")
+        if len(rerun) > limit * 2:
+            out.append(f"- … and {len(rerun) - limit * 2} more")
+        commands = [c for c in (command_for(e, meta.get("forwards", (False, False))) for e in rerun) if c]
+        if commands:
+            out += ["", "```bash"] + commands[:limit * 2] + ["```"]
+        out.append("")
     errored = [c for c in changes if c.get("error")]
     if errored:
         out += ["### Not compared", ""]
@@ -233,6 +248,11 @@ def print_review(changes: list[dict], meta: dict) -> None:
     for c in changes:
         if c.get("error"):
             print(f"  ?? not compared  {c['rule_id']}: {c['error']}")
+    rerun = meta.get("rerun") or []
+    if rerun:
+        print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
+            e["test"] + (f" [{len(e['codes'])} rows]" if e["codes"] else "") for e in rerun[:6])
+              + (" ..." if len(rerun) > 6 else ""))
     fixed = sum(len(c["fixed"]) for c in changes)
     if fixed:
         print(f"  -  {fixed:>3} fixed in "
@@ -263,11 +283,15 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
             export_tree(repo, sha, tree, paths)
             print(f"  Analyzing {side} {sha[:8]}...")
             results[side] = analyze_tree(tree, config, suppressions)
+        from eir_impact import changed_files, rerun_plan, run_commands
+        changed = changed_files(repo, start, head_sha)
+        rerun = rerun_plan(os.path.join(tmp, "base"), os.path.join(tmp, "head"), changed, config.source_root)
     changes = diff_results(results["base"][0], results["head"][0])
     meta = {"base_name": base_rev, "head_name": head_rev,
             "base_short": start[:8], "head_short": head_sha[:8],
             "base_files": results["base"][1], "head_files": results["head"][1],
-            "ruleset": ",".join(config.rules) if config.rules else config.ruleset}
+            "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
+            "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed)}
     out_dir = os.path.join(repo, "healthcheck")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
