@@ -206,7 +206,9 @@ blockers or anything lost first; offer `--review <sha> HEAD` on one suite for it
 Runs `CenterTestFull` on each project's working tree — read only, nothing is written into them — and
 writes `~/.centertest/reports/Portfolio_<timestamp>.html`: per suite the score, trust blockers by kind,
 scenarios per full run, broken data that tests run, unread workbooks, wizards opened per application,
-product coverages the scenarios select (overall and the four biggest lines) and the last commit date. About 4 s per suite. Ask the user which projects to include.
+product coverages the scenarios select (overall and the four biggest lines), jurisdictions the scenarios
+run in (the widest lines), the widest suite with its share of flows and coverages and the flows no suite
+runs (a client whose widest suite reaches little has no real regression suite: say so), and the last commit date. About 4 s per suite. Ask the user which projects to include.
 
 ### Health trend (for a status report)
 

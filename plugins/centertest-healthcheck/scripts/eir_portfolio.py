@@ -66,6 +66,10 @@ def analyze_project(path: str, config) -> dict:
         screens = screen_coverage(cfg.repository_dir, cfg.source_root, cssids) if cssids else []
         from eir_products import product_coverage
         products = product_coverage(cfg.repository_dir, cssids, cfg.source_root) if cssids else None
+        from eir_cover import suite_breadth
+        from eir_states import state_coverage
+        states = state_coverage(cfg.repository_dir, cssids) if cssids else None
+        reach = suite_breadth(cfg.repository_dir, cfg.source_root, cssids)
     except Exception as e:  # one broken project must not hide the others
         return {"path": cfg.repository_dir, "error": f"{type(e).__name__}: {e}"}
     return {
@@ -73,7 +77,30 @@ def analyze_project(path: str, config) -> dict:
         "score": health_score(results, len(files)), "files": len(files),
         "blockers": blockers, "not_checked": not_checked,
         "data": data, "screens": screens, "products": products, "changed": _last_change(cfg.repository_dir),
+        "jurisdictions": sorted(set().union(*(l["states"] for l in states))) if states else None,
+        "jurisdiction_lines": [(l["line"], len(l["states"])) for l in states] if states else [],
+        "widest": _widest(reach),
     }
+
+
+def _widest(rows) -> dict | None:
+    """The suite reaching most of the full run (flows, then coverages), and the flows no suite runs."""
+    if not rows or len(rows) < 2:
+        return None
+    full = rows[0]
+    best = max(rows[1:], key=lambda r: (r["test"], r["coverage"], r["jurisdiction"]))
+    share = lambda k: best[k] * 100 // full[k] if full[k] else None
+    return {"suite": best["suite"], "flows": share("test"), "coverages": share("coverage"),
+            "jurisdictions": share("jurisdiction"),
+            "no_suite_flows": sum(1 for i in full.get("no_suite") or [] if i[0] == "test")}
+
+
+def _widest_text(p: dict) -> list[str]:
+    w = p.get("widest")
+    if not w:
+        return []
+    parts = [f"{w['flows']}% of flows"] + ([f"{w['coverages']}% of coverages"] if w["coverages"] is not None else [])
+    return [w["suite"], ", ".join(parts)] + ([f"{w['no_suite_flows']} flow(s) in no suite"] if w["no_suite_flows"] else [])
 
 
 _GENERIC_NAMES = {"centertest", "tests", "test", "automation", "project", "src"}
@@ -121,12 +148,28 @@ def _products_cell(p: dict) -> str:
     return _html_escape(head) + "".join(f'<div class="kind">{_html_escape(l)}</div>' for l in lines)
 
 
+def _jurisdictions_cell(p: dict) -> str:
+    j = p.get("jurisdictions")
+    if j is None:
+        return '<span class="err">not measured</span>'
+    lines = p.get("jurisdiction_lines") or []  # widest first
+    detail = "".join(f'<div class="kind">{_html_escape(line)} {n}</div>' for line, n in lines[:3])
+    return f'{len(j)}{detail}'
+
+
+def _widest_cell(p: dict) -> str:
+    lines = _widest_text(p)
+    if not lines:
+        return '<span class="err">no suite file</span>'
+    return _html_escape(lines[0]) + "".join(f'<div class="kind left">{_html_escape(l)}</div>' for l in lines[1:])
+
+
 def render_html(projects: list[dict]) -> str:
     rows = []
     for p in projects:
         if p.get("error"):
             rows.append(f'<tr><td class="name">{_html_escape(suite_name(p["path"]))}</td>'
-                        f'<td colspan="8" class="err">Not analysed: {_html_escape(p["error"])}</td></tr>')
+                        f'<td colspan="10" class="err">Not analysed: {_html_escape(p["error"])}</td></tr>')
             continue
         total = sum(b["count"] for b in p["blockers"])
         kinds = "".join(f'<div class="kind">{b["count"]} × {_html_escape(b["title"])}</div>' for b in p["blockers"])
@@ -140,6 +183,8 @@ def render_html(projects: list[dict]) -> str:
             f'<td class="num">{len(d.get("unread", [])) if d else "–"}</td>'
             f'<td>{_wizards(p)}</td>'
             f'<td class="num">{_products_cell(p)}</td>'
+            f'<td class="num">{_jurisdictions_cell(p)}</td>'
+            f'<td class="widest">{_widest_cell(p)}</td>'
             f'<td class="num">{_html_escape(p["changed"])}</td></tr>')
     analysed = [p for p in projects if not p.get("error")]
     at_risk = sum(1 for p in analysed if p["blockers"])
@@ -152,7 +197,7 @@ def render_html(projects: list[dict]) -> str:
   * {{ box-sizing: border-box; }}
   body {{ margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; line-height:1.5; }}
-  .wrap {{ max-width:1280px; margin:0 auto; padding:32px 16px 48px; }}
+  .wrap {{ max-width:1480px; margin:0 auto; padding:32px 16px 48px; }}
   h1 {{ font-size:24px; margin:0 0 4px; }} h1 span {{ color:var(--accent); }}
   .lede {{ color:var(--muted); margin:0 0 24px; }}
   .table {{ overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:12px; }}
@@ -165,6 +210,9 @@ def render_html(projects: list[dict]) -> str:
   .score {{ font-size:20px; font-weight:800; }}
   .bad {{ color:var(--red); }} .ok {{ color:var(--green); }}
   .kind {{ color:var(--muted); font-size:12px; font-weight:400; text-align:right; }}
+  .kind.left {{ text-align:left; }}
+  td.name {{ min-width:160px; }} td.widest {{ min-width:200px; }}
+  .num .kind {{ white-space:normal; min-width:120px; }}
   .err {{ color:var(--muted); }}
 </style></head><body><div class="wrap">
 <h1><span>CenterTest</span> Portfolio</h1>
@@ -173,7 +221,8 @@ or cannot run). Same rules for every suite; projects were only read. Generated {
 <div class="table"><table>
 <thead><tr><th>Suite</th><th class="num">Score</th><th class="num">Trust blockers</th><th class="num">Scenarios per run</th>
 <th class="num">Broken data tests run</th><th class="num">Unread workbooks</th><th>Wizards opened</th>
-<th class="num">Coverages selected</th><th class="num">Last change</th></tr></thead>
+<th class="num">Coverages selected</th><th class="num">Jurisdictions</th><th>Widest suite</th>
+<th class="num">Last change</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
 </div></body></html>
 """
@@ -192,6 +241,10 @@ def print_portfolio(projects: list[dict]) -> None:
         print(f"  {name:<28} {p['score']:>5} {sum(b['count'] for b in p['blockers']):>8} "
               f"{d.get('scenarios', '-'):>9} {'-' if d.get('broken_live') is None else d['broken_live']:>5}  {_wizards(p)}")
         print(f"  {'':<28} coverages selected: {_products(p)}")
+        if p.get("jurisdictions") is not None:
+            print(f"  {'':<28} jurisdictions: {len(p['jurisdictions'])}")
+        if _widest_text(p):
+            print(f"  {'':<28} widest suite: " + " - ".join(_widest_text(p)))
     print("=" * 92)
 
 

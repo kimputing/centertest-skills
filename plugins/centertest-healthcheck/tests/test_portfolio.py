@@ -21,6 +21,22 @@ class PortfolioRenderTest(unittest.TestCase):
         self.assertIn("Not analysed: no Java files under src/main/java", html)
         self.assertIn("1 suites analysed, 1 at risk", html)
 
+    def test_jurisdictions_and_the_widest_suite(self):
+        rows = [{"suite": "(full run)", "scenarios": 600, "test": 68, "coverage": 27, "jurisdiction": 217,
+                 "no_suite": [("test", "X.run"), ("coverage", "L", "C")]},
+                {"suite": "Smoke", "scenarios": 10, "test": 9, "coverage": 10, "jurisdiction": 11},
+                {"suite": "GW", "scenarios": 590, "test": 64, "coverage": 27, "jurisdiction": 216}]
+        widest = eir_portfolio._widest(rows)
+        self.assertEqual(widest, {"suite": "GW", "flows": 94, "coverages": 100, "jurisdictions": 99, "no_suite_flows": 1})
+        p = {"widest": widest, "jurisdictions": ["AZ", "CA", "TX"], "jurisdiction_lines": [("GL", 3), ("CA", 2)]}
+        self.assertIn("GW<div", eir_portfolio._widest_cell(p))
+        self.assertIn("94% of flows, 100% of coverages", eir_portfolio._widest_cell(p))
+        self.assertIn("1 flow(s) in no suite", eir_portfolio._widest_cell(p))
+        self.assertEqual(eir_portfolio._jurisdictions_cell(p), '3<div class="kind">GL 3</div><div class="kind">CA 2</div>')
+        self.assertIn("not measured", eir_portfolio._jurisdictions_cell({"jurisdictions": None}))
+        self.assertIn("no suite file", eir_portfolio._widest_cell({"widest": None}))
+        self.assertIsNone(eir_portfolio._widest([rows[0]]))
+
     def test_names(self):
         self.assertEqual(eir_portfolio.suite_name("/p/client-portage"), "client-portage")
         self.assertEqual(eir_portfolio.suite_name("/p/exavalu/CenterTest"), "exavalu/CenterTest")
