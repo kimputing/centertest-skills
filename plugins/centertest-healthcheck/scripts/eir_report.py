@@ -423,13 +423,23 @@ _SEVERITY = {
 }
 _WEIGHT = {"low": 1, "medium": 2, "high": 3}
 
+# Rules whose consequence in a test suite differs from their category's: an index or null error
+# in a test fails it loudly (with an unhelpful message: assert the precondition first), and an
+# unused variable is clutter. A busy-wait that can hang (15017) keeps its category's "high".
+_RULE_SEVERITY = {"15001": "medium", "15002": "medium", "15006": "low"}
+
+
+def severity_of(result: RuleResult):
+    """'high' / 'medium' / 'low', or None for informational rules."""
+    return _RULE_SEVERITY.get(result.rule_id, _SEVERITY.get(result.category, "medium"))
+
 
 def health_score(results: list[RuleResult], total_files: int) -> int:
     """The health score (0-100): severity-weighted rule credit, capped at TRUST_SCORE_CAP when a
     trust blocker exists. The dashboard and the trend both use this, so they always agree."""
     earned = possible = 0.0
     for r in results:
-        severity = _SEVERITY.get(r.category, "medium")
+        severity = severity_of(r)
         if severity is None or r.error:
             if severity is not None:
                 possible += _WEIGHT[severity]
@@ -459,8 +469,8 @@ def _ide_link(repo_root: str, location: str, text: str) -> str:
 
 _TIERS = (("trust", "Trust blockers", "tests that can pass while the app is broken, or cannot run"),
           ("high", "Must fix", "quality and security defects"),
-          ("medium", "Should fix", "framework compliance, complexity, structure"),
-          ("low", "Suggestions", "naming and readability"))
+          ("medium", "Should fix", "framework compliance, complexity, failures with unhelpful messages"),
+          ("low", "Suggestions", "naming, readability, clutter"))
 
 
 def fix_order(results: list[RuleResult]) -> list[dict]:
@@ -477,7 +487,7 @@ def fix_order(results: list[RuleResult]) -> list[dict]:
             if live.get(r.rule_id):
                 tiers["trust"].append((r.rule_id, r.description, live[r.rule_id]))
             continue
-        severity = _SEVERITY.get(r.category, "medium")
+        severity = severity_of(r)
         count = _count_items(r)
         if severity and count:
             tiers[severity].append((r.rule_id, r.description, count))

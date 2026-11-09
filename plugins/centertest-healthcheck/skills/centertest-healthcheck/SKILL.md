@@ -165,7 +165,8 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 | 14003 | CenterTest | DDT reference (`#`) column integrity — sheets/codes exist |
 | 14005 | CenterTest | Suite entries in CenterTestSuiteList.json that match no test (CenterTest reports each as a failed scenario) and composite suites naming a missing suite |
 | 14004 | CenterTest | DDT relationship (`@`) target integrity — target DC file + `Code` exist |
-| 15001 | Quality | Potential null pointer risks |
+| 15001 | Quality | Potential null pointer risks (a loud failure with a poor message: should fix) |
+| 15002 | Quality | Hardcoded `.get(N)` with no size check — in a test it fails loudly but says "Index N out of bounds" instead of what was missing; assert the size first (should fix) |
 | 15004 | Quality | String comparison with == |
 | 15005 | Quality | Empty catch blocks |
 | 15017 | Quality | Unbounded busy-waits and recursion (no deadline / no iteration cap) |
