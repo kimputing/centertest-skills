@@ -160,6 +160,7 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 | 9003 | CenterTest | Test reads the scenario's data row (`DDTHelper.getX(scenarioContext)`) without @DataDriven — loading by code is fine |
 | 9005 | CenterTest | Assertions that bypass the framework: raw JUnit `Assert`, raw AssertJ (`org.assertj`; the CenterTest `Assertions` has the same API plus DataField-aware comparisons). The CenterTest `Assertions` without `CenterTestAssertion` is a supported approach and is not reported |
 | 9007 | CenterTest | Thread.sleep anti-pattern detection |
+| 9011 | CenterTest | Data-driven tests whose DataCombination rows are all disabled — they run nothing (parked or forgotten) |
 | 9010 | CenterTest | Tests that open screens but reach no assertion (followed per call through facades, steps, superclasses and field-held helpers); tools that open no screen are not reported |
 | 14002 | CenterTest | @DataDriven datasource file existence |
 | 14003 | CenterTest | DDT reference (`#`) column integrity — sheets/codes exist |

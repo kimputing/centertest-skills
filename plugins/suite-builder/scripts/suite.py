@@ -130,6 +130,25 @@ def scan(project: str, source_root: str = "src/main/java") -> list[dict]:
     return tests
 
 
+def switched_off(tests: list[dict]) -> dict[tuple[str, str], str]:
+    """{(class, method): workbook} for data-driven methods whose rows are all disabled (or that have
+    none): they run no scenario, though the class exists and suites may list it."""
+    return {(t["class"], m["name"]): m["datasource"] for t in tests for m in t["methods"]
+            if m["datasource"] and not m["error"] and not any(not c["disabled"] for c in m["codes"])}
+
+
+def why_nothing(entry: str, tests: list[dict]) -> str:
+    """Why an entry that resolves to no scenario runs nothing."""
+    parts = str(entry).split()
+    off = switched_off(tests)
+    hits = [(c, m, wb) for (c, m), wb in off.items()
+            if _full(parts[0], c) and (len(parts) < 2 or _full(parts[1], m))]
+    if hits:
+        files = sorted({os.path.basename(wb) for _c, _m, wb in hits})
+        return f"names a test whose rows are all disabled ({', '.join(files)}): it runs nothing"
+    return "matches no test: CenterTest reports it as a failed scenario"
+
+
 def scenarios_of(tests: list[dict], include_disabled: bool = False) -> list[tuple[str, str, str]]:
     """Every runnable (class, method, code); code is "" for a method without data."""
     out = []
@@ -542,6 +561,11 @@ def diagnose(entry: str, tests: list[dict]) -> dict:
     scen = scenarios_of(tests)
     classes = {c for c, _m, _k in scen}
     cls_hit = [c for c in classes if _full(parts[0], c)]
+    off = [(c, m, wb) for (c, m), wb in switched_off(tests).items()
+           if _full(parts[0], c) and (len(parts) < 2 or _full(parts[1], m))]
+    if not cls_hit and off:
+        return {"part": "rows", "value": ", ".join(sorted({os.path.basename(wb) for _c, _m, wb in off})),
+                "suggestions": []}
     if not cls_hit:
         return {"part": "class", "value": parts[0],
                 "suggestions": [" ".join([_lit(c)] + parts[1:]) for c in _near(parts[0], classes)]}
@@ -762,6 +786,10 @@ def main(argv=None) -> int:
             print(json.dumps(report, indent=1))
             return 0
         for r in report:
+            if r["part"] == "rows":
+                print(f"{r['suite']}: '{r['entry']}' -- every row of {r['value']} is disabled, so it runs nothing")
+                print("    enable a row there, or drop the entry if the test is parked on purpose")
+                continue
             print(f"{r['suite']}: '{r['entry']}' -- no test {r['part']} matches '{r['value']}'")
             for sug in r["suggestions"] or ["(nothing close: drop it?)"]:
                 print(f"    try: {sug}")

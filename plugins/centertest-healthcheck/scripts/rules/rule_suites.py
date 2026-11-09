@@ -53,7 +53,7 @@ def suite_entries_that_run_nothing(commits: CommitsDict, config) -> RuleResult:
         start = text.find(json.dumps(name, ensure_ascii=False))
         for entry in s.get("List", []) or []:
             if not suites.resolve_entry(entry, scenarios):
-                result.rows.append([name, entry, "matches no test: CenterTest reports it as a failed scenario",
+                result.rows.append([name, entry, suites.why_nothing(entry, tests),
                                     f"{rel}:{_line_of(text, max(start, 0), entry)}"])
         by_class = {t["class"]: t["package"] for t in tests}
         for pattern in s.get("Packages", []) or []:
@@ -64,4 +64,22 @@ def suite_entries_that_run_nothing(commits: CommitsDict, config) -> RuleResult:
             if str(child).lower() not in names:
                 result.rows.append([name, child, "names a suite that does not exist",
                                     f"{rel}:{_line_of(text, max(start, 0), child)}"])
+    return result
+
+
+@rule(id="9011", description="Data-driven tests with no enabled rows", category="CenterTest")
+def tests_with_no_enabled_rows(commits: CommitsDict, config) -> RuleResult:
+    """@DataDriven test methods whose DataCombination rows are all disabled (or that have none):
+    they run no scenario, yet the class exists and suites may list it. Parked on purpose or
+    forgotten -- either way the suite does less than it says."""
+    import suite as suites
+    result = RuleResult(
+        rule_id="9011",
+        description="Data-driven tests with no enabled rows",
+        category="CenterTest",
+        headers=["Class", "Method", "Issue"],
+    )
+    tests = suites.scan(config.repository_dir, getattr(config, "source_root", "src/main/java"))
+    for (cls, method), workbook in sorted(suites.switched_off(tests).items()):
+        result.rows.append([cls, method, f"every row of {os.path.basename(workbook)} is disabled: the test runs nothing"])
     return result

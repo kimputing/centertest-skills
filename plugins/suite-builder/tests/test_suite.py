@@ -178,6 +178,19 @@ class SuiteTest(unittest.TestCase):
         code, out = self.run_cli("uncovered")
         self.assertIn("2 of 5 scenarios are in no suite", out)
 
+    def test_a_test_whose_rows_are_all_disabled_is_named_as_such(self):
+        os.makedirs(os.path.join(self.p, "src/main/java/com/acme/tests/old"), exist_ok=True)
+        with open(os.path.join(self.p, "src/main/java/com/acme/tests/old/ParkedTest.java"), "w") as fh:
+            fh.write('@CenterTest\npublic class ParkedTest {\n  @CenterTestCase\n'
+                     '  @DataDriven(datasource = "testdata/ParkedDC.xlsx")\n  public void run(ScenarioContext c) { }\n}\n')
+        make_xlsx(os.path.join(self.p, "testdata", "ParkedDC.xlsx"),
+                  {"DataCombination": [["Code", "Disabled"], ["a", "True"], ["b", "yes"]]})
+        tests = suite.scan(self.p)
+        self.assertEqual(suite.switched_off(tests), {("ParkedTest", "run"): "testdata/ParkedDC.xlsx"})
+        self.assertIn("rows are all disabled (ParkedDC.xlsx)", suite.why_nothing("ParkedTest", tests))
+        self.assertIn("matches no test", suite.why_nothing("GhostTest", tests))
+        self.assertEqual(suite.diagnose("ParkedTest", tests)["part"], "rows")
+
     def test_dry_run_writes_nothing(self):
         before = self.doc()[1]
         code, out = self.run_cli("delete", "Stale")
