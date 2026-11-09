@@ -171,24 +171,27 @@ _JUNIT_ASSERT_PATTERNS = [
 ]
 
 
+_RAW_ASSERTJ_CALL = re.compile(r"\bAssertions\.(assertThat\w*)\(")
+_STATIC_ASSERT_CALL = re.compile(r"(?<![.\w])(assertThat\w*)\(")
+
+
 @rule(id="9005", description="CenterTest assertion framework usage", category="CenterTest")
 def assertion_framework_usage(commits: CommitsDict, config) -> RuleResult:
     """
-    Find incorrect assertion patterns in CenterTest code.
+    Assertions that bypass the CenterTest assertion framework.
 
-    CORRECT patterns (widget-based assertions):
-      - widget.assertEquals(value)
-      - widget.assertContains(substring)
-      - widget.assertNotEmpty()
-      - widget.assertNotNull()
-      - widget.assertEqualsNumeric(value)
-      - CenterTestAssertion.withContext(...).assertThat(...)
+    Supported (not reported) -- the docs list three approaches:
+      - widget assertions: widget.assertEquals(value), assertContains, assertVisible ...
+      - com.ankrpt.centertest.assertion.Assertions.assertThat(...): AssertJ with DataField-aware
+        comparisons (isEqualToNumeric, isWithinNumericRange ...)
+      - CenterTestAssertion.withContext(...)...: a business-language line in the narrative
+        (it complements the others; using the factory without it is not a defect)
 
-    ANTI-PATTERNS (raw JUnit/Java assertions):
-      - Assert.assertEquals(expected, actual)
-      - Assert.assertTrue(condition)
-      - assert keyword
-      - Direct Assertions.assertThat() without CenterTestAssertion wrapper
+    Reported:
+      - raw JUnit Assert.assertXxx(...)
+      - raw AssertJ (org.assertj.core.api.Assertions, directly or statically imported): the
+        framework's Assertions has the same API plus DataField-aware comparisons, so the import
+        is the fix
     """
     result = RuleResult(
         rule_id="9005",
@@ -199,34 +202,30 @@ def assertion_framework_usage(commits: CommitsDict, config) -> RuleResult:
 
     for commit_info, files in sorted(commits.items()):
         for f in get_implemented_classes(files):
+            raw_class = "org.assertj.core.api.Assertions" in f.imports
+            raw_static = any(i.startswith("org.assertj.core.api.Assertions.assert") for i in f.imports)
             for class_name, ce in _scanned_classes(f):
                 for method in ce.methods:
                     if not method.body:
                         continue
+                    # One finding per method and kind: the first line, and how many there are.
+                    hits = {"junit": [], "assertj": []}
                     for line in method.body.splitlines():
                         stripped = line.strip()
                         if not stripped:
                             continue
-
-                        # Check for raw JUnit Assert usage
-                        for pattern in _JUNIT_ASSERT_PATTERNS:
-                            if pattern in stripped:
-                                result.rows.append([
-                                    class_name,
-                                    method.name,
-                                    "Raw JUnit Assert — use widget.assertXxx() or CenterTestAssertion",
-                                    stripped[:150],
-                                ])
-                                break
-
-                        # Check for Assertions.assertThat without CenterTestAssertion wrapper
-                        if "Assertions.assertThat(" in stripped and "CenterTestAssertion" not in method.body:
-                            result.rows.append([
-                                class_name,
-                                method.name,
-                                "Unwrapped AssertJ — wrap with CenterTestAssertion.withContext()",
-                                stripped[:150],
-                            ])
+                        if any(pattern in stripped for pattern in _JUNIT_ASSERT_PATTERNS):
+                            hits["junit"].append(stripped)
+                        elif (raw_class and _RAW_ASSERTJ_CALL.search(stripped)) or (
+                                raw_static and _STATIC_ASSERT_CALL.search(stripped)):
+                            hits["assertj"].append(stripped)
+                    for kind, text in (("junit", "Raw JUnit Assert — use widget.assertXxx() or the CenterTest Assertions"),
+                                       ("assertj", "Raw AssertJ (org.assertj) — import com.ankrpt.centertest.assertion."
+                                                   "Assertions instead: same API plus DataField-aware comparisons")):
+                        lines = hits[kind]
+                        if lines:
+                            count = f" ({len(lines)} calls in this method)" if len(lines) > 1 else ""
+                            result.rows.append([class_name, method.name, text + count, lines[0][:150]])
 
     return result
 
