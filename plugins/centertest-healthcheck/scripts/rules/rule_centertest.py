@@ -262,3 +262,41 @@ def implicit_sleep_detection(commits: CommitsDict, config) -> RuleResult:
                             ])
 
     return result
+
+
+_DRIVES_SCREEN = re.compile(r"\bnew\s+\w+Page\s*\(|\bwaitForPageTitle\(")
+
+
+@rule(id="9010", description="Tests that drive screens but verify nothing", category="CenterTest")
+def tests_that_verify_nothing(commits: CommitsDict, config) -> RuleResult:
+    """
+    Test classes that open application screens but reach no assertion: no code they run --
+    their own methods, the facade methods they call, the steps those build, superclasses,
+    helpers held in fields -- asserts (widget assert*, assertThat, AnkrPtAssert, soft
+    assertions, CenterTestAssertion, stopIfErrors, fail, or a project exception thrown when a
+    value is wrong). Such a test passes as long as the screens open.
+
+    Tests that open no screen (clock changes, Ansible, environment set-up) are tools, not
+    checks, and are not reported.
+    """
+    from eir_reach import CodeIndex
+    result = RuleResult(
+        rule_id="9010",
+        description="Tests that drive screens but verify nothing",
+        category="CenterTest",
+        headers=["Class", "Method", "Issue"],
+    )
+    index = CodeIndex.from_tree(config.repository_dir, getattr(config, "source_root", "src/main/java"))
+    for commit_info, files in sorted(commits.items()):
+        for f in files:
+            mc = f.main_class
+            if mc is None or not f.is_test_class() or mc.class_name not in index.text:
+                continue
+            bodies = index.reach(mc.class_name)
+            screens = sum(len(_DRIVES_SCREEN.findall(b)) for b in bodies)
+            if screens and index.assertions_reached(mc.class_name) == 0:
+                method = next((m.name for m in mc.methods if "CenterTestCase" in m.annotations), "run")
+                result.rows.append([mc.key, method,
+                                    f"Opens screens ({screens} page calls reached) but nothing it runs asserts; "
+                                    "it passes whenever the screens open"])
+    return result

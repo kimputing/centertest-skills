@@ -14,6 +14,7 @@ scripts/
 ├── eir_locate.py        # Adds Location (path:line) to rows with a Class column; HTML renders idea:// links
 ├── eir_impact.py        # Rerun plan for --review: per-method Java reach, changed DC rows, changed reference codes
 ├── eir_screens.py       # Screens/wizards the suite's own code opens (generated cssids/ -> page classes)
+├── eir_reach.py         # Forward reach from a test (per call: Facade.method, new Step, typed fields, superclasses); assertion vocabulary; rule 9010
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution
 ├── rule_core.py         # Shared utilities: get_test_list, divide_by_package, split_camel_case
@@ -26,7 +27,7 @@ scripts/
     ├── rule_methods.py      # 4001, 4002
     ├── rule_complexity.py   # 5001, 5002
     ├── rule_security.py     # 7001
-    ├── rule_centertest.py   # 9001, 9003, 9005, 9007, 9008
+    ├── rule_centertest.py   # 9001, 9003, 9005, 9007, 9008, 9010
     ├── rule_quality.py      # 15001, 15002, 15004, 15005, 15006, 15016, 15017, 15018
     └── rule_ddt.py          # 14002, 14003, 14004 (14003/14004 via the vendored ddt_refcheck.py)
 ```
