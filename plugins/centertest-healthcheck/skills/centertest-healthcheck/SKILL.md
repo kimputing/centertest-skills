@@ -104,6 +104,8 @@ and lists only the findings that changed, trust blockers first:
   commit to that workbook. The weekly page sums them per author. Report facts, not blame.
 - **Run scope**: scenarios a full run executes, merge-base → tip, with those **removed** (test or row gone)
   and **switched off** (row disabled) named — say these: they shrink the run without failing anything.
+  **Flows that no longer run** (a test method that ran scenarios and runs none on the tip: every row
+  switched off, or the test gone - deleted or renamed) come first: a whole flow leaves regression silently.
 - **Product coverage**: when the branch changes test data and the generated product model is found
   (`--cssids` or `<project>-generated`), the coverages scenarios no longer select (say these first: a
   reviewer should confirm each was meant) and those newly selected, per line of business, and the **term

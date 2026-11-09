@@ -336,3 +336,15 @@ class RunScopeTest(unittest.TestCase):
         md = render_markdown([], meta)
         self.assertIn("A full run executes 4 → 2 scenarios.", md)
         self.assertIn("**Switched off** (1: the row is disabled): `PolicyTest run B`", md)
+        self.assertEqual(scope["flows_stopped"], [{"test": "AccountTest.run", "deleted": True}])
+        self.assertIn("**Flows that no longer run** (1): AccountTest.run (test gone: deleted or renamed)", md)
+
+    def test_a_flow_whose_every_row_is_switched_off_stops_running(self):
+        import tempfile
+        from eir_review import run_scope
+        with tempfile.TemporaryDirectory() as tmp:
+            base, head = os.path.join(tmp, "base"), os.path.join(tmp, "head")
+            self.build(base, [["A", ""], ["B", ""]], True)
+            self.build(head, [["A", "true"], ["B", "yes"]], True)
+            scope = run_scope(base, head, "src")
+        self.assertEqual(scope["flows_stopped"], [{"test": "PolicyTest.run", "deleted": False}])

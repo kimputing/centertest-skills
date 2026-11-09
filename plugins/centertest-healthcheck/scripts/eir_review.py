@@ -349,6 +349,11 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
             shown = [f"`{c} {m}{(' ' + k) if k else ''}`" for c, m, k in items[:limit]]
             return ", ".join(shown) + (f" … +{len(items) - limit}" if len(items) > limit else "")
         out += ["### Run scope", "", f"A full run executes {scope['before']} → {scope['after']} scenarios.", ""]
+        stopped = scope.get("flows_stopped") or []
+        if stopped:
+            out += [f"**Flows that no longer run** ({len(stopped)}): " + "; ".join(
+                f"{s['test']} ({'test gone: deleted or renamed' if s['deleted'] else 'still there, runs no scenario'})"
+                for s in stopped[:limit * 2]) + (f" … +{len(stopped) - limit * 2}" if len(stopped) > limit * 2 else ""), ""]
         if scope["removed"]:
             out += [f"**Removed** ({len(scope['removed'])}: the test or its row is gone): {names(scope['removed'])}", ""]
         if scope["switched_off"]:
@@ -466,6 +471,8 @@ def print_review(changes: list[dict], meta: dict) -> None:
     if scope and (scope["removed"] or scope["switched_off"] or scope["added"]):
         print(f"  ## run scope {scope['before']} -> {scope['after']} scenarios: {len(scope['removed'])} removed, "
               f"{len(scope['switched_off'])} switched off, {len(scope['added'])} added")
+    for s in (scope or {}).get("flows_stopped") or []:
+        print(f"  -- {s['test']} no longer runs " + ("(test gone: deleted or renamed)" if s["deleted"] else "(still there, runs no scenario)"))
     for c in meta.get("coverage") or []:
         if c["lost"]:
             print(f"  -- {c['line']}: no scenario selects {len(c['lost'])} coverage(s) any more: "
@@ -534,13 +541,17 @@ def blame(repo: str, start: str, head: str, labels: list[str], changed: list[str
 
 def run_scope(base_tree: str, head_tree: str, source_root: str) -> dict:
     """What a full run executes, merge-base -> branch tip: (class, method, code) scenarios removed (the test or
-    row is gone), switched off (the row is still there, disabled) and added, by the vendored suite engine."""
+    row is gone), switched off (the row is still there, disabled) and added, by the vendored suite engine;
+    and flows_stopped: test methods that ran scenarios and run none on the tip ({test, deleted})."""
     import suite as suites
     base_t, head_t = suites.scan(base_tree, source_root), suites.scan(head_tree, source_root)
     on_a, on_b = set(suites.scenarios_of(base_t)), set(suites.scenarios_of(head_t))
     all_b = set(suites.scenarios_of(head_t, include_disabled=True))
+    flows = lambda scenarios: {(c, m) for c, m, _code in scenarios}
+    present = {(t["class"], m["name"]) for t in head_t for m in t["methods"]}
+    stopped = [{"test": f"{c}.{m}", "deleted": (c, m) not in present} for c, m in sorted(flows(on_a) - flows(on_b))]
     return {"before": len(on_a), "after": len(on_b), "removed": sorted(on_a - all_b),
-            "switched_off": sorted((on_a - on_b) & all_b), "added": sorted(on_b - on_a)}
+            "switched_off": sorted((on_a - on_b) & all_b), "added": sorted(on_b - on_a), "flows_stopped": stopped}
 
 
 def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[dict]:
