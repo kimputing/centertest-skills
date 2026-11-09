@@ -12,7 +12,8 @@ import test_cover  # noqa: E402  (its fixture project; the module name, so its t
 LINES = [{"line": "GLLine", "coverages": 10, "named": [{"name": "Liquor Liability"}, {"name": "Pollution"}],
           "options_chosen": 1, "options_total": 3,
           "not_offered": [{"coverage": "Liquor Liability", "term": "Limit", "value": "750,000"}]},
-         {"line": "IMLine", "coverages": 4, "named": [{"name": "Signs"}], "options_total": 0}]
+         {"line": "IMLine", "coverages": 4, "named": [{"name": "Signs"}], "options_total": 0},
+         {"line": "CRLine", "coverages": 20, "named": [], "options_total": 0}]  # a line no scenario tests
 
 
 class StatementRender(unittest.TestCase):
@@ -24,13 +25,15 @@ class StatementRender(unittest.TestCase):
                         "no_suite": [("test", "B.run")]},
                        {"suite": "Smoke", "scenarios": 4, "test": 1, "coverage": 2, "jurisdiction": 1}]})
         self.assertIn("What the acme regression covers", page)
-        self.assertIn("<b>3 of 14</b><span>product coverages the scenarios select</span>", page)
+        self.assertIn("<b>3 of 34</b><span>product coverages the scenarios select</span>", page)
         self.assertIn("<b>1 of 3</b><span>limit and deductible options set", page)
         self.assertIn("<b>2</b><span>jurisdictions the scenarios run in</span>", page)
         self.assertIn('<td class="n">–</td>', page)  # a line without option terms
         self.assertIn("<td>AZ, TX</td>", page)
         self.assertIn("<td>Smoke</td><td class=\"n\">4</td><td class=\"n\">50%</td>", page)
-        self.assertIn("11 of the product model&#x27;s 14 coverages are not selected by any scenario.", page)
+        # coverages missing on tested lines, apart from lines no scenario tests at all
+        self.assertIn("On the 2 line(s) the scenarios test, 11 of 14 coverages are not selected by any scenario.", page)
+        self.assertIn("1 line(s) of the product model no scenario tests: CRLine (20 coverages).", page)
         self.assertIn("Liquor Liability / Limit = 750,000", page)
         self.assertIn("1 flow(s) run only in a full regression, in no suite: B.run.", page)
 

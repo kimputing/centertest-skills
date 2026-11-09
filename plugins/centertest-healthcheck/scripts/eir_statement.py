@@ -83,7 +83,17 @@ def render(s: dict) -> str:
 
     gaps = []
     if s["products"] is not None and in_model:
-        gaps.append(f"{in_model - named} of the product model's {in_model} coverages are not selected by any scenario.")
+        # a line no scenario touches is a different statement from coverages missing on a line that is tested
+        tested = [l for l in products if l["named"]]
+        untested = sorted((l for l in products if not l["named"]), key=lambda l: -l["coverages"])
+        on_tested = sum(l["coverages"] for l in tested)
+        if tested:
+            gaps.append(f"On the {len(tested)} line(s) the scenarios test, {on_tested - named} of {on_tested} coverages "
+                        "are not selected by any scenario.")
+        if untested:
+            gaps.append(f"{len(untested)} line(s) of the product model no scenario tests: "
+                        + ", ".join(f'{l["line"]} ({l["coverages"]} coverages)' for l in untested[:6])
+                        + (", …" if len(untested) > 6 else "."))
     not_offered = [n for l in products for n in l.get("not_offered", [])]
     if not_offered:
         gaps.append(f"{len(not_offered)} limit or deductible value(s) in the test data are not an option in the product: "
