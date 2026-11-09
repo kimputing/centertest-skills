@@ -117,7 +117,7 @@ class BranchReviewTest(unittest.TestCase):
         self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
         self.assertIn("Changes requested: this branch introduces 2 trust blockers", run.stdout)
         md_dir = os.path.join(self.repo, "healthcheck")
-        with open(os.path.join(md_dir, os.listdir(md_dir)[0]), encoding="utf-8") as fh:
+        with open(os.path.join(md_dir, sorted(f for f in os.listdir(md_dir) if f.endswith(".md"))[0]), encoding="utf-8") as fh:
             md = fh.read()
         self.assertIn("DelinquencyCheck.validate (src/main/java/com/acme/tests/DelinquencyCheck.java:5): shown.equals(expected);", md)
         self.assertIn("WC_PolicyChangeDC.xlsx row 3: #Company 'Ghost' (in PolicyChangeTest)", md)
@@ -140,7 +140,7 @@ class BranchReviewTest(unittest.TestCase):
         run = self.review("HEAD~1", "HEAD")
         self.assertIn("## suite Smoke: 0 -> 2 scenarios, 1 entry adds nothing, 1 match no test", run.stdout)
         md_dir = os.path.join(self.repo, "healthcheck")
-        with open(os.path.join(md_dir, sorted(os.listdir(md_dir))[-1]), encoding="utf-8") as fh:
+        with open(os.path.join(md_dir, sorted(f for f in os.listdir(md_dir) if f.endswith(".md"))[-1]), encoding="utf-8") as fh:
             md = fh.read()
         self.assertIn("`PolicyChangeTest run` adds nothing", md)
         self.assertIn("`GhostTest` matches no test", md)
