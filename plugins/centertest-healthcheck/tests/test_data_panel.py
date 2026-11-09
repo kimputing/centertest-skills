@@ -32,9 +32,9 @@ class DataOverviewTest(unittest.TestCase):
         os.makedirs(src)
         with open(os.path.join(src, "PolicyChangeTest.java"), "w") as fh:
             fh.write('@CenterTest\npublic class PolicyChangeTest {\n'
-                     '@DataDriven(datasource = "testdata/wc/WC_PolicyChangeDC.xlsx")\npublic void run() {}\n}\n')
+                     '@CenterTestCase\n@DataDriven(datasource = "testdata/wc/WC_PolicyChangeDC.xlsx")\npublic void run() {}\n}\n')
         with open(os.path.join(src, "LoginTest.java"), "w") as fh:
-            fh.write("@CenterTest\npublic class LoginTest { public void run() {} }\n")
+            fh.write("@CenterTest\npublic class LoginTest { @CenterTestCase public void run() {} }\n")
         import rules.rule_ddt as rule_ddt
         rule_ddt._USERS_CACHE.clear()
 
@@ -47,6 +47,21 @@ class DataOverviewTest(unittest.TestCase):
         self.assertEqual((d["scenarios"], d["disabled"], d["data_driven"], d["test_classes"]), (5, 1, 1, 2))
         # This policy-change DC has no @Submission column, so nothing reaches the submission DC.
         self.assertEqual(d["unread"], ["testdata/wc/WC_SubmissionDC.xlsx"])
+
+    def test_suites_and_unchecked_breaks_are_reported_honestly(self):
+        from eir_data import data_overview
+        res = os.path.join(self.tmp, "src", "main", "resources")
+        os.makedirs(res)
+        with open(os.path.join(res, "CenterTestSuiteList.json"), "w") as fh:
+            fh.write('{"CenterTestSuites": [{"Name": "Smoke", "List": ["LoginTest"]}]}')
+        d = data_overview(self.tmp, "src/main/java", results=[])
+        self.assertEqual(d["in_no_suite"]["classes"], ["PolicyChangeTest"])
+        self.assertEqual((d["in_no_suite"]["count"], d["in_no_suite"]["of"]), (2, 3))  # Once, Thrice (Multiplier not counted)
+        self.assertIsNone(d["broken_live"])  # 14003/14004 not run: not "0"
+        import eir_report
+        html = eir_report._data_panel_html(d)
+        self.assertIn("distinct scenarios no suite runs", html)
+        self.assertIn("not checked", html)
 
     def test_unused_codes_agree_with_the_cleanup_report(self):
         from eir_data import data_overview

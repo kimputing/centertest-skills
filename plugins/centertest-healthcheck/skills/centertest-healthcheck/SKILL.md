@@ -186,7 +186,8 @@ verdict. When reporting results to the user, lead with these blockers.
 The dashboard's **Test data** panel gives the scenarios a full run executes (enabled DataCombination
 rows of each `@DataDriven` test, times a row's `Multiplier`, plus one run per non-data-driven test),
 the DC workbooks no test reads, the reference codes nothing uses (the same count as
-`xlsx-cleanup-unused`), and broken references split into data tests run and data no test runs.
+`xlsx-cleanup-unused`), broken references split into data tests run and data no test runs ("not checked" when rules 14003/14004
+were not part of the run), and the distinct scenarios no suite in `CenterTestSuiteList.json` runs.
 
 ## Screens the suite opens
 

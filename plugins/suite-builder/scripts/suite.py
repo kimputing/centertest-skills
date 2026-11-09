@@ -12,6 +12,7 @@ Commands (run in the project, or pass --project):
     suite.py delete NAME                       delete a suite
     suite.py rename OLD NEW                    rename (composite suites that name it follow)
     suite.py set NAME --entries-file F         replace a suite's List with entries from a file ("-" = stdin)
+    suite.py uncovered                         scenarios that no suite runs
     suite.py doctor [NAME]                     entries that run nothing, why, and what they probably meant
     suite.py replace NAME --old E --new E      replace one entry (written exactly as in the file)
     suite.py drop NAME --entry E               drop entries written exactly so (e.g. a dead one)
@@ -419,6 +420,14 @@ def resolve_suite(doc: dict, name: str, tests: list[dict], seen=None) -> dict:
     return out
 
 
+def uncovered(doc: dict, tests: list[dict]) -> set[tuple[str, str, str]]:
+    """Runnable scenarios that no suite runs (List, Packages or child Suites)."""
+    covered = set()
+    for s in doc["CenterTestSuites"]:
+        covered |= resolve_suite(doc, str(s.get("Name", "")), tests)["scenarios"]
+    return set(scenarios_of(tests)) - covered
+
+
 # ---------------------------------------------------------------------------
 # Selections and compact entries
 # ---------------------------------------------------------------------------
@@ -631,6 +640,7 @@ def main(argv=None) -> int:
         sp = sub.add_parser(cmd); sp.add_argument("name"); selectors(sp); sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("delete"); sp.add_argument("name"); sp.add_argument("--write", action="store_true")
     sp = sub.add_parser("rename"); sp.add_argument("old"); sp.add_argument("new"); sp.add_argument("--write", action="store_true")
+    sub.add_parser("uncovered")
     sp = sub.add_parser("doctor"); sp.add_argument("name", nargs="?")
     sp = sub.add_parser("replace"); sp.add_argument("name"); sp.add_argument("--old", required=True)
     sp.add_argument("--new", required=True); sp.add_argument("--write", action="store_true")
@@ -680,6 +690,9 @@ def main(argv=None) -> int:
                 warn += f"  packages matching no test: {', '.join(r['unmatchedPackages'])}" if r["unmatchedPackages"] else ""
                 print(f"  {r['name']:<28} {r['kind']:<14} {r['scenarios']:>5} scenarios{warn}")
             print(f"{len(rows)} suites in {os.path.relpath(path, project)}")
+            left = uncovered(doc, tests)
+            if left:
+                print(f"{len(left)} of {len(scenarios_of(tests))} scenarios are in no suite (suite.py uncovered lists them)")
         return 0
 
     if args.cmd == "show":
@@ -702,6 +715,27 @@ def main(argv=None) -> int:
             print(f"  ! names a suite that does not exist: {e}")
         for e in r["unmatched_packages"]:
             print(f"  ! package pattern matches no test class: {e}")
+        return 0
+
+    if args.cmd == "uncovered":
+        left = uncovered(doc, tests)
+        by_class: dict[str, list] = {}
+        for c, m, k in sorted(left):
+            by_class.setdefault(c, []).append(f"{m} {k}".strip())
+        total = {c: sum(1 for x in scenarios_of(tests) if x[0] == c) for c in by_class}
+        if args.json:
+            print(json.dumps({"scenarios": sorted(map(_fmt, left)), "byClass": by_class}, indent=1))
+            return 0
+        for c, items in by_class.items():
+            whole = len(items) == total[c]
+            print(f"  {c}: {'the whole class' if whole else ''}{'' if whole else f'{len(items)} of {total[c]} scenarios'}")
+            if not whole:
+                for i in items[:6]:
+                    print(f"      {i}")
+                if len(items) > 6:
+                    print(f"      ... {len(items) - 6} more")
+        print(f"{len(left)} of {len(scenarios_of(tests))} scenarios are in no suite"
+              + (" -- add them with suite.py add, or leave them out on purpose" if left else ""))
         return 0
 
     if args.cmd == "doctor":

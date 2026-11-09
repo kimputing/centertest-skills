@@ -1,6 +1,6 @@
 ---
 name: suite-builder
-description: Build and edit CenterTest test suites in CenterTestSuiteList.json — create a suite, add or remove tests, methods or DataCombination (DDT) rows, delete or rename suites, see what a suite really runs and which entries match nothing. Use when the user says "create a suite", "build a suite", "add these tests to the smoke suite", "remove the Texas rows from Regression", "delete the suite", "what does the Sanity suite run", "which suites are broken", "fix the suite", "repair broken suite entries", "let me pick the tests", "open the suite picker", "suite for all WC submissions", or works with CenterTestSuiteList.json.
+description: Build and edit CenterTest test suites in CenterTestSuiteList.json — create a suite, add or remove tests, methods or DataCombination (DDT) rows, delete or rename suites, see what a suite really runs and which entries match nothing. Use when the user says "create a suite", "build a suite", "add these tests to the smoke suite", "remove the Texas rows from Regression", "delete the suite", "what does the Sanity suite run", "which suites are broken", "fix the suite", "which tests are in no suite", "what is not scheduled", "repair broken suite entries", "let me pick the tests", "open the suite picker", "suite for all WC submissions", or works with CenterTestSuiteList.json.
 ---
 
 # suite-builder
@@ -36,6 +36,7 @@ Run it from the project or pass `--project`. `--suites <file>` points at another
 | `delete NAME` | delete the suite (warns when a composite suite names it) |
 | `rename OLD NEW` | rename; composite suites that name it follow |
 | `set NAME --entries-file F` | replace the List with the lines of F (`-` = stdin) |
+| `uncovered` | scenarios that no suite runs, by class (whole classes called out) |
 | `doctor [NAME]` | every entry that runs nothing, why (no such class / method / code) and what it probably meant — a near name, or the same code under another test |
 | `replace NAME --old E --new E` | replace one entry written exactly so |
 | `drop NAME --entry E` | drop entries written exactly so (dead ones included) |

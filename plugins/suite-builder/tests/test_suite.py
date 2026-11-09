@@ -167,6 +167,14 @@ class SuiteTest(unittest.TestCase):
         code, _ = self.run_cli("drop", "Stale", "--entry", "no such entry")
         self.assertEqual(code, 2)
 
+    def test_uncovered_lists_what_no_suite_runs(self):
+        tests = suite.scan(self.p)
+        doc, _ = self.doc()
+        self.assertEqual(sorted(suite.uncovered(doc, tests)),
+                         [("LoginTest", "runAsAdmin", ""), ("PA_SubmissionTest", "run", "CA.LA (2)")])
+        code, out = self.run_cli("uncovered")
+        self.assertIn("2 of 5 scenarios are in no suite", out)
+
     def test_dry_run_writes_nothing(self):
         before = self.doc()[1]
         code, out = self.run_cli("delete", "Stale")

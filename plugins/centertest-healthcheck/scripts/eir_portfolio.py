@@ -95,7 +95,7 @@ def render_html(projects: list[dict]) -> str:
             f'<td class="num score {"bad" if total else "ok"}">{p["score"]}</td>'
             f'<td class="num {"bad" if total else "ok"}">{total}{kinds}</td>'
             f'<td class="num">{d.get("scenarios", "–")}</td>'
-            f'<td class="num">{d.get("broken_live", "–")}</td>'
+            f'<td class="num">{"–" if d.get("broken_live") is None else d["broken_live"]}</td>'
             f'<td class="num">{len(d.get("unread", [])) if d else "–"}</td>'
             f'<td>{_wizards(p)}</td>'
             f'<td class="num">{_html_escape(p["changed"])}</td></tr>')
@@ -146,7 +146,7 @@ def print_portfolio(projects: list[dict]) -> None:
             continue
         d = p["data"] or {}
         print(f"  {name:<28} {p['score']:>5} {sum(b['count'] for b in p['blockers']):>8} "
-              f"{d.get('scenarios', '-'):>9} {d.get('broken_live', '-'):>5}  {_wizards(p)}")
+              f"{d.get('scenarios', '-'):>9} {'-' if d.get('broken_live') is None else d['broken_live']:>5}  {_wizards(p)}")
     print("=" * 92)
 
 

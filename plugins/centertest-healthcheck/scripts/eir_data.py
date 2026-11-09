@@ -91,6 +91,22 @@ def data_overview(repo_dir: str, source_root: str, results=None) -> dict | None:
         scenarios += runs * len(tests)
         disabled += off * len(tests)
 
+    # Scenarios no suite runs (suite.py is the vendored suite-builder engine).
+    in_no_suite = None
+    import suite as suites
+    suite_file = suites.find_suite_file(repo_dir)
+    if os.path.isfile(suite_file):
+        try:
+            doc, _text = suites.load_suites(suite_file)
+            s_tests = suites.scan(repo_dir, source_root)
+            left = suites.uncovered(doc, s_tests)
+            in_no_suite = {"count": len(left), "of": len(suites.scenarios_of(s_tests)),
+                           "classes": sorted({c for c, _m, _k in left} -
+                                             {c for c, _m, _k in set(suites.scenarios_of(s_tests)) - left})}
+        except (OSError, ValueError):
+            in_no_suite = None
+
+    checked = any(r.rule_id in ("14003", "14004") and not r.error for r in results or [])
     live = dormant = 0
     for r in results or []:
         if r.rule_id in ("14003", "14004") and "Runs in" in r.headers:
@@ -105,7 +121,8 @@ def data_overview(repo_dir: str, source_root: str, results=None) -> dict | None:
         "data_driven": len(data_driven),
         "dc_files": len(dcs), "unread": sorted(d for d in dcs if not users.get(d)),
         "codes": total_codes, "unused_codes": unused_codes,
-        "broken_live": live, "broken_dormant": dormant,
+        "broken_live": live if checked else None, "broken_dormant": dormant if checked else None,
+        "in_no_suite": in_no_suite,
     }
 
 
@@ -137,9 +154,14 @@ def _codes_by_sheet(path: str) -> dict:
 
 def print_data(d: dict) -> None:
     print("  TEST DATA")
-    print(f"  A full run executes {d['scenarios']} scenarios ({d['data_driven']} data-driven of "
-          f"{d['test_classes']} test classes; {d['disabled']} rows disabled)")
+    print(f"  A full run executes {d['scenarios']} scenario runs ({d['data_driven']} data-driven of "
+          f"{d['test_classes']} test classes; Multiplier repeats included; {d['disabled']} rows disabled)")
     print(f"  {d['dc_files']} DC workbooks, {len(d['unread'])} read by no test"
           + (": " + ", ".join(os.path.basename(u) for u in d["unread"][:5]) if d["unread"] else ""))
-    print(f"  {d['unused_codes']} of {d['codes']} reference codes unused; broken references: "
-          f"{d['broken_live']} in data tests run, {d['broken_dormant']} in data no test runs")
+    broken = ("not checked (rules 14003/14004 were not run)" if d["broken_live"] is None else
+              f"{d['broken_live']} in data tests run, {d['broken_dormant']} in data no test runs")
+    print(f"  {d['unused_codes']} of {d['codes']} reference codes unused; broken references: {broken}")
+    if d.get("in_no_suite"):
+        n = d["in_no_suite"]
+        print(f"  {n['count']} of {n['of']} distinct scenarios are in no suite; classes no suite runs: "
+              + (", ".join(n["classes"][:6]) + (" ..." if len(n["classes"]) > 6 else "") if n["classes"] else "none"))

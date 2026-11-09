@@ -533,14 +533,21 @@ def _data_panel_html(d) -> str:
         return ""
     unread = ", ".join(os.path.basename(u) for u in d["unread"][:6]) + (" …" if len(d["unread"]) > 6 else "")
     tiles = [
-        (f'{d["scenarios"]}', "scenarios a full run executes",
-         f'{d["data_driven"]} data-driven of {d["test_classes"]} test classes; {d["disabled"]} rows disabled'),
+        (f'{d["scenarios"]}', "scenario runs in a full run",
+         f'{d["data_driven"]} data-driven of {d["test_classes"]} test classes; Multiplier repeats included; '
+         f'{d["disabled"]} rows disabled'),
         (f'{len(d["unread"])}<small> of {d["dc_files"]}</small>', "DC workbooks no test reads", unread or "every workbook is read"),
         (f'{d["unused_codes"]}<small> of {d["codes"]}</small>', "reference codes nothing uses",
          "xlsx-cleanup-unused lists them"),
-        (f'{d["broken_live"]}', "broken references in data tests run",
-         f'{d["broken_dormant"]} more in data no test runs'),
+        (f'{d["broken_live"]}' if d["broken_live"] is not None else "–", "broken references in data tests run",
+         f'{d["broken_dormant"]} more in data no test runs' if d["broken_live"] is not None
+         else "not checked: rules 14003/14004 were not part of this run"),
     ]
+    if d.get("in_no_suite"):
+        n = d["in_no_suite"]
+        classes = ", ".join(n["classes"][:5]) + (" …" if len(n["classes"]) > 5 else "")
+        tiles.append((f'{n["count"]}<small> of {n["of"]}</small>', "distinct scenarios no suite runs",
+                      f"Classes outside every suite: {classes}" if classes else "every class is in a suite"))
     cells = "".join(f'<div class="data-tile"><div class="data-big">{big}</div><div class="data-label">{_html_escape(label)}</div>'
                     f'<div class="data-sub">{_html_escape(sub)}</div></div>' for big, label, sub in tiles)
     return f'  <div class="data"><h2>Test data</h2><div class="data-grid">{cells}</div></div>\n'
