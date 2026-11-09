@@ -195,7 +195,7 @@ def possible_new_packages(commits: CommitsDict, config) -> RuleResult:
 
             if candidates:
                 items = []
-                for word, count in sorted(candidates.items(), key=lambda x: -x[1]):
+                for word, count in sorted(candidates.items(), key=lambda x: (-x[1], x[0])):
                     pct = count * 100 / total_classes
                     items.append(f"{word}: {count}/{total_classes} ({pct:.0f}%)")
                 commit_sections.append(Section(title=pkg_name, items=items))

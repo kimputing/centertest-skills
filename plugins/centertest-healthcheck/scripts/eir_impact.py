@@ -110,7 +110,7 @@ def tests_reaching(classes: set[str], sources: dict) -> dict[str, str]:
 
 def _sheet_rows(path: str) -> dict[str, dict[str, tuple]]:
     """{sheet: {code: row values}} for every sheet with a Code column."""
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     out: dict[str, dict[str, tuple]] = {}
     if not os.path.isfile(path):
         return out
@@ -137,7 +137,7 @@ def _sheet_rows(path: str) -> dict[str, dict[str, tuple]]:
 
 def _sheet_tables(path: str) -> dict[str, tuple[list[str], dict[str, tuple]]]:
     """{sheet: (headers, {code: row values})} for every sheet with a Code column."""
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     out = {}
     if not os.path.isfile(path):
         return out
@@ -248,7 +248,7 @@ def changed_codes(base_tree: str, head_tree: str, rel: str) -> dict[str, set[str
 def _dc_rows_using(head_tree: str, sheet_codes: dict[str, set[str]]) -> dict[str, set[str]]:
     """{DC rel path: DC codes} for DataCombination rows whose #Ref / @Rel.#Ref cells name a changed code."""
     import ddt_refcheck
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     wanted = {ddt_refcheck._norm_sheet(s): codes for s, codes in sheet_codes.items()}
     out: dict[str, set[str]] = {}
     previous = os.getcwd()

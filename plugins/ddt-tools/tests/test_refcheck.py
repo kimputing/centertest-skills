@@ -141,5 +141,26 @@ class InstanceCopyTest(unittest.TestCase):
             finally:
                 os.chdir(cwd)
 
+
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class WorkbookCacheTest(unittest.TestCase):
+    """Workbooks are read once per process, but a file changed meanwhile must be read again."""
+
+    def test_a_changed_file_is_read_again(self):
+        import time
+        import ddt_refcheck
+        from refcheck_fixture import make_xlsx
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "A.xlsx")
+            make_xlsx(path, {"S": [["Code"], ["one"]]})
+            first = ddt_refcheck.load_workbook(path)
+            self.assertIs(ddt_refcheck.load_workbook(path), first)
+            self.assertEqual(list(first["S"].iter_rows(min_row=2)), [("one",)])
+            time.sleep(0.01)
+            make_xlsx(path, {"S": [["Code"], ["one"], ["two"]]})
+            again = ddt_refcheck.load_workbook(path)
+            self.assertEqual([r[0] for r in again["S"].iter_rows(min_row=2)], ["one", "two"])
+            self.assertEqual(list(again["S"].iter_rows(min_row=1, max_row=1)), [("Code",)])
+
 if __name__ == "__main__":
     unittest.main()

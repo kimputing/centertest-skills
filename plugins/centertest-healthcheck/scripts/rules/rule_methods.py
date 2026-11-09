@@ -133,7 +133,7 @@ def variable_substitutions(commits: CommitsDict, config) -> RuleResult:
                     continue
 
                 # Sort by count descending
-                sorted_prefixes = sorted(filtered.items(), key=lambda x: -x[1])
+                sorted_prefixes = sorted(filtered.items(), key=lambda x: (-x[1], x[0]))  # stable between runs
 
                 items = [f"{count}x — {prefix}" for prefix, count in sorted_prefixes]
                 # Build method label: ClassName.methodName (or with inner class)
@@ -185,7 +185,7 @@ def duplicate_table_row_selections(commits: CommitsDict, config) -> RuleResult:
                 if not filtered:
                     continue
 
-                sorted_prefixes = sorted(filtered.items(), key=lambda x: -x[1])
+                sorted_prefixes = sorted(filtered.items(), key=lambda x: (-x[1], x[0]))
                 items = [f"{count}x — {prefix}" for prefix, count in sorted_prefixes]
                 method_label = f"{mc.class_name}.{method.name}"
                 commit_sections.append(Section(title=method_label, items=items))

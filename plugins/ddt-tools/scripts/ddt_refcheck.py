@@ -29,7 +29,50 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ddt_reference_scope import (parse_references, resolve, parse_relationships,
                                   default_identifier_for, identifier_of, strip_identifier)
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook as _openpyxl_load
+
+
+class _Sheet:
+    """A worksheet read once: its rows as tuples of values, sliceable like openpyxl's iter_rows."""
+
+    def __init__(self, title, rows):
+        self.title, self._rows = title, rows
+
+    def iter_rows(self, min_row=None, max_row=None, values_only=True):
+        start = (min_row or 1) - 1
+        return iter(self._rows[start:max_row])
+
+
+class _Book:
+    def __init__(self, sheets):
+        self._sheets = sheets
+        self.sheetnames = [s.title for s in sheets]
+        self.worksheets = sheets
+
+    def __getitem__(self, name):
+        return next(s for s in self._sheets if s.title == name)
+
+    def close(self):
+        pass
+
+
+_BOOKS = {}
+
+
+def load_workbook(path, read_only=True, data_only=True):
+    """A workbook's values, read once per process: every check here reads the same files many times.
+    Keyed by path, modification time and size, so a file changed meanwhile is read again."""
+    st = os.stat(path)
+    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    book = _BOOKS.get(key)
+    if book is None:
+        wb = _openpyxl_load(path, read_only=True, data_only=True)
+        try:
+            book = _Book([_Sheet(ws.title, [tuple(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets])
+        finally:
+            wb.close()
+        _BOOKS[key] = book
+    return book
 
 
 def _norm_sheet(name):

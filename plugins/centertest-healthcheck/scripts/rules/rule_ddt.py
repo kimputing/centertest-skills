@@ -20,7 +20,7 @@ from eir_rules import rule
 from rule_core import get_implemented_classes
 
 try:
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     _HAS_OPENPYXL = True
 except ImportError:
     _HAS_OPENPYXL = False
@@ -222,12 +222,17 @@ def _disabled_rows(repo_dir: str, path: str) -> set:
     return disabled
 
 
-def _runs_in(repo_dir: str, source_root: str, path: str, row) -> str:
-    """Where a finding bites: the reading classes, or why it never runs."""
+def workbook_users(repo_dir: str, source_root: str) -> dict:
+    """_workbook_users, computed once per project and run (the rules and the data panel share it)."""
     key = (repo_dir, source_root)
     if key not in _USERS_CACHE:
         _USERS_CACHE[key] = _workbook_users(repo_dir, source_root)
-    users = _USERS_CACHE[key]
+    return _USERS_CACHE[key]
+
+
+def _runs_in(repo_dir: str, source_root: str, path: str, row) -> str:
+    """Where a finding bites: the reading classes, or why it never runs."""
+    users = workbook_users(repo_dir, source_root)
     if not path.endswith("DC.xlsx"):
         return "reference data"
     readers = users.get(path, [])

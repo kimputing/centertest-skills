@@ -92,6 +92,14 @@ class CodeIndex:
             self._type_cache[cls] = {var: t for t, var in _TYPED.findall(self.text.get(cls, "")) if t in self.text}
         return self._type_cache[cls]
 
+    def _calls(self, body: str):
+        """The calls one body makes, parsed once: every test that reaches a step re-reads it."""
+        cache = self.__dict__.setdefault("_call_cache", {})
+        if body not in cache:
+            cache[body] = (_STATIC_CALL.findall(body) + _METHOD_REF.findall(body), _TYPED.findall(body),
+                           _VAR_CALL.findall(body), _NEW.findall(body), _BARE_CALL.findall(body))
+        return cache[body]
+
     def reach(self, start: str) -> list[str]:
         """Bodies of every method the class `start` runs, transitively."""
         bodies, seen = [], set()
@@ -110,19 +118,20 @@ class CodeIndex:
                 own = {n for c in self._chain(owner) for n, _b in self.methods[c]}
                 for body in found:
                     bodies.append(body)
+                    statics, typed, var_calls, news, bare = self._calls(body)
                     local = dict(types)
-                    local.update({var: t for t, var in _TYPED.findall(body) if t in self.text})
-                    for target, name in _STATIC_CALL.findall(body) + _METHOD_REF.findall(body):
+                    local.update({var: t for t, var in typed if t in self.text})
+                    for target, name in statics:
                         if target in self.text:
                             work.append((target, name))
-                    for var, name in _VAR_CALL.findall(body):
+                    for var, name in var_calls:
                         if var in local:
                             work.append((local[var], name))
-                    for target in _NEW.findall(body):
+                    for target in news:
                         if target in self.text:
                             work.append((target, None))
                     if method is not None:
-                        for name in _BARE_CALL.findall(body):
+                        for name in bare:
                             if name in own:
                                 work.append((cls, name))
                 if method is not None and found:
@@ -132,11 +141,16 @@ class CodeIndex:
     def assertions_reached(self, test: str) -> int:
         """Assertions in everything the test runs. A call on a project class named like a check
         (BC.assertDisbursement(...)) is not one: reach follows it into the code that checks."""
+        cache = self.__dict__.setdefault("_assert_cache", {})
         count = 0
         for body in self.reach(test):
-            for m in ASSERTION.finditer(body):
-                receiver = re.search(r"(\w+)\s*$", body[:m.start()])
-                if m.group(0).startswith(".") and receiver and receiver.group(1) in self.text:
-                    continue
-                count += 1
+            if body not in cache:
+                n = 0
+                for m in ASSERTION.finditer(body):
+                    receiver = re.search(r"(\w+)\s*$", body[:m.start()])
+                    if m.group(0).startswith(".") and receiver and receiver.group(1) in self.text:
+                        continue
+                    n += 1
+                cache[body] = n
+            count += cache[body]
         return count

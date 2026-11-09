@@ -16,7 +16,7 @@ _TRUTHY = {"true", "yes", "y", "1", "x"}
 
 def _dc_row_counts(path: str) -> tuple[int, int]:
     """(scenarios, disabled rows) of one DataCombination sheet, Multiplier applied."""
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     try:
         wb = load_workbook(path, read_only=True, data_only=True)
     except Exception:
@@ -49,9 +49,9 @@ def data_overview(repo_dir: str, source_root: str, results=None) -> dict | None:
     if not os.path.isdir(os.path.join(repo_dir, "testdata")):
         return None
     import ddt_refcheck
-    from rules.rule_ddt import _DATASOURCE_RE, _workbook_users
+    from rules.rule_ddt import _DATASOURCE_RE, workbook_users
 
-    users = _workbook_users(repo_dir, source_root)
+    users = workbook_users(repo_dir, source_root)
     previous = os.getcwd()
     try:
         os.chdir(repo_dir)
@@ -133,7 +133,7 @@ def ddt_format(value) -> str:
 
 def _codes_by_sheet(path: str) -> dict:
     """{sheet: (headers, [codes])} for sheets with a Code column."""
-    from openpyxl import load_workbook
+    from ddt_refcheck import load_workbook
     out = {}
     try:
         wb = load_workbook(path, read_only=True, data_only=True)
