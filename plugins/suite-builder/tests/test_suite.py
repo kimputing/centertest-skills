@@ -136,6 +136,9 @@ class SuiteTest(unittest.TestCase):
         data = json.loads(blob.replace("<\\/", "</"))
         self.assertEqual(data["preselect"], "Smoke")
         self.assertEqual([t["class"] for t in data["tests"]], ["LoginTest", "PA_SubmissionTest"])
+        # which suites run each scenario, composites resolved; a scenario in none has no key
+        self.assertEqual(sorted(data["membership"]["LoginTest\trun\t"]), ["All", "Smoke"])
+        self.assertNotIn("LoginTest\trunAsAdmin\t", data["membership"])
 
     def test_a_hand_edited_file_with_trailing_commas_is_read_and_kept(self):
         text = '{\n  "CenterTestSuites": [\n    {\n      "Name": "Smoke",\n      "List": [\n        "LoginTest",\n      ]\n    },\n    {"Name": "agr", "Packages": ["com.acme.tests.agr.*"]},\n  ]\n}\n'

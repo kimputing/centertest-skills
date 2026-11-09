@@ -564,6 +564,15 @@ def diagnose(entry: str, tests: list[dict]) -> dict:
 # The picker page
 # ---------------------------------------------------------------------------
 
+def _membership(doc: dict, tests: list[dict]) -> dict:
+    out: dict[str, list[str]] = {}
+    for s_ in doc["CenterTestSuites"]:
+        name = str(s_.get("Name", ""))
+        for c, m, k in resolve_suite(doc, name, tests)["scenarios"]:
+            out.setdefault(f"{c}\t{m}\t{k}", []).append(name)
+    return out
+
+
 def write_picker(project, source_root, tests, suite_path, doc, preselect=None, out=None) -> str:
     """A self-contained page to tick classes, methods and rows; it shows the suite's entries
     before -> after and the suite.py command that applies the change."""
@@ -572,6 +581,8 @@ def write_picker(project, source_root, tests, suite_path, doc, preselect=None, o
         "suiteFile": os.path.relpath(suite_path, project).replace("\\", "/"),
         "engine": os.path.abspath(__file__), "tests": tests,
         "suites": doc["CenterTestSuites"], "preselect": preselect or "",
+        # which suites run each scenario ("class\tmethod\tcode" -> names), Packages and child Suites resolved
+        "membership": _membership(doc, tests),
     }
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "picker.html"), encoding="utf-8") as fh:
         page = fh.read()

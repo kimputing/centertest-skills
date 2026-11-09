@@ -51,6 +51,8 @@ header .project { color: var(--soft); font-size: 14px; overflow-wrap: anywhere; 
 .row.class .name { font-weight: 500; }
 .desc { color: var(--soft); font-family: var(--sans); font-size: 13px; margin-left: 8px; }
 .count { color: var(--soft); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.in { color: var(--soft); font-size: 12px; margin-left: 8px; font-family: var(--sans); }
+.in.none { color: var(--amber); }
 .row.disabled .name { text-decoration: line-through; color: var(--soft); }
 .err { color: var(--amber); font-size: 13px; padding: 2px 14px 2px 66px; }
 .empty { padding: 40px 14px; color: var(--soft); text-align: center; }
@@ -97,6 +99,7 @@ pre.cmd { margin: 0; font-family: var(--mono); font-size: 12px; background: var(
     <div class="tools">
       <input type="search" id="q" placeholder="Filter by class, method, code or description" aria-label="Filter tests">
       <label><input type="checkbox" id="showDisabled"> Show disabled rows</label>
+      <label><input type="checkbox" id="onlyGaps"> Only tests no suite runs</label>
     </div>
     <div class="tree" id="tree"></div>
   </section>
@@ -220,13 +223,19 @@ function tristate(keys) {
 function render() {
   const q = $("q").value.trim().toLowerCase();
   const showDisabled = $("showDisabled").checked;
+  const onlyGaps = $("onlyGaps").checked;
+  const MEM = DATA.membership || {};
+  const gap = (c, m, k) => !(MEM[KEY(c, m, k)] || []).length;
   let html = "", pkg = null, shown = 0;
   for (const t of DATA.tests) {
     const methods = t.methods.map(m => {
-      const rows = m.datasource && !m.error ? m.codes.filter(c => showDisabled || !c.disabled) : [];
+      let rows = m.datasource && !m.error ? m.codes.filter(c => showDisabled || !c.disabled) : [];
+      if (onlyGaps) rows = rows.filter(c => c.disabled || gap(t.class, m.name, c.code));
       const hitCls = !q || t.class.toLowerCase().includes(q), hitM = hitCls || m.name.toLowerCase().includes(q);
       const rowsShown = hitM ? rows : rows.filter(c => c.code.toLowerCase().includes(q) || (c.desc || "").toLowerCase().includes(q));
-      return { m, rows, rowsShown, visible: hitM || rowsShown.length };
+      const methodGap = !(m.datasource && !m.error) && gap(t.class, m.name, "");
+      const visible = (hitM || rowsShown.length) && (!onlyGaps || rows.length || methodGap);
+      return { m, rows, rowsShown, visible };
     }).filter(x => x.visible);
     if (!methods.length) continue;
     shown++;
@@ -234,7 +243,11 @@ function render() {
     const clsKeys = ALL.filter(x => x[0] === t.class).map(x => KEY(...x));
     const nRows = t.methods.reduce((n, m) => n + m.codes.filter(c => !c.disabled).length, 0);
     const open = q || state.open.has(t.class);
-    html += row("class", t.class, "", "", t.class, "", nRows ? `${nRows} row${nRows > 1 ? "s" : ""}` : `${t.methods.length} method${t.methods.length > 1 ? "s" : ""}`, clsKeys, open);
+    const inSuites = [...new Set(clsKeys.flatMap(k => MEM[k] || []))].sort();
+    const uncovered = clsKeys.filter(k => !(MEM[k] || []).length).length;
+    const where = !inSuites.length ? `<span class="in none">in no suite</span>`
+      : `<span class="in" title="${esc(inSuites.join(", "))}">in ${esc(inSuites.slice(0, 3).join(", "))}${inSuites.length > 3 ? ` +${inSuites.length - 3}` : ""}${uncovered ? `; ${uncovered} scenario${uncovered > 1 ? "s" : ""} in none` : ""}</span>`;
+    html += row("class", t.class, "", "", t.class, "", nRows ? `${nRows} row${nRows > 1 ? "s" : ""}` : `${t.methods.length} method${t.methods.length > 1 ? "s" : ""}`, clsKeys, open, where);
     if (!open) continue;
     for (const { m, rows, rowsShown } of methods) {
       const mKeys = ALL.filter(x => x[0] === t.class && x[1] === m.name).map(x => KEY(...x));
@@ -251,12 +264,12 @@ function render() {
   ledger();
 }
 
-function row(level, cls, method, code, label, desc, count, keys, open) {
+function row(level, cls, method, code, label, desc, count, keys, open, extra = "") {
   const st = tristate(keys);
   const tw = open === null ? "" : `<button class="twist" data-open="${esc(level === "class" ? cls : cls + "#" + method)}" aria-label="${open ? "Collapse" : "Expand"} ${esc(label)}">${open ? "▾" : "▸"}</button>`;
   return `<div class="row ${level}"><span>${tw}</span>
     <input type="checkbox" data-keys="${esc(JSON.stringify(keys))}" data-state="${st}" ${st === "all" ? "checked" : ""} aria-label="Run ${esc(label)}">
-    <span class="name" data-toggle>${esc(label)}${desc ? `<span class="desc">${esc(desc)}</span>` : ""}</span>
+    <span class="name" data-toggle>${esc(label)}${desc ? `<span class="desc">${esc(desc)}</span>` : ""}${extra}</span>
     <span class="count">${esc(count)}</span></div>`;
 }
 
@@ -306,6 +319,7 @@ $("tree").addEventListener("change", e => {
 });
 $("q").addEventListener("input", render);
 $("showDisabled").addEventListener("change", render);
+$("onlyGaps").addEventListener("change", render);
 $("suite").addEventListener("change", loadSuite);
 $("name").addEventListener("input", ledger);
 $("reset").addEventListener("click", loadSuite);

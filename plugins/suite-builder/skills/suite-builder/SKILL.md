@@ -57,7 +57,8 @@ they match only themselves).
 When the user wants to browse and tick rather than describe, run
 `suite.py --project <project> picker --suite <NAME> --open` (omit `--suite` for a new one). The page lists
 package → class → method → DataCombination rows with checkboxes and a filter; the right side shows the
-scenarios the suite runs before → after and its entries marked + / −. **Copy command for Claude** copies the
+scenarios the suite runs before → after and its entries marked + / −. Each class shows the suites that run
+it; **Only tests no suite runs** narrows the tree to the gaps, to build a suite from them. **Copy command for Claude** copies the
 `suite.py set` (or `create`) command; when the user pastes it, run it **without** `--write` first, show the
 diff, then run it with `--write` after they confirm. The page is written to
 `~/.centertest/reports/suite-picker_<project>.html`; re-run `picker` after the suites change.
