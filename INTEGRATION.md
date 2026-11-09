@@ -2,9 +2,11 @@
 
 The scripts in this repository are the current implementation of CenterTest's project checks. Other
 tools — the CenterTest MCP server first, CI pipelines too — should run them instead of keeping their own
-copies: clone or pull `kimputing/centertest-skills` (public) and call the scripts with `--json`. Every
-JSON document carries `schema` (1 today); changes are additive — new keys may appear, existing keys
-keep their meaning — and `schema` bumps on a breaking change.
+copies: clone or pull `kimputing/centertest-skills` (public) and call the scripts with `--json`. The
+healthcheck, ddt-tools and cssid-finder documents carry `schema` (1 today); suite-builder and the
+recording coverage print their plain result (a list or object) and recording-to-test's plan carries its
+own `schemaVersion`. All changes are additive — new keys may appear, existing keys keep their meaning —
+and `schema` bumps on a breaking change.
 
 Python 3 with `openpyxl` and `javalang` (the healthcheck's Java parser). Run from anywhere; pass the
 project with `--path` / `--project` / `CENTERTEST_PROJECT_DIR`. Progress goes to stderr, the JSON
