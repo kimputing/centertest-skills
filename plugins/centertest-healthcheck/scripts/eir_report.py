@@ -933,12 +933,12 @@ def generate_html(results: list[RuleResult], output_dir: str,
 
   /* Stat cards */
   .stats-grid {{
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
     gap: 16px;
   }}
   .stat-card {{
     background: var(--surface); border-radius: 12px; padding: 20px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere;
   }}
   .stat-value {{ font-size: 28px; font-weight: 700; }}
   .stat-label {{ font-size: 12px; color: var(--text-muted); text-transform: uppercase;
