@@ -292,6 +292,13 @@ public final class CancelTest {
         # CancelTest reaches WC_SubmissionDC through a step: "AZ" is not one of its own rows
         self.assertEqual(plan, {"SubmissionTest": ["AZ"], "CancelTest": []})
 
+    def test_a_reference_row_named_in_another_case_reaches_the_dc_row(self):
+        from eir_impact import _dc_rows_using
+        from refcheck_fixture import make_xlsx
+        make_xlsx(os.path.join(self.head, "testdata", "WC_CancelDC.xlsx"),
+                  {"DataCombination": [["Code", "#Company"], ["Flat", "ACME"]]})
+        self.assertEqual(_dc_rows_using(self.head, {"Company": {"Acme"}}), {"testdata/WC_CancelDC.xlsx": {"Flat"}})
+
 class RunScopeTest(unittest.TestCase):
     def build(self, root, rows, with_account):
         from xlsx_fixture import make_xlsx

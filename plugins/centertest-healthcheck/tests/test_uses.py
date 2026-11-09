@@ -157,6 +157,15 @@ public class CreateGL { void go() { var w = new SubmissionWizardPage(getContext(
         report = uses_report(self.root, "src", "Liquor Liability")
         self.assertEqual(report["in_suites"], {"suites": [("Regression", 3), ("Smoke", 1)], "none": 1})
 
+    def test_a_reference_in_another_case_is_followed(self):
+        from refcheck_fixture import make_xlsx
+        import eir_uses
+        make_xlsx(os.path.join(self.root, "testdata", "gl", "GL_SubmissionDC.xlsx"), {"DataCombination": [
+            ["Code", "#Coverage"], ["Upper", "LIQUOR"], ["Plain", "Pollution"]]})
+        eir_uses._graph_cache.clear()
+        self.assertEqual(eir_uses.scenarios_using(self.root, "Liquor Liability")["testdata/gl/GL_SubmissionDC.xlsx"],
+                         {"Upper"})  # the code as written, found through 'LIQUOR' -> 'Liquor'
+
     def test_nothing_uses_it(self):
         from eir_uses import print_uses, uses_report
         out = io.StringIO()

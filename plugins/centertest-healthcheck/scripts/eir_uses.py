@@ -86,13 +86,14 @@ def _graph(repo_dir: str):
         for t in tables:
             base = os.path.basename(t["rel"]).lower()
             if t["dc"]:
+                lowered = {}
                 try:
                     scope = ddt_refcheck.reference_codes_for(t["rel"])
                     default_id = default_identifier_for(t["rel"], identifiers)
                 except Exception:
                     scope, default_id = {}, ""
             for code, cells in t["rows"]:
-                key = ("dc", t["rel"], code) if t["dc"] else ("row", base, t["sheet"], code)
+                key = _key(t, code)
                 out = []
                 for i, h in enumerate(t["headers"]):
                     cell = cells[i] if i < len(cells) else ""
@@ -109,19 +110,19 @@ def _graph(repo_dir: str):
                         for raw in _codes(cell):
                             target = targets.get(identifier_of(raw, default_id))
                             if target:
-                                out.append(("dc", target.replace("\\", "/"), strip_identifier(raw)))
+                                out.append(("dc", target.replace("\\", "/"), strip_identifier(raw).lower()))
                         continue
                     else:
                         continue
                     for sheet, c in refs:
                         sk, c = _norm_sheet(sheet), ddt_refcheck.base_code(c)
                         if t["dc"]:
-                            found = scope.get(sk, {}).get(c)
+                            found = lowered.setdefault(sk, {k.lower(): v for k, v in scope.get(sk, {}).items()}).get(c.lower())
                             if found:
-                                out.append(("row", found[0].lower(), sk, c))
+                                out.append(("row", found[0].lower(), sk, c.lower()))
                         else:  # a reference sheet: its own workbook first, else any with that sheet
                             books = [base] if base in sheets_of.get(sk, []) else sheets_of.get(sk, [])
-                            out += [("row", b, sk, c) for b in books]
+                            out += [("row", b, sk, c.lower()) for b in books]
                 links.append((key, out))
     finally:
         os.chdir(previous)
@@ -130,6 +131,8 @@ def _graph(repo_dir: str):
 
 
 def _key(t: dict, code: str) -> tuple:
+    """A row's node in the reference graph. Codes are lower-cased: CenterTest resolves them case-insensitively."""
+    code = code.lower()
     return ("dc", t["rel"], code) if t["dc"] else ("row", os.path.basename(t["rel"]).lower(), t["sheet"], code)
 
 
@@ -231,7 +234,7 @@ def suite_rows(repo_dir: str, source_root: str) -> set | None:
     tests = suites.scan(repo_dir, source_root)
     left = suites.uncovered(doc, tests)
     ds = {(t["class"], m["name"]): m["datasource"] for t in tests for m in t["methods"]}
-    return {("dc", ds[(c, m)], code) for c, m, code in set(suites.scenarios_of(tests)) - left
+    return {("dc", ds[(c, m)], code.lower()) for c, m, code in set(suites.scenarios_of(tests)) - left
             if code and ds.get((c, m))}
 
 
@@ -252,10 +255,11 @@ def scenarios_using(repo_dir: str, pattern: str) -> dict[str, set[str]]:
             if key not in hits and any(o in hits for o in out):
                 hits.add(key)
                 changed = True
+    written = {(t["rel"], code.lower()): code for t in tables if t["dc"] for code, _cells in t["rows"]}
     result: dict[str, set[str]] = {}
     for h in hits:
         if h[0] == "dc":
-            result.setdefault(h[1], set()).add(h[2])
+            result.setdefault(h[1], set()).add(written.get((h[1], h[2]), h[2]))  # the code as written
     return result
 
 

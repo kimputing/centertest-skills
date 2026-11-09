@@ -318,7 +318,7 @@ def _dc_rows_using(head_tree: str, sheet_codes: dict[str, set[str]]) -> dict[str
             for r in rows[1:]:
                 for i, key in columns:
                     cell = ddt_refcheck.format_value(r[i]) if i < len(r) else ""
-                    if key in wanted and {c.strip() for c in cell.split(",")} & wanted[key]:
+                    if key in wanted and {c.strip().lower() for c in cell.split(",")} & {w.lower() for w in wanted[key]}:
                         if ci is not None and ci < len(r) and r[ci] not in (None, ""):
                             out.setdefault(dc, set()).add(str(r[ci]).strip())
     finally:
