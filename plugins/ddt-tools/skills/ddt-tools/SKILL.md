@@ -126,6 +126,10 @@ PYTHON=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 - Columns starting with `@` (DC→DC relationships, e.g. `@Submission`) resolve to an existing
   target DC file and an existing `Code` in it — the identifier comes from the DC's `$identifiers`
   default or a `Prefix.` on the value, resolved via `$relationships` in `DataDrivenHierarchy.json`
+- Columns written `@Submission.#Coverage` (relationship hops) hold a code that must exist in the
+  **related** DC's scope — the DC this row's `@Submission` cell points at
+- Overrides (`#Policy.EffectiveDate`, `@Submission.#Policy.EffectiveDate`), joins
+  (`#LocationInfo<>#Coverage`) and sentinels (`<blank>`) hold values, not codes, and are not checked
 - Handles comma-separated codes
 - Supports hierarchy via `testdata/DataDrivenHierarchy.json` (child DCs inherit parent codes)
 - Provides case-sensitivity hints when a near-match exists
