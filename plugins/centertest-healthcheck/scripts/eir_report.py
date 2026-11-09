@@ -1090,12 +1090,12 @@ def generate_html(results: list[RuleResult], output_dir: str,
     from eir_since import panel_html as _since_panel
     html += _since_panel(since, _html_escape)
     html += _trust_panel_html(blockers, trust_not_checked, trust_dormant, repo_root)
+    # what to act on before what the suite exercises: the order the skill reports in
+    html += _fix_order_html(results)
     html += _data_panel_html(data)
     html += _screens_panel_html(screens)
     html += _products_panel_html(products)
     html += _states_panel_html(states)
-
-    html += _fix_order_html(results)
 
     # Rules summary table (collapsible)
     html += """  <div class="rules-section">
