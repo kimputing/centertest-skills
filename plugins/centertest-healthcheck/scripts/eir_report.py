@@ -657,7 +657,7 @@ def _products_panel_html(lines) -> str:
     for l in sorted(lines, key=lambda l: (-len(l["named"]) / max(l["coverages"], 1), l["line"])):
         pct = len(l["named"]) / l["coverages"] * 100 if l["coverages"] else 0
         # the shorter list says more: what a thin line covers, or what a well-covered line still misses
-        if len(l["named"]) <= len(l["missing"]):
+        if len(l["named"]) <= len(l["missing"]) or not l["missing"]:
             label = "Selected by a scenario"
             from eir_products import _tests
             chips = [f'<span class="chip on" title="{_html_escape(c["code"] or "")}: terms set '
@@ -684,8 +684,10 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-sub">{terms}</div>'
             + (f'<div class="chips-label">{label}</div><div class="chips">{named}</div>' if named else "")
             + (f'<div class="chips-label">Selected only by scenarios no suite runs</div><div class="chips">{outside}</div>' if outside else "")
-            + (f'<div class="chips-label">In data rows no scenario reaches</div><div class="chips">{unused}</div>' if unused else "")
-            + (f'<div class="chips-label">Named only in code: check</div><div class="chips">{java}</div>' if java else "")
+            + (f'<details class="more"><summary>{len(l.get("unused", []))} in data rows no scenario reaches</summary>'
+               f'<div class="chips">{unused}</div></details>' if unused else "")
+            + (f'<details class="more"><summary>{len(l["java"])} named only in code: check</summary>'
+               f'<div class="chips">{java}</div></details>' if java else "")
             + "</div>")
     return ('  <div class="screens"><h2>Product coverages the scenarios select</h2>'
             '<p class="screens-note">From the generated product model, per line of business: a coverage counts when a '

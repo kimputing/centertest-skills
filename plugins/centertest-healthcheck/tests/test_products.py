@@ -91,8 +91,8 @@ class ProductCoverage(unittest.TestCase):
         page = eir_report._products_panel_html([gl])
         self.assertIn("2<small> of 5 coverages", page)
         self.assertIn('No scenario selects</div><div class="chips"><span class="chip">Cyber Suite', page)  # the shorter list
-        self.assertIn("In data rows no scenario reaches", page)
-        self.assertIn("Named only in code: check", page)
+        self.assertIn("1 in data rows no scenario reaches</summary>", page)
+        self.assertIn("named only in code: check", page)
         rows = eir_products.excel_rows([gl])
         self.assertEqual(len(rows), 5)
         self.assertEqual(rows[0][:4], ["GLLine", "Liquor Liability Endorsement", "Selected by a scenario", "1/2"])
