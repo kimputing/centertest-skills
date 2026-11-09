@@ -15,6 +15,8 @@ A Claude Code plugin marketplace distributing skills for CenterTest test automat
 | [suite-builder](plugins/suite-builder/) | Build and edit suites: pick classes, methods and DDT rows; add, remove, delete, rename; see what each suite runs and which entries match nothing | Active |
 | [recording-to-test](plugins/recording-to-test/) | Generate a CenterTest test from a CenterTest Recorder recording; measure how much of a recorded flow is already automated | Active |
 
+Other tools (the CenterTest MCP server, CI) can run these implementations directly: every check has a `--json` mode — see [INTEGRATION.md](INTEGRATION.md).
+
 ## Installation
 
 Inside Claude Code, add the marketplace and install the plugins you want:
