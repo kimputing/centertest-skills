@@ -98,7 +98,7 @@ def _verdict_sheet(wb, results: list[RuleResult], total_files: int, data) -> Non
 
 
 def generate_excel(results: list[RuleResult], output_dir: str, total_files: int = 0, data=None,
-                   products=None, states=None) -> str:
+                   products=None, states=None, suite_reach=None) -> str:
     """Generate an Excel report: a Verdict sheet first, then the summary and one sheet per rule."""
     if Workbook is None:
         print("  Warning: openpyxl not installed, skipping Excel output.", file=sys.stderr)
@@ -207,6 +207,22 @@ def generate_excel(results: list[RuleResult], output_dir: str, total_files: int 
                 ws.cell(row=r, column=col, value=value)
         for letter, width in zip("ABCDEFG", (22, 60, 20, 10, 60, 80, 80)):
             ws.column_dimensions[letter].width = width
+        ws.auto_filter.ref = ws.dimensions
+
+    if suite_reach:
+        from eir_cover import suite_breadth_rows
+        ws = wb.create_sheet(title="Suites")
+        heads = ["Suite", "Scenarios", "Test methods", "Share", "Coverages", "Share", "Line/jurisdictions", "Share"]
+        for col, header in enumerate(heads, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        for r, values in enumerate(suite_breadth_rows(suite_reach), 2):
+            for col, value in enumerate(values, 1):
+                cell = ws.cell(row=r, column=col, value=value)
+                if col in (4, 6, 8):
+                    cell.number_format = "0%"
+        ws.column_dimensions["A"].width = 40
         ws.auto_filter.ref = ws.dimensions
 
     if states:
@@ -718,6 +734,37 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 
+def _suites_panel_html(rows) -> str:
+    """'How much of the full run each suite reaches': flows (test methods), product coverages and
+    line/jurisdiction pairs as a share of what every scenario together reaches."""
+    if not rows or len(rows) < 2:
+        return ""
+    full = rows[0]
+    ranked = sorted(rows[1:], key=lambda r: (-r["test"], -r["coverage"], r["suite"].lower()))
+    running = [r for r in ranked if r["scenarios"]]
+    idle = [r["suite"] for r in ranked if not r["scenarios"]]
+
+    def cell(r, k):
+        if not full[k]:
+            return '<td class="num">–</td>'
+        share = r[k] * 100 // full[k]  # floored as the terminal does: 216 of 217 is 99%, never 100%
+        return (f'<td class="num" title="{r[k]} of {full[k]}"><span class="share"><i style="width:{share}%"></i>'
+                f'</span>{share}%</td>')
+
+    body = "".join(f'<tr><td>{_html_escape(r["suite"])}</td><td class="num">{r["scenarios"]}</td>'
+                   f'{cell(r, "test")}{cell(r, "coverage")}{cell(r, "jurisdiction")}</tr>' for r in running)
+    return ('  <div class="screens"><h2>How much of the full run each suite reaches</h2>'
+            f'<p class="screens-note">All {full["scenarios"]} scenarios that run reach {full["test"]} test methods (flows), '
+            f'{full["coverage"]} product coverages and {full["jurisdiction"]} line/jurisdiction pairs. Each suite as CenterTest '
+            'resolves it, as a share of those. <code>--cover SUITE</code> names what a suite misses and the fewest '
+            'scenarios to add.</p>'
+            '<div class="table-wrap"><table class="suite-reach"><thead><tr><th>Suite</th><th class="num">Scenarios</th>'
+            '<th class="num">Flows</th><th class="num">Coverages</th><th class="num">Jurisdictions</th></tr></thead>'
+            f'<tbody>{body}</tbody></table></div>'
+            + (f'<p class="screens-note">Run nothing ({len(idle)}): {_html_escape(", ".join(idle))}</p>' if idle else "")
+            + '</div>\n')
+
+
 def _states_panel_html(lines) -> str:
     """'States the scenarios run in': per line, the states its scenarios' data names, and the states the
     suite uses on other lines but never on this one."""
@@ -775,7 +822,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
                   suppressed_count: int = 0, screens=None, data=None, products=None, since=None,
-                  states=None) -> str:
+                  states=None, suite_reach=None) -> str:
     """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
     output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -927,6 +974,13 @@ def generate_html(results: list[RuleResult], output_dir: str,
   .chip {{ font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-muted); overflow-wrap: anywhere; }}
   .chip.on {{ color: var(--text); border-color: var(--accent); }}
   .chip.warn {{ color: var(--text); border-color: var(--amber); }}
+  .table-wrap {{ overflow-x: auto; }}
+  table.suite-reach {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  table.suite-reach th, table.suite-reach td {{ padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }}
+  table.suite-reach .num {{ text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }}
+  .share {{ display: inline-block; width: 70px; height: 6px; margin-right: 8px; border-radius: 3px;
+            background: var(--surface2); vertical-align: middle; overflow: hidden; }}
+  .share i {{ display: block; height: 100%; background: var(--accent); }}
   details.more {{ width: 100%; }}
   details.more summary {{ cursor: pointer; font-size: 12px; color: var(--accent); margin: 4px 0; }}
   .trust-dormant {{ color: var(--text-muted); font-size: 13px; margin-top: 10px; }}
@@ -1096,6 +1150,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
     html += _screens_panel_html(screens)
     html += _products_panel_html(products)
     html += _states_panel_html(states)
+    html += _suites_panel_html(suite_reach)
 
     # Rules summary table (collapsible)
     html += """  <div class="rules-section">

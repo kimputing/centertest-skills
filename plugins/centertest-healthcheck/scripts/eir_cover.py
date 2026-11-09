@@ -153,3 +153,62 @@ def print_cover(report: dict, name: str, command: str | None) -> None:
     print("\n".join("    " + line for line in json.dumps({"Name": name, "List": report["entries"]}, indent=2).splitlines()))
     if command:
         print(f"\n  Then: {command}")
+
+
+def suite_breadth(repo_dir: str, source_root: str, cssids_dir: str | None) -> list[dict] | None:
+    """[{suite, scenarios, test, coverage, jurisdiction}] for every suite of CenterTestSuiteList.json, plus a
+    first row "(full run)": how much of the full run's breadth each suite reaches. None without a suite file."""
+    import suite as suites
+    path = suites.find_suite_file(repo_dir)
+    if not os.path.isfile(path):
+        return None
+    try:
+        doc, _text = suites.load_suites(path)
+    except (OSError, ValueError):
+        return None
+    scenarios, every = breadth_items(repo_dir, source_root, cssids_dir)
+    tests = suites.scan(repo_dir, source_root)
+    kinds = ("test", "coverage", "jurisdiction")
+
+    def row(name, chosen):
+        reached = set().union(*(scenarios[s] for s in chosen)) if chosen else set()
+        return dict({"suite": name, "scenarios": len(chosen)}, **{k: sum(1 for i in reached if i[0] == k) for k in kinds})
+
+    rows = [row("(full run)", set(scenarios))]
+    for s in doc["CenterTestSuites"]:
+        name = str(s.get("Name", ""))
+        try:
+            chosen = set(suites.resolve_suite(doc, name, tests)["scenarios"]) & set(scenarios)
+        except Exception:  # a broken suite (rule 14005 names it) reaches nothing
+            chosen = set()
+        rows.append(row(name, chosen))
+    return rows
+
+
+def print_suite_breadth(rows: list[dict]) -> None:
+    full = rows[0]
+    print(f"  SUITES: share of the full run each reaches ({full['scenarios']} scenarios, {full['test']} test methods, "
+          f"{full['coverage']} coverages, {full['jurisdiction']} line/jurisdiction pairs)")
+    pct = lambda r, k: f"{r[k] * 100 // full[k]:>3}%" if full[k] else "   -"
+    ranked = sorted(rows[1:], key=lambda r: (-r["test"], -r["coverage"], r["suite"].lower()))
+    running = [r for r in ranked if r["scenarios"]]
+    for r in running[:10]:
+        print(f"  {r['suite'][:34]:<34} {r['scenarios']:>5} scen.  flows {pct(r, 'test')}  coverages {pct(r, 'coverage')}"
+              f"  jurisdictions {pct(r, 'jurisdiction')}")
+    if len(running) > 10:
+        print(f"  ... {len(running) - 10} more (Excel sheet \"Suites\")")
+    idle = [r["suite"] for r in ranked if not r["scenarios"]]
+    if idle:
+        print(f"  Run nothing ({len(idle)}): {', '.join(idle)}")
+
+
+def suite_breadth_rows(rows: list[dict]) -> list[list]:
+    """Excel: suite, scenarios, then per kind reached / full run and the share."""
+    full = rows[0]
+    out = []
+    for r in rows:
+        line = [r["suite"], r["scenarios"]]
+        for k in ("test", "coverage", "jurisdiction"):
+            line += [r[k], round(r[k] / full[k], 3) if full[k] else None]
+        out.append(line)
+    return out

@@ -350,7 +350,7 @@ def main():
     elapsed = time.time() - start_time
     project_name = os.path.basename(config.repository_dir)
 
-    screens = data = products = states = since = None
+    screens = data = products = states = suite_reach = since = None
     if not config.has_git_options():
         from eir_data import data_overview
         data = data_overview(config.repository_dir, config.source_root, results)
@@ -361,6 +361,8 @@ def main():
         products = product_coverage(config.repository_dir, cssids, config.source_root)
         from eir_states import state_coverage
         states = state_coverage(config.repository_dir, cssids)
+        from eir_cover import suite_breadth
+        suite_reach = suite_breadth(config.repository_dir, config.source_root, cssids)
         from eir_since import since_last, snapshot
         since = since_last(output_dir, snapshot(results, total_files, data, products))
 
@@ -368,7 +370,7 @@ def main():
     excel_filename = ""
     if "excel" in config.output_formats:
         filepath = generate_excel(results, output_dir, total_files=total_files, data=data, products=products,
-                                  states=states)
+                                  states=states, suite_reach=suite_reach)
         if filepath:
             excel_filename = os.path.basename(filepath)
             generated.append(filepath)
@@ -387,6 +389,7 @@ def main():
             data=data,
             products=products,
             states=states,
+            suite_reach=suite_reach,
             since=since,
         )
         if filepath:
@@ -394,7 +397,7 @@ def main():
             print(f"  HTML:     {filepath}")
 
     from eir_json import emit, health_json, write
-    doc = health_json(results, project_name, total_files, data, screens, products, since, states)
+    doc = health_json(results, project_name, total_files, data, screens, products, since, states, suite_reach)
     emit(doc)
     if "json" in config.output_formats:
         filepath = write(doc, output_dir, "HealthCheck")
@@ -421,6 +424,9 @@ def main():
         if states:
             from eir_states import print_states
             print_states(states)
+        if suite_reach:
+            from eir_cover import print_suite_breadth
+            print_suite_breadth(suite_reach)
         if since:
             from eir_since import print_since
             print_since(since)
