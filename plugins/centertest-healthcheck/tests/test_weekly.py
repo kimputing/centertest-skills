@@ -67,6 +67,8 @@ class WeeklyTest(unittest.TestCase):
         self.assertTrue(week["blocked"])
         self.assertIn("these commits introduce", week["verdict"])
         self.assertTrue(any("never fail" in t for t, _n in week["blockers"]))
+        self.assertEqual(week["authors"], [("t", 1)])  # git blame on the new line
+        self.assertIn("introduced by t (1)", eir_weekly.render_html([week], 7))
         self.assertIn("1 ×", eir_weekly.render_html([week], 7))
 
 

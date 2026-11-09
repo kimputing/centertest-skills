@@ -225,7 +225,11 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
             title = c["trust"] or c["description"]
             out.append(f"- {mark}**{len(c['introduced'])} × {title}** ({c['rule_id']})")
             for label in c["introduced"][:limit]:
-                out.append(f"  - `{label}`")
+                by = (meta.get("blame") or {}).get(label)
+                how = {"workbook": ", last change to the workbook",
+                       "older": ", written before this range: what it relies on changed"}.get(by[3], "") if by else ""
+                note = f" — {by[0]}, {by[1]} ({by[2]}{how})" if by else ""
+                out.append(f"  - `{label}`{note}")
             if len(c["introduced"]) > limit:
                 out.append(f"  - … and {len(c['introduced']) - limit} more")
         out.append("")
@@ -418,6 +422,40 @@ def print_review(changes: list[dict], meta: dict) -> None:
     print("=" * 60)
 
 
+_LINE_LOC = re.compile(r"([\w./\-]+\.(?:java|json)):(\d+)\b")
+_XLSX_LOC = re.compile(r"^([\w.\-]+\.xlsx) row \d+")
+
+
+def blame(repo: str, start: str, head: str, labels: list[str], changed: list[str]) -> dict:
+    """{label: (author, date, short sha, how)} for findings this range introduced: a path:line is blamed on
+    the tip ("line", or "older" when that line predates the range: something else made it a finding); a
+    workbook row (xlsx cannot be blamed) gets the range's last commit touching that workbook."""
+    out = {}
+    for label in labels:
+        m = _LINE_LOC.search(label)
+        if m:
+            r = subprocess.run(["git", "-C", repo, "blame", "--porcelain", "-L", f"{m.group(2)},{m.group(2)}",
+                                head, "--", m.group(1)], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout:
+                sha = r.stdout.split()[0]
+                fields = dict(line.split(" ", 1) for line in r.stdout.splitlines()[1:] if " " in line)
+                when = datetime.fromtimestamp(int(fields.get("author-time", "0"))).strftime("%Y-%m-%d")
+                older = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", sha, start],
+                                       capture_output=True).returncode == 0
+                out[label] = (fields.get("author", "?"), when, sha[:8], "older" if older else "line")
+            continue
+        m = _XLSX_LOC.match(label)
+        if m:
+            path = next((p for p in changed if p.endswith("/" + m.group(1)) or p == m.group(1)), None)
+            if path:
+                r = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%an%x09%ad%x09%h", "--date=short",
+                                    f"{start}..{head}", "--", path], capture_output=True, text=True)
+                if r.returncode == 0 and r.stdout.strip():
+                    author, when, sha = r.stdout.strip().split("\t")
+                    out[label] = (author, when, sha, "workbook")
+    return out
+
+
 def run_scope(base_tree: str, head_tree: str, source_root: str) -> dict:
     """What a full run executes, merge-base -> branch tip: (class, method, code) scenarios removed (the test or
     row is gone), switched off (the row is still there, disabled) and added, by the vendored suite engine."""
@@ -503,12 +541,14 @@ def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: s
         coverage = (coverage_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir)
                     if product_dir and any(p.startswith("testdata/") for p in changed) else [])
     changes = diff_results(results["base"][0], results["head"][0])
+    shown = [label for c in changes if c.get("blocking") for label in c["introduced"][:15]]
+    who = blame(repo, start, head_sha, shown, changed) if shown else {}
     meta = {"base_name": base_rev, "head_name": head_rev,
             "base_short": start[:8], "head_short": head_sha[:8],
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
             "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
-            "suites": suites_changed, "coverage": coverage, "scope": scope,
+            "suites": suites_changed, "coverage": coverage, "scope": scope, "blame": who,
             "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
                             "command": suite_command(repo, suite_name)} if suite_entries else None}
     return changes, meta

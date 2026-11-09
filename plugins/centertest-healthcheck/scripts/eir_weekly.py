@@ -23,6 +23,15 @@ def _git(repo: str, *args) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def _authors(who: dict) -> list[tuple[str, int]]:
+    """[(author, trust blockers attributed)] most first."""
+    count: dict[str, int] = {}
+    for author, _when, _sha, how in who.values():
+        if how != "older":  # a line written before the week did not introduce the finding
+            count[author] = count.get(author, 0) + 1
+    return sorted(count.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
 def week_of(path: str, config, days: int, cssids: str | None = None) -> dict:
     """Summary of the last `days` days of one project, or {'path', 'error'}."""
     from eir_portfolio import suite_name
@@ -52,7 +61,8 @@ def week_of(path: str, config, days: int, cssids: str | None = None) -> dict:
         lost=[(c["line"], n) for c in meta.get("coverage") or [] for n in c["lost"]],
         gained=sum(len(c["gained"]) for c in meta.get("coverage") or []),
         rows=sum(len(d["added"]) + len(d["changed"]) + len(d["removed"]) for d in meta.get("data") or []),
-        rerun=len(meta.get("rerun") or []), changed=meta.get("changed", 0), scope=meta.get("scope"))
+        rerun=len(meta.get("rerun") or []), changed=meta.get("changed", 0), scope=meta.get("scope"),
+        authors=_authors(meta.get("blame") or {}))
     return out
 
 
@@ -77,6 +87,9 @@ def render_html(weeks: list[dict], days: int) -> str:
             rows.append(f'<tr>{name}<td colspan="7" class="muted">Quiet: nothing landed in {days} days</td></tr>')
             continue
         blockers = "".join(f'<div class="kind">{n} × {_html_escape(t)}</div>' for t, n in w["blockers"])
+        if w.get("authors"):
+            blockers += '<div class="kind">introduced by ' + ", ".join(
+                f"{_html_escape(a)} ({n})" for a, n in w["authors"]) + "</div>"
         lost = "".join(f'<div class="kind">{_html_escape(l)}: {_html_escape(c)}</div>' for l, c in w["lost"][:6])
         lost += f'<div class="kind">+{len(w["lost"]) - 6} more</div>' if len(w["lost"]) > 6 else ""
         rows.append(
@@ -132,6 +145,8 @@ def print_weekly(weeks: list[dict], days: int) -> None:
             print(f"  {w['name']:<28} {w['landed']} commit(s)  {w['verdict']}")
             for t, n in w["blockers"]:
                 print(f"  {'':<28} !! {n} x {t}")
+            if w.get("authors"):
+                print(f"  {'':<28}    introduced by " + ", ".join(f"{a} ({n})" for a, n in w["authors"]))
             if w["lost"]:
                 print(f"  {'':<28} -- coverages no scenario selects any more: "
                       + ", ".join(f"{l}: {c}" for l, c in w["lost"][:4]) + (" ..." if len(w["lost"]) > 4 else ""))
