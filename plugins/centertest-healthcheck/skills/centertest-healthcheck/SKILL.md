@@ -145,7 +145,9 @@ TEST is a test class or a DataCombination workbook (stem or path), CODE the row 
 whether the row runs (Disabled), the test methods that run it, the suites that include it, and the row
 with every row it reaches as a tree: `#Ref`, join and `@Rel` columns lead to the referenced workbook /
 sheet / code with its filled values; a row reached twice says "(shown above)"; a code with no row says
-"(no such row)". Use it when a scenario fails ("what did it enter?"), to explain a scenario to a client,
+"(no such row)". It also says what **only this scenario reaches** (test methods, product coverages,
+line/jurisdiction pairs no other scenario reaches) — what leaves the regression if the row is disabled
+or deleted; "nothing" means it is redundant for breadth (still maybe not for its data). Use it when a scenario fails ("what did it enter?"), to explain a scenario to a client,
 or before changing a shared row. Unknown code: exit 1 and the workbook's codes. `--json` for tools.
 
 ### Which scenarios use a coverage (or any data value)

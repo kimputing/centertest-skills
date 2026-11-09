@@ -150,6 +150,19 @@ class CoveringSuite(unittest.TestCase):
         os.remove(os.path.join(self.root, "src", "main", "resources", "CenterTestSuiteList.json"))
         self.assertIsNone(eir_cover.suite_breadth(self.root, "src", self.cssids))
 
+    def test_scenario_says_what_only_it_reaches(self):
+        from eir_uses import print_scenario, scenario_report
+        only_c = scenario_report(self.root, "src", "GL_SubmissionTest", "C", self.cssids)["only_here"]
+        self.assertEqual(only_c, [("jurisdiction", "GL", "TX")])  # Liquor and Pollution run in A and B too
+        report = scenario_report(self.root, "src", "GL_SubmissionTest", "A", self.cssids)
+        self.assertEqual(report["only_here"], [])
+        self.assertEqual(scenario_report(self.root, "src", "GL_RenewalTest", "R1", self.cssids)["only_here"],
+                         [("test", "GL_RenewalTest.run")])  # the renewal flow's one scenario
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            print_scenario(report)
+        self.assertIn("Nothing only this scenario reaches", out.getvalue())
+
     def test_without_a_generated_project_it_still_covers_every_flow(self):
         report = eir_cover.cover_report(self.root, "src", None)
         self.assertEqual(report["items"], {"test": 2, "coverage": 0, "jurisdiction": 0})

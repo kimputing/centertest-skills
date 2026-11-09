@@ -463,7 +463,7 @@ def print_touches(report: dict, name: str, command: str | None) -> None:
         print(f"\n  Then: {command}")
 
 
-def scenario_report(repo_dir: str, source_root: str, which: str, code: str) -> dict:
+def scenario_report(repo_dir: str, source_root: str, which: str, code: str, cssids_dir: str | None = None) -> dict:
     """--scenario TEST CODE: everything one scenario enters, its DataCombination row and every row it
     reaches (#Ref, joins, @Rel), as a tree; the tests that run it and the suites that include it.
     `which` is a test class or a DataCombination workbook (path, file name or stem)."""
@@ -510,7 +510,20 @@ def scenario_report(repo_dir: str, source_root: str, which: str, code: str) -> d
     runs &= set(suites.scenarios_of(tests))
     return {"scenario": f"{which} {code}", "found": True, "datasource": start[1], "code": _c,
             "disabled": disabled, "tests": sorted(f"{c}.{m}" for c, m, _code in runs),
-            "in_suites": suites_running(repo_dir, tests, runs), "rows": len(shown), "tree": tree}
+            "in_suites": suites_running(repo_dir, tests, runs), "rows": len(shown), "tree": tree,
+            "only_here": _only_here(repo_dir, source_root, cssids_dir, runs)}
+
+
+def _only_here(repo_dir: str, source_root: str, cssids_dir: str | None, runs: set) -> list:
+    """Breadth items (eir_cover: test methods, product coverages, line/jurisdiction pairs) these scenarios
+    reach and no other scenario does: what leaves the regression if the row is disabled or deleted."""
+    if not runs:
+        return []
+    from eir_cover import breadth_items
+    scenarios, _every = breadth_items(repo_dir, source_root, cssids_dir)
+    mine = set().union(*(scenarios.get(s, set()) for s in runs))
+    others = set().union(*(items for s, items in scenarios.items() if s not in runs))
+    return sorted(mine - others)
 
 
 def print_scenario(report: dict) -> None:
@@ -538,5 +551,13 @@ def print_scenario(report: dict) -> None:
         for child in n.get("references") or []:
             show(child, depth + 1)
 
+    if report.get("tests"):
+        only = report.get("only_here") or []
+        if only:
+            names = [i[1] if i[0] == "test" else f"{i[0]} {i[1]} {i[2]}" for i in only]
+            print(f"  Only this scenario reaches ({len(only)}): {', '.join(names[:12])}{', ...' if len(names) > 12 else ''}"
+                  "  - disabling or deleting it drops these from the run")
+        else:
+            print("  Nothing only this scenario reaches: every flow, coverage and jurisdiction it touches runs elsewhere too")
     print()
     show(report["tree"], 0)

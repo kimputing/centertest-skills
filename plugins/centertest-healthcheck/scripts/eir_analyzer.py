@@ -230,7 +230,9 @@ def main():
     if args.scenario:
         from eir_json import emit
         from eir_uses import print_scenario, scenario_report
-        report = scenario_report(config.repository_dir, config.source_root, *args.scenario)
+        from eir_screens import find_cssids_dir
+        report = scenario_report(config.repository_dir, config.source_root, *args.scenario,
+                                 cssids_dir=find_cssids_dir(config.repository_dir, args.cssids))
         emit(report)
         print_scenario(report)
         sys.exit(0 if report["found"] else 1)
