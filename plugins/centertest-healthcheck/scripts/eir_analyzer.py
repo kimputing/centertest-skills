@@ -274,15 +274,6 @@ def main():
     elapsed = time.time() - start_time
     project_name = os.path.basename(config.repository_dir)
 
-    # Excel first (appendix — referenced by HTML)
-    excel_filename = ""
-    if "excel" in config.output_formats:
-        filepath = generate_excel(results, output_dir)
-        if filepath:
-            excel_filename = os.path.basename(filepath)
-            generated.append(filepath)
-            print(f"  Excel:    {filepath}")
-
     screens = data = None
     if not config.has_git_options():
         from eir_data import data_overview
@@ -290,6 +281,15 @@ def main():
         from eir_screens import find_cssids_dir, screen_coverage
         cssids = find_cssids_dir(config.repository_dir, args.cssids)
         screens = screen_coverage(config.repository_dir, config.source_root, cssids) if cssids else []
+
+    # Excel first (appendix — referenced by HTML)
+    excel_filename = ""
+    if "excel" in config.output_formats:
+        filepath = generate_excel(results, output_dir, total_files=total_files, data=data)
+        if filepath:
+            excel_filename = os.path.basename(filepath)
+            generated.append(filepath)
+            print(f"  Excel:    {filepath}")
 
     # HTML (primary report)
     if "html" in config.output_formats:

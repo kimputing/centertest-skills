@@ -51,8 +51,54 @@ def _safe_sheet_name(rule_id: str, description: str, existing_names: set[str]) -
 # Excel report
 # ---------------------------------------------------------------------------
 
-def generate_excel(results: list[RuleResult], output_dir: str) -> str:
-    """Generate an Excel report with one sheet per rule + summary sheet."""
+def _verdict_sheet(wb, results: list[RuleResult], total_files: int, data) -> None:
+    """The first sheet a reader opens: score, trust blockers with their locations, the fix order,
+    and the test-data numbers -- the same functions as the HTML dashboard, so they agree."""
+    ws = wb.create_sheet("Verdict", 0)
+    bold, big = Font(bold=True), Font(bold=True, size=14)
+    red = Font(bold=True, color="C0392B")
+    score = health_score(results, total_files)
+    blockers, not_checked, dormant = trust_blockers(results, sample_size=10_000)
+    ws.append(["CenterTest health check", datetime.now().strftime("%Y-%m-%d %H:%M")])
+    ws["A1"].font = big
+    label = "At risk" if blockers else ("Healthy" if score >= 80 else "Needs attention" if score >= 60 else "Critical")
+    ws.append(["Health score", score, label])
+    ws.append([])
+    ws.append(["Can these tests be trusted?", "No" if blockers else "No trust blockers found"])
+    ws.cell(ws.max_row, 1).font = bold
+    for b in blockers:
+        ws.append([f"{b['count']} x {b['title']}", b["consequence"], f"rule {b['rule_id']}"])
+        ws.cell(ws.max_row, 1).font = red
+        for label_, loc in zip(b["samples"], b.get("locations") or [""] * len(b["samples"])):
+            ws.append(["", label_.replace(f" ({loc})", "") if loc else label_, loc])
+    if dormant:
+        ws.append(["Not blockers", f"{dormant} data findings in workbooks no test reads or in disabled rows"])
+    if not_checked:
+        ws.append(["Not checked", "rules " + ", ".join(not_checked)])
+    ws.append([])
+    ws.append(["What to fix first", "Findings", "Top rules"])
+    ws.cell(ws.max_row, 1).font = bold
+    for t in fix_order(results):
+        ws.append([t["title"], t["count"], "; ".join(f"{d} ({c})" for _r, d, c in t["rules"][:5])])
+    if data:
+        ws.append([])
+        ws.append(["Test data", "", ""])
+        ws.cell(ws.max_row, 1).font = bold
+        ws.append(["Scenario runs in a full run", data["scenarios"], "Multiplier repeats included"])
+        ws.append(["DC workbooks no test reads", len(data["unread"]), ", ".join(os.path.basename(u) for u in data["unread"])])
+        ws.append(["Reference codes nothing uses", data["unused_codes"], f"of {data['codes']}"])
+        if data["broken_live"] is not None:
+            ws.append(["Broken references in data tests run", data["broken_live"], f"{data['broken_dormant']} more in data no test runs"])
+        if data.get("in_no_suite"):
+            n = data["in_no_suite"]
+            ws.append(["Distinct scenarios no suite runs", n["count"], f"of {n['of']}; classes: " + ", ".join(n["classes"])])
+    ws.column_dimensions["A"].width = 44
+    ws.column_dimensions["B"].width = 90
+    ws.column_dimensions["C"].width = 70
+
+
+def generate_excel(results: list[RuleResult], output_dir: str, total_files: int = 0, data=None) -> str:
+    """Generate an Excel report: a Verdict sheet first, then the summary and one sheet per rule."""
     if Workbook is None:
         print("  Warning: openpyxl not installed, skipping Excel output.", file=sys.stderr)
         return ""
@@ -152,6 +198,7 @@ def generate_excel(results: list[RuleResult], output_dir: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"HealthCheck_{timestamp}.xlsx"
     filepath = os.path.join(output_dir, filename)
+    _verdict_sheet(wb, results, total_files, data)  # first sheet, created last so the summary keeps wb.active
     wb.save(filepath)
     return filepath
 

@@ -74,6 +74,24 @@ class HealthScoreTest(unittest.TestCase):
 
 
 
+class VerdictSheetTest(unittest.TestCase):
+    def test_the_excel_opens_on_the_verdict(self):
+        import openpyxl
+        out = tempfile.mkdtemp()
+        try:
+            results = clean_trust_run()
+            results[-1] = result("15018", headers=["Class", "Method", "Method Called", "Line", "Location"],
+                                 rows=[["A", "validate", "equals", "x.equals(y);", "src/A.java:7"]])
+            path = eir_report.generate_excel(results, out, total_files=400, data=None)
+            wb = openpyxl.load_workbook(path, read_only=True)
+            self.assertEqual(wb.sheetnames[:2], ["Verdict", "Summary"])
+            rows = [tuple(c for c in r if c is not None) for r in wb["Verdict"].iter_rows(values_only=True)]
+            self.assertIn(("Health score", eir_report.TRUST_SCORE_CAP, "At risk"), rows)
+            self.assertIn(("A.validate: x.equals(y);", "src/A.java:7"), rows)
+        finally:
+            shutil.rmtree(out)
+
+
 class FixOrderTest(unittest.TestCase):
     def test_tiers_order_by_cost_and_trust_counts_only_live_findings(self):
         data_headers = ["File", "Row", "Column", "Code", "Issue", "Runs in"]

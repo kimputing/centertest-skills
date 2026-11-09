@@ -226,7 +226,7 @@ reporting — it is clickable in the terminal. In the HTML report locations open
 ## Report Output
 
 Reports are saved to `{project}/results/`:
-- **Excel**: `HealthCheck_YYYYMMDD_HHMMSS.xlsx` — Summary sheet + one sheet per rule
+- **Excel**: `HealthCheck_YYYYMMDD_HHMMSS.xlsx` — a Verdict sheet first (score, every trust blocker with its location, what to fix first, test data and suites), then the Summary sheet and one sheet per rule
 - **Markdown**: `HealthCheck_YYYYMMDD_HHMMSS.md` — Full report in Markdown
 
 ## Python with the packages
