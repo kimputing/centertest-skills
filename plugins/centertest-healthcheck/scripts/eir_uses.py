@@ -22,6 +22,7 @@ import ddt_refcheck
 from ddt_refcheck import format_value, load_workbook, _norm_sheet
 
 DC_SHEET = "datacombination"
+_DISABLED = {"true", "t", "yes", "y", "checked", "1"}  # CenterTest's TRUEOPTIONS (BaseTestData.isDisabled)
 
 
 def _workbooks(repo_dir: str) -> list[str]:
@@ -168,7 +169,7 @@ def reached_values(repo_dir: str, start: set | None = None, coverage_only: bool 
             continue
         di = next((i for i, h in enumerate(t["headers"]) if h.lower() == "disabled"), None)
         start |= {_key(t, code) for code, cells in t["rows"]
-                  if di is None or di >= len(cells) or cells[di].strip().lower() not in ("true", "yes", "y", "x", "1")}
+                  if di is None or di >= len(cells) or cells[di].strip().lower() not in _DISABLED}
     reached, frontier = set(start), list(start)
     while frontier:
         for nxt in out_of.get(frontier.pop(), ()):
@@ -206,7 +207,7 @@ def rows_by_value(repo_dir: str, coverage_only: bool = False) -> dict[str, set]:
             continue
         di = next((i for i, h in enumerate(t["headers"]) if h.lower() == "disabled"), None)
         for code, row in t["rows"]:
-            if di is not None and di < len(row) and row[di].strip().lower() in ("true", "yes", "y", "x", "1"):
+            if di is not None and di < len(row) and row[di].strip().lower() in _DISABLED:
                 continue
             start = _key(t, code)
             seen, frontier = {start}, [start]

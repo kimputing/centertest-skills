@@ -23,7 +23,7 @@ import re
 
 import xlsx_read
 
-_DISABLED = {"true", "yes", "y", "x", "1"}
+_DISABLED = {"true", "t", "yes", "y", "checked", "1"}  # CenterTest's TRUEOPTIONS (BaseTestData.isDisabled)
 _LITERAL = re.compile(r'"((?:[^"\\]|\\.){3,})"')
 
 

@@ -111,7 +111,7 @@ _REFCHECK_CACHE: dict = {}
 
 # A DDTHelper getter embeds its workbook: getWorkerscompWC_SubmissionDC(String code) {... "testdata/....xlsx" ...}
 _GETTER_RE = re.compile(r'public\s+static\s+[\w.]+\s+(get\w+)\s*\([^)]*\)\s*\{[^\n]*?"(testdata/[^"]+\.xlsx)"')
-_TRUTHY = {"true", "yes", "y", "1", "x"}
+_TRUTHY = {"true", "t", "yes", "y", "checked", "1"}  # CenterTest's TRUEOPTIONS (BaseTestData.isDisabled)
 
 NOT_RUN_UNUSED = "not run: no test reads this workbook"
 NOT_RUN_DISABLED = "not run: row disabled"

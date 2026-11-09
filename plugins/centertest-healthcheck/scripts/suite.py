@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from xlsx_read import WorkbookError, read_workbook  # noqa: E402
 
 SUITE_FILE = "CenterTestSuiteList.json"
-_TRUTHY = {"true", "yes", "y", "1", "x"}
+_TRUTHY = {"true", "t", "yes", "y", "checked", "1"}  # CenterTest's TRUEOPTIONS (BaseTestData.isDisabled)
 _REGEX_META = set(".^$*+?()[]{}|\\")
 
 

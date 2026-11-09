@@ -271,5 +271,11 @@ class MinimalEditTest(unittest.TestCase):
         self.assertTrue(created.startswith(IRREGULAR[:IRREGULAR.rindex("}\n  ]")]))
         self.assertFalse(created.endswith("\n"))  # no trailing newline before, none after
 
+class DisabledValuesTest(unittest.TestCase):
+    def test_a_row_is_off_exactly_when_centertest_turns_it_off(self):
+        # BaseTestData.isDisabled: TRUEOPTIONS.contains(value.toLowerCase()); "x" runs, "t" and "checked" do not
+        self.assertEqual(suite._TRUTHY, {"true", "t", "yes", "y", "checked", "1"})
+
+
 if __name__ == "__main__":
     unittest.main()

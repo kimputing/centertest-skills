@@ -11,7 +11,7 @@ from __future__ import annotations
 import glob
 import os
 
-_TRUTHY = {"true", "yes", "y", "1", "x"}
+_TRUTHY = {"true", "t", "yes", "y", "checked", "1"}  # CenterTest's TRUEOPTIONS (BaseTestData.isDisabled)
 
 
 def _dc_row_counts(path: str) -> tuple[int, int]:
