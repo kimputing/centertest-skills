@@ -54,5 +54,18 @@ class RenderTest(unittest.TestCase):
         self.assertIn("not counted: 15005", html)
 
 
+class CoveragesSeriesTest(unittest.TestCase):
+    def test_a_product_model_adds_a_chart_and_a_column(self):
+        from eir_trend import render_html
+        base = {"score": 59, "blockers": 1, "dormant": 0, "tests": 3, "cases": 3, "findings": 4, "files": 9,
+                "not_checked": [], "sha": "abc"}
+        points = [dict(base, month="2026-10", coverages=74), dict(base, month="2026-11", coverages=68)]
+        page = render_html(points, "portage")
+        self.assertIn("Product coverages selected", page)
+        self.assertIn("coverages selected 74 → 68", page)
+        without = render_html([dict(base, month="2026-11", coverages=None)], "x")
+        self.assertNotIn("Product coverages selected", without)
+
+
 if __name__ == "__main__":
     unittest.main()

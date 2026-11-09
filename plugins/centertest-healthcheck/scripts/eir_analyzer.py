@@ -211,7 +211,7 @@ def main():
         from eir_trend import run_trend
         print(f"\n  CenterTest health trend: last {args.trend} months  ({config.repository_dir})")
         suppressions = load_suppressions(os.path.join(config.repository_dir, "healthcheck"))
-        sys.exit(run_trend(config, args.trend, suppressions))
+        sys.exit(run_trend(config, args.trend, suppressions, cssids=args.cssids))
 
     if args.review:
         if len(args.review) > 2:

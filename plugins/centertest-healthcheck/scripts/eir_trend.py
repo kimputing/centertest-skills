@@ -55,7 +55,9 @@ def snapshot_metrics(results, files: int) -> dict:
     }
 
 
-def collect(config, months: int, suppressions) -> list[dict]:
+def collect(config, months: int, suppressions, product_dir: str | None = None) -> list[dict]:
+    """One point per month; with a generated product model, also the coverages its scenarios select
+    (that month's test data against today's product model)."""
     points = []
     with tempfile.TemporaryDirectory(prefix="ct-trend-") as tmp:
         for month, sha, epoch in monthly_commits(config.repository_dir, months):
@@ -66,6 +68,11 @@ def collect(config, months: int, suppressions) -> list[dict]:
             results, files = analyze_tree(tree, config, suppressions)
             point = snapshot_metrics(results, files)
             point.update(month=month, sha=sha[:8], date=datetime.fromtimestamp(epoch).strftime("%Y-%m-%d"))
+            point["coverages"] = None
+            if product_dir:
+                from eir_products import product_coverage
+                lines = product_coverage(tree, product_dir, config.source_root)
+                point["coverages"] = sum(len(l["named"]) for l in lines) if lines else None
             points.append(point)
     return points
 
@@ -134,12 +141,15 @@ def render_html(points: list[dict], project: str) -> str:
         f'<tr><td>{p["month"]}</td><td class="mono">{p["sha"]}</td><td>{p["score"]}</td>'
         f'<td class="{"bad" if p["blockers"] else ""}">{p["blockers"]}</td><td>{p["dormant"]}</td>'
         f'<td>{p["tests"] if p["tests"] is not None else "–"}</td><td>{p["cases"] if p["cases"] is not None else "–"}</td>'
+        f'<td>{"–" if p.get("coverages") is None else p["coverages"]}</td>'
         f'<td>{p["findings"]}</td><td>{p["files"]}</td></tr>' for p in points)
     unchecked = sorted({r for p in points for r in p["not_checked"]})
     note = (f'<p class="note">Trust rules not in this ruleset, so not counted: {", ".join(unchecked)}. '
             'Use --ruleset CenterTestFull for complete blockers.</p>') if unchecked else ""
     headline = (f'Score {first["score"]} → {last["score"]}, trust blockers {first["blockers"]} → {last["blockers"]}'
                 + (f', test cases {first["cases"]} → {last["cases"]}' if last["cases"] is not None else "")
+                + (f', coverages selected {first["coverages"]} → {last["coverages"]}'
+                   if first.get("coverages") is not None and last.get("coverages") is not None else "")
                 + f' between {first["month"]} and {last["month"]}.')
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -179,9 +189,10 @@ def render_html(points: list[dict], project: str) -> str:
 {_chart("Health score", "", points, "score", fixed_max=100, divisions=4)}
 {_chart("Trust blockers", "", points, "blockers")}
 {_chart("Test cases", "", points, "cases")}
+{_chart("Product coverages selected", "", points, "coverages") if any(p.get("coverages") is not None for p in points) else ""}
 </div>
 <div class="table"><table>
-<thead><tr><th>Month</th><th>Commit</th><th>Score</th><th>Trust blockers</th><th>Not run</th><th>Test classes</th><th>Test cases</th><th>Findings</th><th>Java files</th></tr></thead>
+<thead><tr><th>Month</th><th>Commit</th><th>Score</th><th>Trust blockers</th><th>Not run</th><th>Test classes</th><th>Test cases</th><th>Coverages selected</th><th>Findings</th><th>Java files</th></tr></thead>
 <tbody>{rows}</tbody></table></div>
 {note}
 <p class="note">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")} by centertest-healthcheck --trend.</p>
@@ -193,16 +204,17 @@ def print_trend(points: list[dict]) -> None:
     print("\n" + "=" * 72)
     print("  HEALTH TREND (last mainline commit of each month)")
     print("=" * 72)
-    print(f"  {'Month':<8} {'Commit':<9} {'Score':>5} {'Blockers':>8} {'Tests':>6} {'Cases':>6} {'Findings':>8}")
+    print(f"  {'Month':<8} {'Commit':<9} {'Score':>5} {'Blockers':>8} {'Tests':>6} {'Cases':>6} {'Covs':>5} {'Findings':>8}")
     for p in points:
         print(f"  {p['month']:<8} {p['sha']:<9} {p['score']:>5} {p['blockers']:>8} "
               f"{p['tests'] if p['tests'] is not None else '-':>6} {p['cases'] if p['cases'] is not None else '-':>6} "
-              f"{p['findings']:>8}")
+              f"{'-' if p.get('coverages') is None else p['coverages']:>5} {p['findings']:>8}")
     print("=" * 72)
 
 
-def run_trend(config, months: int, suppressions) -> int:
-    points = collect(config, months, suppressions)
+def run_trend(config, months: int, suppressions, cssids: str | None = None) -> int:
+    from eir_screens import find_cssids_dir
+    points = collect(config, months, suppressions, find_cssids_dir(config.repository_dir, cssids))
     if not points:
         print("  No commits found: --trend needs a git repository with history.")
         return 2
