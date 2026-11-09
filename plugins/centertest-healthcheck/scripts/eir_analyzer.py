@@ -221,7 +221,7 @@ def main():
         head_rev = args.review[1] if len(args.review) > 1 else "HEAD"
         print(f"\n  CenterTest branch review: {head_rev} vs {base_rev}  ({config.repository_dir})")
         suppressions = load_suppressions(os.path.join(config.repository_dir, "healthcheck"))
-        sys.exit(run_review(config, base_rev, head_rev, suppressions))
+        sys.exit(run_review(config, base_rev, head_rev, suppressions, cssids=args.cssids))
 
     # Banner
     print()

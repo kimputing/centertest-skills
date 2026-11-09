@@ -104,5 +104,40 @@ class ProductCoverage(unittest.TestCase):
         self.assertIn("No scenario selects", eir_report._products_panel_html([gl]))
 
 
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class CoverageDeltaTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.resources = os.path.join(self.tmp.name, "gen")
+        os.makedirs(self.resources)
+        with open(os.path.join(self.resources, "GLLine_coverage_structure.json"), "w") as fh:
+            json.dump(GL, fh)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def tree(self, name, selected):
+        root = os.path.join(self.tmp.name, name)
+        os.makedirs(os.path.join(root, "testdata", "gl"))
+        with open(os.path.join(root, "testdata", "DataDrivenHierarchy.json"), "w") as fh:
+            json.dump({"$references": {"testdata/GLData.xlsx": ["testdata/gl/.*DC\\.xlsx"]}}, fh)
+        make_xlsx(os.path.join(root, "testdata", "GLData.xlsx"), {"Coverage": [
+            ["Code", "Coverage"], ["c1", "Liquor Liability Endorsement"], ["c2", "Cyber Suite"]]})
+        make_xlsx(os.path.join(root, "testdata", "gl", "GL_SubmissionDC.xlsx"),
+                  {"DataCombination": [["Code", "#Coverage"], ["Default", selected]]})
+        return root
+
+    def test_lost_and_gained_per_line(self):
+        from eir_review import coverage_delta, render_markdown
+        delta = coverage_delta(self.tree("base", "c1"), self.tree("head", "c2"), self.resources)
+        self.assertEqual(delta, [{"line": "GLLine", "gained": ["Cyber Suite"], "lost": ["Liquor Liability Endorsement"]}])
+        self.assertEqual(coverage_delta(self.tree("b2", "c1"), self.tree("h2", "c1"), self.resources), [])
+        meta = {"base_name": "main", "head_name": "b", "base_short": "1", "head_short": "2", "base_files": 1,
+                "head_files": 1, "ruleset": "x", "rerun": [], "data": [], "suites": [], "coverage": delta}
+        md = render_markdown([], meta)
+        self.assertIn("**No scenario selects these any more** (1):\n- GLLine: Liquor Liability Endorsement", md)
+        self.assertIn("Newly selected (1): GLLine: Cyber Suite", md)
+
+
 if __name__ == "__main__":
     unittest.main()

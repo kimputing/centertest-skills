@@ -296,6 +296,23 @@ def render_markdown(changes: list[dict], meta: dict, limit: int = 15) -> str:
         if commands and (not one or len(commands) <= 3):
             out += ([""] + (["One test at a time:"] if one else []) + ["```bash"] + commands[:limit * 2] + ["```"])
         out.append("")
+    coverage = meta.get("coverage") or []
+    if coverage:
+        lost = [(c["line"], n) for c in coverage for n in c["lost"]]
+        gained = [(c["line"], n) for c in coverage for n in c["gained"]]
+        out += ["### Product coverage", "",
+                "Coverages of the product model the scenarios select (a row an enabled scenario reaches names them), "
+                "merge-base → branch tip.", ""]
+        if lost:
+            out.append(f"**No scenario selects these any more** ({len(lost)}):")
+            out += [f"- {line}: {name}" for line, name in lost[:limit * 2]]
+            if len(lost) > limit * 2:
+                out.append(f"- … and {len(lost) - limit * 2} more")
+            out.append("")
+        if gained:
+            out.append(f"Newly selected ({len(gained)}): " + "; ".join(f"{l}: {n}" for l, n in gained[:limit])
+                       + (f" … +{len(gained) - limit}" if len(gained) > limit else ""))
+            out.append("")
     errored = [c for c in changes if c.get("error")]
     if errored:
         out += ["### Not compared", ""]
@@ -360,6 +377,13 @@ def print_review(changes: list[dict], meta: dict) -> None:
         files = len({d["file"] for d in data})
         print(f"  ~~ data: {files} workbook(s), {sum(len(d['added']) for d in data)} rows added, "
               f"{sum(len(d['changed']) for d in data)} changed, {sum(len(d['removed']) for d in data)} removed")
+    for c in meta.get("coverage") or []:
+        if c["lost"]:
+            print(f"  -- {c['line']}: no scenario selects {len(c['lost'])} coverage(s) any more: "
+                  + ", ".join(c["lost"][:4]) + (" ..." if len(c["lost"]) > 4 else ""))
+        if c["gained"]:
+            print(f"  ++ {c['line']}: {len(c['gained'])} coverage(s) newly selected: "
+                  + ", ".join(c["gained"][:4]) + (" ..." if len(c["gained"]) > 4 else ""))
     rerun = meta.get("rerun") or []
     if rerun:
         print(f"  >> rerun {len(rerun)} test(s): " + ", ".join(
@@ -378,7 +402,23 @@ def print_review(changes: list[dict], meta: dict) -> None:
     print("=" * 60)
 
 
-def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
+def coverage_delta(base_tree: str, head_tree: str, cssids: str | None) -> list[dict]:
+    """Per line of business: product coverages the scenarios select on the branch tip that they did not
+    at the merge-base (gained), and the other way round (lost). [] without a product model."""
+    from eir_products import product_coverage
+    base, head = product_coverage(base_tree, cssids), product_coverage(head_tree, cssids)
+    if not base or not head:
+        return []
+    before = {l["line"]: {c["name"] for c in l["named"]} for l in base}
+    out = []
+    for l in head:
+        now, was = {c["name"] for c in l["named"]}, before.get(l["line"], set())
+        if now != was:
+            out.append({"line": l["line"], "gained": sorted(now - was), "lost": sorted(was - now)})
+    return out
+
+
+def run_review(config, base_rev: str, head_rev: str, suppressions, cssids: str | None = None) -> int:
     """Run the branch review; returns the exit code (1 when a trust blocker is introduced)."""
     repo = config.repository_dir
     base_sha, head_sha = resolve_rev(repo, base_rev), resolve_rev(repo, head_rev)
@@ -415,13 +455,17 @@ def run_review(config, base_rev: str, head_rev: str, suppressions) -> int:
         from eir_impact import suite_changes
         suites_changed = (suite_changes(os.path.join(tmp, "base"), os.path.join(tmp, "head"), suite_rel, config.source_root)
                           if suite_rel and suite_rel in changed else [])
+        from eir_screens import find_cssids_dir
+        product_dir = find_cssids_dir(repo, cssids)
+        coverage = (coverage_delta(os.path.join(tmp, "base"), os.path.join(tmp, "head"), product_dir)
+                    if product_dir and any(p.startswith("testdata/") for p in changed) else [])
     changes = diff_results(results["base"][0], results["head"][0])
     meta = {"base_name": base_rev, "head_name": head_rev,
             "base_short": start[:8], "head_short": head_sha[:8],
             "base_files": results["base"][1], "head_files": results["head"][1],
             "ruleset": ",".join(config.rules) if config.rules else config.ruleset,
             "rerun": rerun, "forwards": run_commands(repo), "changed": len(changed), "data": data,
-            "suites": suites_changed,
+            "suites": suites_changed, "coverage": coverage,
             "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
                             "command": suite_command(repo, suite_name)} if suite_entries else None}
     out_dir = os.path.join(repo, "healthcheck")
