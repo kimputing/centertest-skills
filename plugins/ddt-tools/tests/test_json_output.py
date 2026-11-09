@@ -45,5 +45,24 @@ class JsonOutputTest(unittest.TestCase):
         self.assertIn("DC column", doc["ways"])
 
 
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class DiffJsonTest(unittest.TestCase):
+    def test_two_files(self):
+        from refcheck_fixture import make_xlsx
+        with tempfile.TemporaryDirectory() as root:
+            old, new = os.path.join(root, "old.xlsx"), os.path.join(root, "new.xlsx")
+            make_xlsx(old, {"DataCombination": [["Code", "State"], ["A", "TX"], ["B", "CA"]]})
+            make_xlsx(new, {"DataCombination": [["Code", "State", "City"], ["A", "AZ", ""], ["C", "NV", "Reno"]]})
+            env = {**os.environ, "CENTERTEST_PROJECT_DIR": root, "HOME": root}
+            run = subprocess.run([sys.executable, os.path.join(SCRIPTS, "xlsx-diff.py"), old, new, "--json"],
+                                 capture_output=True, text=True, env=env)
+        self.assertEqual(run.returncode, 0, run.stderr[-300:])
+        sheet = json.loads(run.stdout)["sheets"][0]
+        self.assertEqual((sheet["sheet"], sheet["status"]), ("DataCombination", "changed"))
+        self.assertEqual(sheet["columns_added"], ["City"])
+        self.assertEqual((sheet["rows_added"], sheet["rows_removed"]), (["C"], ["B"]))
+        self.assertEqual(sheet["cells"], {"A": {"State": ["TX", "AZ"]}})
+
+
 if __name__ == "__main__":
     unittest.main()

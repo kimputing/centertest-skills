@@ -5,6 +5,7 @@ Usage:
     xlsx-diff.py <file.xlsx>                    # diff working copy vs origin/main
     xlsx-diff.py --ref <ref> <file.xlsx>        # diff working copy vs specific ref
     xlsx-diff.py <old.xlsx> <new.xlsx>          # diff two files directly
+    xlsx-diff.py ... --json                     # the diff as one JSON document on stdout (MCP server, CI)
 
 Latest version: https://github.com/Kimputing/centertest-skills/blob/main/skills/ddt-tools/scripts/xlsx-diff.py
 """
@@ -220,16 +221,68 @@ def diff_sheets(old_data, new_data):
     return has_changes
 
 
+def _code(row, key):
+    return row.get("Code", "") or row.get("code", "") or key
+
+
+def diff_data(old_data, new_data):
+    """The diff_sheets comparison as data: [{sheet, status: new|removed|changed, columns_added,
+    columns_removed, rows_added: [code], rows_removed: [code], cells: {code: {column: [old, new]}}}]."""
+    out = []
+    for sheet in sorted(set(old_data) | set(new_data)):
+        old_rows = old_data.get(sheet, {"rows": OrderedDict()})["rows"]
+        new_rows = new_data.get(sheet, {"rows": OrderedDict()})["rows"]
+        old_headers = old_data.get(sheet, {}).get("headers", [])
+        new_headers = new_data.get(sheet, {}).get("headers", [])
+        entry = {"sheet": sheet, "status": "new" if sheet not in old_data else "removed" if sheet not in new_data
+                 else "changed", "columns_added": [h for h in new_headers if h and h not in old_headers],
+                 "columns_removed": [h for h in old_headers if h and h not in new_headers],
+                 "rows_added": [_code(new_rows[k], k) for k in new_rows if k not in old_rows],
+                 "rows_removed": [_code(old_rows[k], k) for k in old_rows if k not in new_rows], "cells": {}}
+        headers = list(dict.fromkeys(list(new_headers or old_headers)))
+        for key in [k for k in old_rows if k in new_rows]:
+            changed = {c: [old_rows[key].get(c, ""), new_rows[key].get(c, "")] for c in headers
+                       if old_rows[key].get(c, "") != new_rows[key].get(c, "")}
+            if changed:
+                entry["cells"][_code(new_rows[key], key)] = changed
+        if entry["status"] != "changed" or any(entry[k] for k in ("columns_added", "columns_removed", "rows_added",
+                                                                    "rows_removed", "cells")):
+            out.append(entry)
+    return out
+
+
+def _main_json(args, ref):
+    import json
+    if len(args) == 2:
+        old_data, new_data, label = parse_xlsx(args[0]), parse_xlsx(args[1]), f"{args[0]} -> {args[1]}"
+    elif len(args) == 1:
+        tmp_path = get_ref_version(args[0], ref)
+        try:
+            old_data = parse_xlsx(tmp_path) if tmp_path else {}
+        finally:
+            if tmp_path:
+                os.unlink(tmp_path)
+        new_data = parse_xlsx(args[0]) if os.path.isfile(args[0]) else {}
+        label = f"{args[0]} ({ref} -> working copy)"
+    else:
+        print(json.dumps({"schema": 1, "error": "give <file.xlsx> [--ref REF] or <old.xlsx> <new.xlsx>"}))
+        sys.exit(1)
+    print(json.dumps({"schema": 1, "tool": "xlsx-diff", "compared": label,
+                      "sheets": diff_data(old_data, new_data)}, ensure_ascii=False, default=str))
+
+
 def main():
     project_dir = get_project_dir()
     os.chdir(project_dir)
 
-    args = [a for a in sys.argv[1:] if a not in ("--set-path", "--show-path")]
+    args = [a for a in sys.argv[1:] if a not in ("--set-path", "--show-path", "--json")]
     ref = DEFAULT_REF
 
     if len(args) >= 2 and args[0] == "--ref":
         ref = args[1]
         args = args[2:]
+    if "--json" in sys.argv[1:]:
+        return _main_json(args, ref)
 
     if len(args) == 1:
         filepath = args[0]
@@ -288,4 +341,7 @@ if __name__ == "__main__":
     if any(a in ("-h", "--help") for a in sys.argv[1:]):
         print(__doc__.strip())  # usage only: no check, no pr-review report
         sys.exit(0)
-    run_with_pr_review_report("xlsx-diff", main)
+    if "--json" in sys.argv[1:]:
+        main()  # stdout is the JSON document alone: no pr-review report tee
+    else:
+        run_with_pr_review_report("xlsx-diff", main)
