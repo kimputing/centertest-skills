@@ -72,12 +72,35 @@ def _parse_prefixes(method_body: str, mode: str = "overall") -> dict[str, int]:
     return prefix_counts
 
 
+_KEYWORDS = {"if", "for", "while", "return", "else", "switch", "case", "catch", "do", "assert", "this", "super"}
+
+
+def _is_extractable(prefix: str) -> bool:
+    """Whether a repeated prefix could become a local variable: a complete expression (balanced,
+    starts with a name, makes a call), not a statement or an action (ends with ';', runs
+    .execute()), not the framework's restart-point idiom, not a stateful builder
+    (CenterTestAssertion.withContext(...) must be built per assertion)."""
+    p = prefix.strip()
+    head = p.split(".", 1)[0].split("(", 1)[0].strip()
+    return (p.count("(") == p.count(")") and "(" in p and not p.endswith(";")
+            and head.isidentifier() and head not in _KEYWORDS
+            and ".execute(" not in p and "restart" not in p.lower()
+            and not p.startswith("CenterTestAssertion"))
+
+
+def _longest(prefix_counts: dict[str, int]) -> dict[str, int]:
+    """Drop a prefix when a longer one is repeated as often: the longer chain is the suggestion."""
+    return {p: c for p, c in prefix_counts.items()
+            if not any(q != p and q.startswith(p) and prefix_counts[q] == c for q in prefix_counts)}
+
+
 @rule(id="4001", description="Find possible variable substitutions", category="Methods")
 def variable_substitutions(commits: CommitsDict, config) -> RuleResult:
     """
-    Find common dot-chained prefixes that appear multiple times in a method.
+    Find expressions repeated in a method that could be one local variable.
 
-    Suggests extracting to a local variable for readability.
+    Only complete, side-effect-free-looking expressions count (see _is_extractable), and only
+    the longest of a chain's prefixes repeated equally often is suggested.
     Threshold configurable via eir.rule.4001.threshold (default: 2).
     """
     threshold = config.get_threshold("4001", 2)
@@ -103,13 +126,14 @@ def variable_substitutions(commits: CommitsDict, config) -> RuleResult:
 
                 prefix_counts = _parse_prefixes(method.body, mode="overall")
 
-                # Filter to prefixes meeting threshold
-                filtered = {p: c for p, c in prefix_counts.items() if c >= threshold}
+                # Filter to extractable expressions meeting threshold, longest chain only
+                filtered = _longest({p: c for p, c in prefix_counts.items()
+                                     if c >= threshold and _is_extractable(p)})
                 if not filtered:
                     continue
 
                 # Sort by count descending
-                sorted_prefixes = sorted(filtered.items(), key=lambda x: -x[1])
+                sorted_prefixes = sorted(filtered.items(), key=lambda x: (-x[1], x[0]))  # stable between runs
 
                 items = [f"{count}x — {prefix}" for prefix, count in sorted_prefixes]
                 # Build method label: ClassName.methodName (or with inner class)
@@ -161,7 +185,7 @@ def duplicate_table_row_selections(commits: CommitsDict, config) -> RuleResult:
                 if not filtered:
                     continue
 
-                sorted_prefixes = sorted(filtered.items(), key=lambda x: -x[1])
+                sorted_prefixes = sorted(filtered.items(), key=lambda x: (-x[1], x[0]))
                 items = [f"{count}x — {prefix}" for prefix, count in sorted_prefixes]
                 method_label = f"{mc.class_name}.{method.name}"
                 commit_sections.append(Section(title=method_label, items=items))

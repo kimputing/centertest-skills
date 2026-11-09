@@ -18,13 +18,17 @@ scenario in the target project's structure, in six phases with a gate after each
 - `scripts/find_getter.py` — **vendored, byte-identical** copy of `plugins/cssid-finder/scripts/find_getter.py`.
   Never edit it here; change cssid-finder, then `cp` it over. `tests/test_vendored_sync.py` fails when they differ.
 - `scripts/ct.py` — the single entry point the skill calls (`scan`, `parse`, `xlsx`, `narrate`,
-  `profile resolve|init`, `tools`, `gap-report`, `scrub`); modules load lazily.
+  `profile resolve|init`, `tools`, `gap-report`, `scrub`, `coverage`); modules load lazily.
 - `scripts/schema.py` — `PLAN_SCHEMA_VERSION` / `PROJECT_SCHEMA_VERSION` and `PLAN_FIELDS`.
 - `scripts/client_profile.py` + `profile/` (`defaults.md`, `template.md`) — flat front-matter
   profile, switches, dated facts.
 - `scripts/narration.py` — transcript file, else local ffmpeg + whisper.cpp; raw utterances only.
 - `scripts/flow_match.py`, `data_match.py`, `restart.py`, `xlsx_read.py`, `gap_report.py` — flow and
   data matching against the scan, restart candidates, workbook reading, gap reports.
+- `scripts/coverage.py` — `coverage`: how much of a recording the project's hand-written steps already do,
+  field by field (data-driven / hardcoded / automated / partial / missing / not counted), from
+  `build_plan`'s getters. A step counts only when its file or a superclass names the page class;
+  `--only` limits the search to the flow's folders. HTML to `~/.centertest/reports/` unless `--html`.
 - `scripts/scrub_recording.py` — `scrub`: replaces typed/posted values and `--also` strings (`V<n>`), hosts, 8+ digit
   numbers, issue keys, meta ids and dates in every string but structural keys (`STRUCTURAL`; timestamps only
   date-shift). Transcripts are written scrubbed next to kept audio entries; audio without one is dropped.

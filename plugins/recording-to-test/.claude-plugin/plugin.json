@@ -1,6 +1,6 @@
 {
   "name": "recording-to-test",
-  "description": "Generate a CenterTest test from a CenterTest Recorder recording, following the project's own structure",
+  "description": "Scenario wizard: create a CenterTest test from a Recorder recording, a request, a story, a Jira issue or an existing test, in the project's own structure; measure how much of a recorded flow is already automated",
   "author": { "name": "Kimputing" },
   "homepage": "https://github.com/Kimputing/centertest-skills",
   "repository": "https://github.com/Kimputing/centertest-skills",

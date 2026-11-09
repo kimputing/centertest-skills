@@ -32,6 +32,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+      # The DDT engine and healthcheck parse real workbooks and Java; without these their tests skip.
+      - name: Install the plugins' Python packages
+        run: python -m pip install openpyxl javalang
       - name: Run every plugin's tests
         shell: bash
         run: |

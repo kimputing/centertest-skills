@@ -31,6 +31,15 @@ import narration  # noqa: E402
 import find_getter  # noqa: E402  vendored: byte-identical to plugins/cssid-finder/scripts/find_getter.py
 
 APPS = {"PolicyCenter": "pc", "BillingCenter": "bc", "ClaimCenter": "cc", "ContactManager": "ab"}
+APP_URL = re.compile(r"/(" + "|".join(APPS) + r")\.do\b")
+
+
+def step_app(step: dict):
+    """The step's application name: as recorded, else from its URL (Recorder 0.1.x wrote no `app`)."""
+    if step.get("app"):
+        return step["app"]
+    m = APP_URL.search(step.get("url") or "")
+    return m.group(1) if m else None
 REDACTED = "[redacted]"
 
 
@@ -1774,8 +1783,8 @@ def build_plan(session: dict, cssids_dir: str, read_file=None, project=None, rea
         plan["notes"] += [note_entry(recorded_step.get("seq"), text) for text in notes]
         if not recorded and not notes and recorded_step.get("seq") not in spoken:
             continue  # a step spoken about stays, like one with typed notes: its notes point at it
-        app = APPS.get(recorded_step.get("app"))
-        entry = {"seq": recorded_step.get("seq"), "app": app, "appName": recorded_step.get("app"),
+        app = APPS.get(step_app(recorded_step))
+        entry = {"seq": recorded_step.get("seq"), "app": app, "appName": step_app(recorded_step),
                  "appSwitch": bool(recorded) and previous_app is not None and app is not None and app != previous_app,
                  "screen": recorded_step.get("screen"), "title": recorded_step.get("title"),
                  "waitTitle": wait_title(recorded_step.get("title")),

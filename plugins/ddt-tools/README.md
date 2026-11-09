@@ -19,6 +19,13 @@ See [`skills/ddt-tools/SKILL.md`](skills/ddt-tools/SKILL.md) for trigger phrases
 - `openpyxl` Python package (`pip install openpyxl`)
 - Git (for diff and textconv tools)
 
+If `pip install` is refused (Homebrew and other "externally managed" Pythons), create the shared
+CenterTest environment once — every skill finds it automatically:
+
+```bash
+python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang
+```
+
 ## Tools
 
 | Script | Purpose |

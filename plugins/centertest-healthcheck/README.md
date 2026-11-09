@@ -22,10 +22,35 @@ See [`skills/centertest-healthcheck/SKILL.md`](skills/centertest-healthcheck/SKI
   ```
 - `git` CLI (only needed for git history analysis modes)
 
+If `pip install` is refused (Homebrew and other "externally managed" Pythons), create the shared
+CenterTest environment once — every skill finds it automatically:
+
+```bash
+python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang
+```
+
 ## Features
 
 - **20+ analysis rules** — code statistics, naming conventions, complexity, security, CenterTest compliance
 - **Excel + HTML + Markdown reports** — summary sheet with one detail sheet per rule, plus a scored HTML dashboard
+- **Branch review** — `--review main feature/x` lists only what the branch introduced or fixed, writes a PR comment that says under its verdict what the run loses (flows, coverages, options, jurisdictions), exits 1 on a new trust blocker, names product coverages and limit/deductible options no scenario selects any more and term values it introduces that are not an option in the product model, and the states a line's scenarios no longer run in; its rerun plan comes as one suite (`Rerun-<sha>`, changed rows only) and one command
+- **Screens the suite opens** — wizards and screens per application, and the wizards no test opens
+- **Product coverages the scenarios select** — per line of business, from the generated product model (`<Line>_coverage_structure.json`): which coverages a row an enabled scenario reaches names (its DataCombination row and what it references), their terms set, which options of each option term (limit, deductible) the scenarios use and every term value that is not an option in the model, those only in data rows no scenario reaches, and (Excel sheet "Product coverage") every coverage with its status
+- **The smallest suite with the full run's breadth** — `--cover` picks the fewest scenarios that still run every test method, select every product coverage and run every line in every jurisdiction the full regression does (Portage: 61 of 355), as a suite `Cover-Breadth` and its command; `--cover Smoke [--of Regression]` says what an existing suite misses and the fewest scenarios to add; `--deep` also keeps every limit/deductible option the full run sets
+- **Everything one scenario enters** — `--scenario CA_RenewalTest AZ-Phoenix` resolves the DataCombination row through every `#Ref`, join and `@Rel` into one tree of workbook / sheet / code and values, with the tests and suites that run it, and what only that scenario reaches (what disabling it would drop)
+- **Which scenarios use a coverage** — `--uses "Liquor Liability Endorsement"` follows test data references to the DataCombination rows that use it and prints the tests and a suite that runs exactly them; repeat it (`--uses "Liquor Liability.*" --uses "TX|Texas"`) for the scenarios that use every value
+- **Which tests touch a screen** — `--touches PolicyChangeWizard` (or `Page.getWidget`) lists the tests that reach a generated page or one widget, and a suite that runs them
+- **Weekly** — `--weekly <projects...> --days 7` runs what landed in each suite through the branch review: verdict, new trust blockers, coverages lost, data rows changed, tests to rerun — one page
+- **What the regression covers, first** — the dashboard opens with flows that run, scenario runs, coverages and options selected, jurisdictions and the widest suite's share, the same numbers as the panels below
+- **Since your last check** — every local run compares itself with the previous one (`healthcheck/last-run.json`): score, trust blockers, scenarios, coverages, flows that run and jurisdictions before → after, findings added and fixed, and the flows and line/jurisdictions that left the run, by name
+- **JSON for other tools** — `--json` on any mode (health check, `--review`, `--uses`, `--touches`, `--weekly`, `--trend`, `--portfolio`) prints its result as one JSON document on stdout, progress on stderr, exit code kept; `--output json` writes the verdict, trust blockers at `path:line`, every rule's findings and the panels (`HealthCheck_*.json`, additive schema); `--review` writes its result as JSON beside the PR comment. For the CenterTest MCP server and CI to run this implementation instead of their own
+- **Jurisdictions the scenarios run in** — per line of business (DC workbook prefix), the states or provinces a row an enabled scenario reaches names in a State/Jurisdiction/Governing Law column (the generated `TC_Jurisdiction`'s codes and names), with scenario counts, and the ones the suite uses on other lines but never on this one (Excel sheet "States")
+- **How much of the full run each suite reaches** — every suite of CenterTestSuiteList.json as CenterTest resolves it: scenarios, and test methods (flows), product coverages and line/jurisdiction pairs as a share of what all scenarios reach; suites that run nothing; what no suite reaches (Excel sheet "Suites")
+- **One rerun suite for a release** — `--plan release.txt` (lines `coverage:`, `value:`, `page:`, `widget:`) answers each change as `--uses`/`--touches` and combines their scenarios into one suite; changes that select nothing are flagged
+- **What a regenerated product model breaks** — `--model-diff OLD [NEW]` (revisions of the generated project) lists coverages and options removed, added and renamed, the scenarios that select or set what is gone (a suite to rerun) and the new coverages no scenario selects
+- **Coverage statement for the client** — `--statement` writes a one-page summary of what the regression covers (flows, scenarios, coverages and options per line, jurisdictions, suites, known gaps), without code findings
+- **Portfolio** — `--portfolio <projects...>` compares every client suite on one page, product coverage the scenarios select, jurisdictions and each client's widest suite (share of flows and coverages, flows in no suite) included
+- **Health trend** — `--trend 6` charts score, trust blockers, test cases, flows that run, product coverages selected and jurisdictions month by month from git history
 - **Git history analysis** — date range, monthly sampling, PR diff, specific commits
 - **Local-first** — analyzes working directory instantly, no clone needed
 - **Non-destructive git** — uses `git show` instead of checkout

@@ -97,6 +97,25 @@ A facade call is a facade call only when all three conditions of
 [phases/recording.md#facade-match](recording.md#facade-match) hold; otherwise the segment is a
 variant or new.
 
+## Field coverage
+
+For a recording, measure field by field what the project's steps already do before deciding a rung:
+
+```bash
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
+"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/ct.py" coverage "<recording>" --cssids "<cssids.value from project.json>" --project "<project root>" --only "<the scenario's folder>|/shared/" --json --html "$WORK/coverage.html"
+```
+
+Each recorded field comes back `data`, `hardcoded`, `automated`, `partial`, `missing` or `skip`, with the
+step's `where` (`path:line`). Use it as evidence in the [Facade check](#facade-check):
+
+- A segment whose fields are all `data`/`automated` in one step is that step's facade call (rung 1-2).
+- `hardcoded` in a step the scenario must vary is checklist item 8: move it to data, an approved edit.
+- `partial` (coverages the steps set from data, no row names this one yet) is a data row, not code.
+- `missing` fields are the gap: a variant hook or a new step (rungs 4-5), never a copy of the step.
+
+Show the per-screen counts (handled/total) at the [Gate](#gate) next to the rung of each segment.
+
 ## Variants
 
 When an existing component almost fits, climb these rungs and stop at the first that works:
@@ -173,7 +192,8 @@ what is added here is the shape later scenarios can override:
 ## Gate
 
 Show, for every segment: the rung it reached and why, with the class read and the plan field as
-evidence (`plan.existingTests` ranked against the scenario's folder, `plan.facadeSequence`).
+evidence (`plan.existingTests` ranked against the scenario's folder, `plan.facadeSequence`, and for a
+recording the [Field coverage](#field-coverage) of its screens).
 
 - Per segment: facade call, existing step, variant or new step, and why, as in the table in
   [phases/recording.md#gate](recording.md#gate); the base class and what it uses; retries

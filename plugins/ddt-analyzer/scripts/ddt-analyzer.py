@@ -74,7 +74,12 @@ try:
     from openpyxl import load_workbook
     from openpyxl import Workbook
 except ImportError:
-    print("ERROR: openpyxl is required. Install with: pip install openpyxl", file=sys.stderr)
+    print(f"ERROR: openpyxl is not installed for {sys.executable}.\n"
+          f"  Install it for this Python: \"{sys.executable}\" -m pip install openpyxl\n"
+          "  If pip refuses (Homebrew and other externally managed Pythons), create the CenterTest\n"
+          "  environment once; the skills use it automatically:\n"
+          "    python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip install openpyxl javalang",
+          file=sys.stderr)
     sys.exit(1)
 
 
@@ -123,7 +128,7 @@ _ref_file_cache = {}
 
 def find_all_xlsx_files():
     """Find all xlsx files in testdata/."""
-    files = glob.glob("testdata/**/*.xlsx", recursive=True) + glob.glob("testdata/*.xlsx")
+    files = [f.replace(os.sep, "/") for f in glob.glob("testdata/**/*.xlsx", recursive=True) + glob.glob("testdata/*.xlsx")]
     files = [f for f in files if not os.path.basename(f).startswith("~$")]
     return sorted(set(files))
 
@@ -447,20 +452,29 @@ def analyze_untested_dc_files(dc_files_data, test_map):
     return sorted(untested)
 
 
-def analyze_unused_codes(dc_files_data):
-    """Find codes in Data files never referenced from any DC."""
-    # Collect all referenced codes per sheet name (case-insensitive)
-    referenced = defaultdict(set)  # sheet_name_lower -> set of code_lower
-    for dc in dc_files_data:
-        for sheet_name, codes in dc.references.items():
-            for code in codes:
-                referenced[sheet_name.lower()].add(code.lower())
+_USED = {}
 
+
+def _used_codes(dc_files_data):
+    """{normalised sheet: {code: ways}} from the shared engine (ddt_refcheck.py, vendored from
+    ddt-tools), so this report and xlsx-cleanup-unused agree on what is unused."""
+    key = tuple(sorted(dc.path for dc in dc_files_data))
+    if key not in _USED:
+        from ddt_refcheck import used_codes
+        _USED[key] = used_codes(list(key))
+    return _USED[key]
+
+
+def analyze_unused_codes(dc_files_data):
+    """Find codes in Data files that nothing uses: no DC column, relationship hop, reference
+    sheet column or DDTHelper call in Java names them."""
+    from ddt_refcheck import _norm_sheet
+    used = _used_codes(dc_files_data)
     unused = []  # (file_path, sheet_name, code, total_codes, used_count)
     for ref_path, ref_file in sorted(_ref_file_cache.items()):
         for sheet in ref_file.sheets:
-            ref_codes = referenced.get(sheet.name.lower(), set())
-            sheet_unused = [c for c in sorted(sheet.codes) if c.lower() not in ref_codes]
+            in_use = used.get(_norm_sheet(sheet.name), {})
+            sheet_unused = [c for c in sorted(sheet.codes) if c not in in_use]
             sheet_used = len(sheet.codes) - len(sheet_unused)
             for code in sheet_unused:
                 unused.append((ref_path, sheet.name, code, len(sheet.codes), sheet_used))
@@ -546,14 +560,17 @@ def analyze_hierarchy():
                 if not any(rx.fullmatch(d) for d in dc_files):
                     results.append((f"  $references pattern: {pattern}", "NO_MATCH", "Matches no DC file"))
 
-    # Child DC files NOT covered by any class-inheritance pattern (informational)
+    # Child DC files NOT covered by any class-inheritance pattern. Informational only: the
+    # framework has no such check and class-inheritance entries are optional (and ignored for
+    # data resolution), so these rows are INFO, never issues, and only listed when the project
+    # declares class-inheritance entries at all.
     all_patterns = [p for patterns in class_entries.values() for p in patterns]
     parent_dcs = set(class_entries.keys())
-    for dc in dc_files:
+    for dc in dc_files if class_entries else []:
         if dc in parent_dcs:
             continue
         if not any(re.match(p, dc) for p in all_patterns):
-            results.append((dc, "UNCOVERED", "DC file not covered by any hierarchy pattern"))
+            results.append((dc, "INFO", "Not a child of any class-inheritance entry (optional feature)"))
 
     # $identifiers + $relationships (DC -> DC relationships)
     identifiers_raw = hierarchy.get("$identifiers", {})
@@ -714,31 +731,18 @@ def analyze_relationships(dc_files_data):
 
 
 def analyze_code_coverage(dc_files_data, ddthelper_map, ddthelper_calls):
-    """Calculate code coverage per Data file sheet."""
-    # Codes used by DC files
-    dc_used = defaultdict(set)  # (ref_path, sheet_name_lower) -> set of code_lower
-    for dc in dc_files_data:
-        for ref in dc.referenced_files:
-            for sheet_name, codes in dc.references.items():
-                for code in codes:
-                    dc_used[(ref.path, sheet_name.lower())].add(code.lower())
-
-    # Codes used by hardcoded DDTHelper
-    hc_used = defaultdict(set)  # (xlsx_file, sheet_name_lower) -> set of code_lower
-    for _, _, method_name, code_literal in ddthelper_calls:
-        if method_name in ddthelper_map:
-            xlsx_file, sheet_name = ddthelper_map[method_name]
-            sheet_key = (sheet_name or "datacombination").lower()
-            hc_used[(xlsx_file, sheet_key)].add(code_literal.lower())
-
+    """Calculate code coverage per Data file sheet ("Used by DC" counts DC columns, relationship
+    hops and reference sheets; "Used by Hardcoded" counts DDTHelper calls in Java)."""
+    from ddt_refcheck import _norm_sheet
+    used = _used_codes(dc_files_data)
     results = []  # (file, sheet, total, dc_used, hc_used, unused, pct)
     for ref_path, ref_file in sorted(_ref_file_cache.items()):
         for sheet in ref_file.sheets:
+            in_use = used.get(_norm_sheet(sheet.name), {})
             total = len(sheet.codes)
-            dc_count = len(dc_used.get((ref_path, sheet.name.lower()), set()))
-            hc_count = len(hc_used.get((ref_path, sheet.name.lower()), set()))
-            all_used = dc_used.get((ref_path, sheet.name.lower()), set()) | hc_used.get((ref_path, sheet.name.lower()), set())
-            actual_used = len([c for c in sheet.codes if c.lower() in all_used])
+            dc_count = sum(1 for c in sheet.codes if in_use.get(c, set()) - {"Java"})
+            hc_count = sum(1 for c in sheet.codes if "Java" in in_use.get(c, set()))
+            actual_used = sum(1 for c in sheet.codes if c in in_use)
             unused = total - actual_used
             pct = round(actual_used / total * 100, 1) if total > 0 else 0
             results.append((ref_path, sheet.name, total, dc_count, hc_count, unused, pct))
@@ -1074,7 +1078,7 @@ def main():
     print(f"  Invalid hardcoded:     {len(invalid_hc)}")
 
     hierarchy = analyze_hierarchy()
-    hierarchy_issues = [r for r in hierarchy if r[1] not in ("OK", "MATCHED")]
+    hierarchy_issues = [r for r in hierarchy if r[1] not in ("OK", "MATCHED", "INFO")]
     print(f"  Hierarchy issues:      {len(hierarchy_issues)}")
 
     duplicates = analyze_duplicate_codes()

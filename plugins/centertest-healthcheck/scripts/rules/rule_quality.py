@@ -299,7 +299,9 @@ _SYSOUT_RE = re.compile(r'System\.(out|err)\.(print|println)\(')
 # external invariant (e.g. reader.readLine() returning null) the rule can't see.
 
 _WHILE_RE = re.compile(r"\bwhile\s*\(([^{]*?)\)\s*\{")
-_RECURSION_GUARDS = ("max", "attempt", "depth", "limit", "count", "tries", "retries")
+_STRING_LITERAL = re.compile(r'"(?:\\.|[^"\\])*"')
+_READ_UNTIL_END = re.compile(r"\(\s*\w+\s*=\s*[^;]+\)\s*!=\s*(?:null|-1)\b")
+_RECURSION_GUARDS = ("max", "attempt", "depth", "limit", "count", "tries", "retries", "retry")
 _DEADLINE_MARKERS = (
     "System.currentTimeMillis",
     "Instant.now",
@@ -406,6 +408,8 @@ def unbounded_loops_and_recursion(commits: CommitsDict, config) -> RuleResult:
                 body = method.body
                 if not body:
                     continue
+                # String literals are text, not code: "execute() is not available" is not a call.
+                body = _STRING_LITERAL.sub('""', body)
 
                 # --- 1. Unbounded while loops -----------------------------
                 for m in _WHILE_RE.finditer(body):
@@ -425,6 +429,10 @@ def unbounded_loops_and_recursion(commits: CommitsDict, config) -> RuleResult:
                     # Deadline expressions in the condition count as bounded
                     # (e.g. `while (rows.isEmpty() && System.currentTimeMillis() < deadline)`).
                     if any(marker in cond for marker in _DEADLINE_MARKERS):
+                        continue
+                    # A counter in the condition, or reading until a source is exhausted
+                    # (`while ((line = reader.readLine()) != null)`), ends on its own.
+                    if any(op in cond for op in ("++", "--", "+=", "-=")) or _READ_UNTIL_END.search(cond):
                         continue
                     if any(marker in loop_body for marker in _BODY_SAFE_MARKERS):
                         continue
@@ -465,6 +473,9 @@ def unbounded_loops_and_recursion(commits: CommitsDict, config) -> RuleResult:
                     continue
                 lowered = body.lower()
                 if any(g in lowered for g in _RECURSION_GUARDS):
+                    continue
+                # The call switches a flag off (`retry` -> false): it recurses at most once more.
+                if all(re.search(r"\bfalse\b", ln) for ln in call_lines):
                     continue
                 result.rows.append([
                     mc.class_name,

@@ -439,6 +439,28 @@ def item(items, widget_id):
     return next(i for i in items if i.get("widgetId") == widget_id)
 
 
+class StepAppTest(unittest.TestCase):
+    def test_recorded_app_wins(self):
+        self.assertEqual(pr.step_app({"app": "BillingCenter", "url": "http://h/pc/PolicyCenter.do"}), "BillingCenter")
+
+    def test_app_from_url_when_not_recorded(self):
+        self.assertEqual(pr.step_app({"url": "http://localhost:8080/cc/ClaimCenter.do"}), "ClaimCenter")
+        self.assertEqual(pr.step_app({"url": "https://x/ab/ContactManager.do?x=1"}), "ContactManager")
+        self.assertIsNone(pr.step_app({"url": "http://localhost:8180/portal/index.html"}))
+        self.assertIsNone(pr.step_app({}))
+
+    def test_recorder_0_1_session_without_app_resolves_like_a_current_one(self):
+        current = load("real-174907")
+        old = load("real-174907")
+        for recorded in old["steps"]:
+            recorded.pop("app", None)  # Recorder 0.1.x wrote no app per step, only its url
+            recorded["url"] = old["startUrl"]
+        getters = lambda plan: [(a.get("resolution"), a.get("getter")) for s in plan["steps"] for a in s["actions"]]
+        old_plan = pr.build_plan(old, CSSIDS)
+        self.assertEqual(getters(old_plan), getters(pr.build_plan(current, CSSIDS)))
+        self.assertEqual(old_plan["apps"], ["pc"])
+
+
 class PlanFromRealRecordingsTest(unittest.TestCase):
     def test_metadata_and_kept_steps(self):
         plan = plan_for("real-180418")

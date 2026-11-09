@@ -11,6 +11,7 @@ Rules 9001, 9003, 9005, 9007, 9008: CenterTest framework compliance (beyond Eir)
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -75,54 +76,58 @@ def direct_selenium_usage(commits: CommitsDict, config) -> RuleResult:
     return result
 
 
-@rule(id="9003", description="@DataDriven annotation patterns", category="CenterTest")
+# DDTHelper.getX(<arg>): with a ScenarioContext argument it reads the scenario's own data row,
+# which only exists when the test is @DataDriven. getX("code") loads a row by code and needs nothing.
+_DDT_GETTER_CALL = re.compile(r"DDTHelper\.get\w+\(\s*(\w+)\s*\)")
+_CONTEXT_PARAM = re.compile(r"\bScenarioContext\s+(\w+)")
+
+
+@rule(id="9003", description="Test reads scenario data without @DataDriven", category="CenterTest")
 def data_driven_patterns(commits: CommitsDict, config) -> RuleResult:
     """
-    Analyze @DataDriven usage patterns.
+    Test classes that read the scenario's data row -- DDTHelper.getX(scenarioContext) or
+    scenarioContext.getTestData() -- with no @DataDriven on the class or any method. The run has
+    no data row, so the test cannot run.
 
-    Reports only test classes that use DDTHelper but are missing @DataDriven
-    annotation, since that indicates a potential misconfiguration.
+    Loading a row by code (DDTHelper.getX("code")) is not reported: it needs no @DataDriven.
     """
     result = RuleResult(
         rule_id="9003",
-        description="Test classes using DDTHelper without @DataDriven",
+        description="Test reads scenario data without @DataDriven",
         category="CenterTest",
-        headers=["Class", "Issue"],
+        headers=["Class", "Method", "Issue"],
     )
 
     for commit_info, files in sorted(commits.items()):
         for f in files:
             mc = f.main_class
-            if mc is None:
-                continue
-
-            # Only check test classes
-            if not f.is_test_class():
+            if mc is None or not f.is_test_class():
                 continue
 
             methods = [m for _, ce in _scanned_classes(f) for m in ce.methods]
+            has_data_driven = "DataDriven" in mc.annotations or any(
+                "DataDriven" in m.annotations for m in methods)
+            if has_data_driven:
+                continue
 
-            # Check @DataDriven on class OR any method (it's typically on methods)
-            has_data_driven = "DataDriven" in mc.annotations
-            if not has_data_driven:
-                for method in methods:
-                    if "DataDriven" in method.annotations:
-                        has_data_driven = True
-                        break
-
-            # Check for DDTHelper usage in method bodies
-            has_ddt_helper = False
-            for method in methods:
-                if method.body and "DDTHelper" in method.body:
-                    has_ddt_helper = True
+            # Method bodies start at "{", so ScenarioContext parameter names come from the file.
+            names = {"scenarioContext"}
+            try:
+                with open(f.key, encoding="utf-8", errors="replace") as fh:
+                    names.update(_CONTEXT_PARAM.findall(fh.read()))
+            except OSError:
+                pass
+            for m in methods:
+                body = m.body or ""
+                reads = [a for a in _DDT_GETTER_CALL.findall(body) if a in names]
+                reads += [n for n in names if re.search(r"\b" + re.escape(n) + r"\.getTestData\(\)", body)]
+                if reads:
+                    result.rows.append([
+                        mc.key,
+                        m.name,
+                        "Reads the scenario's data row but has no @DataDriven, so the run has no data",
+                    ])
                     break
-
-            # Report test classes that use DDTHelper but lack @DataDriven
-            if has_ddt_helper and not has_data_driven:
-                result.rows.append([
-                    mc.key,
-                    "Uses DDTHelper but missing @DataDriven annotation",
-                ])
 
     return result
 
@@ -166,24 +171,27 @@ _JUNIT_ASSERT_PATTERNS = [
 ]
 
 
+_RAW_ASSERTJ_CALL = re.compile(r"\bAssertions\.(assertThat\w*)\(")
+_STATIC_ASSERT_CALL = re.compile(r"(?<![.\w])(assertThat\w*)\(")
+
+
 @rule(id="9005", description="CenterTest assertion framework usage", category="CenterTest")
 def assertion_framework_usage(commits: CommitsDict, config) -> RuleResult:
     """
-    Find incorrect assertion patterns in CenterTest code.
+    Assertions that bypass the CenterTest assertion framework.
 
-    CORRECT patterns (widget-based assertions):
-      - widget.assertEquals(value)
-      - widget.assertContains(substring)
-      - widget.assertNotEmpty()
-      - widget.assertNotNull()
-      - widget.assertEqualsNumeric(value)
-      - CenterTestAssertion.withContext(...).assertThat(...)
+    Supported (not reported) -- the docs list three approaches:
+      - widget assertions: widget.assertEquals(value), assertContains, assertVisible ...
+      - com.ankrpt.centertest.assertion.Assertions.assertThat(...): AssertJ with DataField-aware
+        comparisons (isEqualToNumeric, isWithinNumericRange ...)
+      - CenterTestAssertion.withContext(...)...: a business-language line in the narrative
+        (it complements the others; using the factory without it is not a defect)
 
-    ANTI-PATTERNS (raw JUnit/Java assertions):
-      - Assert.assertEquals(expected, actual)
-      - Assert.assertTrue(condition)
-      - assert keyword
-      - Direct Assertions.assertThat() without CenterTestAssertion wrapper
+    Reported:
+      - raw JUnit Assert.assertXxx(...)
+      - raw AssertJ (org.assertj.core.api.Assertions, directly or statically imported): the
+        framework's Assertions has the same API plus DataField-aware comparisons, so the import
+        is the fix
     """
     result = RuleResult(
         rule_id="9005",
@@ -194,34 +202,30 @@ def assertion_framework_usage(commits: CommitsDict, config) -> RuleResult:
 
     for commit_info, files in sorted(commits.items()):
         for f in get_implemented_classes(files):
+            raw_class = "org.assertj.core.api.Assertions" in f.imports
+            raw_static = any(i.startswith("org.assertj.core.api.Assertions.assert") for i in f.imports)
             for class_name, ce in _scanned_classes(f):
                 for method in ce.methods:
                     if not method.body:
                         continue
+                    # One finding per method and kind: the first line, and how many there are.
+                    hits = {"junit": [], "assertj": []}
                     for line in method.body.splitlines():
                         stripped = line.strip()
                         if not stripped:
                             continue
-
-                        # Check for raw JUnit Assert usage
-                        for pattern in _JUNIT_ASSERT_PATTERNS:
-                            if pattern in stripped:
-                                result.rows.append([
-                                    class_name,
-                                    method.name,
-                                    "Raw JUnit Assert — use widget.assertXxx() or CenterTestAssertion",
-                                    stripped[:150],
-                                ])
-                                break
-
-                        # Check for Assertions.assertThat without CenterTestAssertion wrapper
-                        if "Assertions.assertThat(" in stripped and "CenterTestAssertion" not in method.body:
-                            result.rows.append([
-                                class_name,
-                                method.name,
-                                "Unwrapped AssertJ — wrap with CenterTestAssertion.withContext()",
-                                stripped[:150],
-                            ])
+                        if any(pattern in stripped for pattern in _JUNIT_ASSERT_PATTERNS):
+                            hits["junit"].append(stripped)
+                        elif (raw_class and _RAW_ASSERTJ_CALL.search(stripped)) or (
+                                raw_static and _STATIC_ASSERT_CALL.search(stripped)):
+                            hits["assertj"].append(stripped)
+                    for kind, text in (("junit", "Raw JUnit Assert — use widget.assertXxx() or the CenterTest Assertions"),
+                                       ("assertj", "Raw AssertJ (org.assertj) — import com.ankrpt.centertest.assertion."
+                                                   "Assertions instead: same API plus DataField-aware comparisons")):
+                        lines = hits[kind]
+                        if lines:
+                            count = f" ({len(lines)} calls in this method)" if len(lines) > 1 else ""
+                            result.rows.append([class_name, method.name, text + count, lines[0][:150]])
 
     return result
 
@@ -256,4 +260,42 @@ def implicit_sleep_detection(commits: CommitsDict, config) -> RuleResult:
                                 stripped[:150],
                             ])
 
+    return result
+
+
+_DRIVES_SCREEN = re.compile(r"\bnew\s+\w+Page\s*\(|\bwaitForPageTitle\(")
+
+
+@rule(id="9010", description="Tests that drive screens but verify nothing", category="CenterTest")
+def tests_that_verify_nothing(commits: CommitsDict, config) -> RuleResult:
+    """
+    Test classes that open application screens but reach no assertion: no code they run --
+    their own methods, the facade methods they call, the steps those build, superclasses,
+    helpers held in fields -- asserts (widget assert*, assertThat, AnkrPtAssert, soft
+    assertions, CenterTestAssertion, stopIfErrors, fail, or a project exception thrown when a
+    value is wrong). Such a test passes as long as the screens open.
+
+    Tests that open no screen (clock changes, Ansible, environment set-up) are tools, not
+    checks, and are not reported.
+    """
+    from eir_reach import CodeIndex
+    result = RuleResult(
+        rule_id="9010",
+        description="Tests that drive screens but verify nothing",
+        category="CenterTest",
+        headers=["Class", "Method", "Issue"],
+    )
+    index = CodeIndex.from_tree(config.repository_dir, getattr(config, "source_root", "src/main/java"))
+    for commit_info, files in sorted(commits.items()):
+        for f in files:
+            mc = f.main_class
+            if mc is None or not f.is_test_class() or mc.class_name not in index.text:
+                continue
+            bodies = index.reach(mc.class_name)
+            screens = sum(len(_DRIVES_SCREEN.findall(b)) for b in bodies)
+            if screens and index.assertions_reached(mc.class_name) == 0:
+                method = next((m.name for m in mc.methods if "CenterTestCase" in m.annotations), "run")
+                result.rows.append([mc.key, method,
+                                    f"Opens screens ({screens} page calls reached) but nothing it runs asserts; "
+                                    "it passes whenever the screens open"])
     return result
