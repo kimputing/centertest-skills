@@ -151,15 +151,16 @@ def _workbook_users(repo_dir: str, source_root: str) -> dict:
                 rel = os.path.relpath(os.path.join(root, name), repo_dir).replace("\\", "/")
                 workbooks.setdefault(name[:-5], rel)  # DC class name == workbook stem
     users: dict[str, set] = {}
+    dc_stems = {stem: path for stem, path in workbooks.items() if stem.endswith("DC")}
     for cls, text in readers:
         for path in _DATASOURCE_RE.findall(text):
             users.setdefault(path, set()).add(cls)
         for getter, path in getters.items():
             if getter in text:
                 users.setdefault(path, set()).add(cls)
-        for stem, path in workbooks.items():
-            if stem.endswith("DC") and re.search(r"\b" + re.escape(stem) + r"\b", text):
-                users.setdefault(path, set()).add(cls)
+        words = set(re.findall(r"\w+", text))  # a DC class name is a whole word: one set beats a regex per stem
+        for stem in words & dc_stems.keys():
+            users.setdefault(dc_stems[stem], set()).add(cls)
     _follow_relationships(repo_dir, users)
     return {path: sorted(classes) for path, classes in users.items()}
 

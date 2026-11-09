@@ -95,9 +95,9 @@ def product_coverage(repo_dir: str, cssids_dir: str | None, source_root: str = "
         by_value = rows_by_value(repo_dir, coverage_only=True)
         # tests that read each workbook: @DataDriven, a DDTHelper getter or the DC class (rule 14003's readers)
         from eir_impact import _is_test, _java_sources
-        from rules.rule_ddt import _workbook_users
+        from rules.rule_ddt import workbook_users
         sources = _java_sources(repo_dir, source_root)
-        for dc, classes in _workbook_users(repo_dir, source_root).items():
+        for dc, classes in workbook_users(repo_dir, source_root).items():
             readers[dc] = {c for c in classes if c in sources and _is_test(sources[c][1])}
         rows = suite_rows(repo_dir, source_root)
         if rows is not None:
