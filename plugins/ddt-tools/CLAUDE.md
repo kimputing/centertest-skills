@@ -9,7 +9,7 @@ Suite of 6 tools for working with CenterTest DDT (Data-Driven Testing) xlsx file
 ```
 scripts/
 ├── ddt_config.py              # Shared config — ~/.centertest/ddt-tools.json
-├── ddt_refcheck.py            # Reference-integrity engine (header forms, hops, scopes); vendored into centertest-healthcheck
+├── ddt_refcheck.py            # Engine: header forms, hops, scopes, broken refs, used_codes(); vendored into centertest-healthcheck and ddt-analyzer
 ├── ddt_reference_scope.py     # $references / $relationships resolver (mirror of the Java resolver); vendored into ddt-analyzer and centertest-healthcheck
 ├── xlsx-validate-refs.py      # CLI + report around ddt_refcheck
 ├── xlsx-diff.py               # Smart cell-level diff of xlsx against git refs
@@ -34,8 +34,8 @@ It also provides `run_with_pr_review_report(tool_name, main)` — wraps a tool's
 ## Gotchas
 
 - `ddt_refcheck.py` and `ddt_reference_scope.py` are copied byte-for-byte into
-  `centertest-healthcheck/scripts/` (rules 14003/14004); change them here and copy again —
-  `centertest-healthcheck/tests/test_ddt_rules.py` fails when the copies differ.
+  `centertest-healthcheck/scripts/` (rules 14003/14004) and `ddt-analyzer/scripts/` (Unused_Codes,
+  Code_Coverage); change them here and copy to both — each plugin has a test that fails when its copy differs.
 
 - `xlsx-validate-refs.py` loads the full hierarchy — needs `DataDrivenHierarchy.json` in testdata/
 - `xlsx-diff.py` shells out to `git show` — needs to run inside a git repo

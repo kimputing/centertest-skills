@@ -75,5 +75,47 @@ class EmptyColumnTest(unittest.TestCase):
                 os.chdir(cwd)
 
 
+
+@unittest.skipUnless(HAS_OPENPYXL, "openpyxl not installed")
+class UsedCodesTest(unittest.TestCase):
+    """A code is in use through a DC column, a relationship hop, another sheet's # column or a
+    DDTHelper call in Java. Missing any of them makes the cleanup report delete live data."""
+
+    def setUp(self):
+        import ddt_refcheck
+        from refcheck_fixture import build_project, make_xlsx
+        self.engine = ddt_refcheck
+        self.tmp = tempfile.TemporaryDirectory()
+        build_project(self.tmp.name)
+        make_xlsx(os.path.join(self.tmp.name, "testdata", "SharedData.xlsx"), {
+            "Company": [["Code", "Name"], ["Acme", "Acme Inc"], ["Zed", "Zed Ltd"], ["Javaco", "J"]],
+            "Address": [["Code", "City"], ["CA-LA", "Los Angeles"], ["NY-NYC", "New York"]],
+            "Location": [["Code", "#Address"], ["HQ", "NY-NYC"]],
+        })
+        java = os.path.join(self.tmp.name, "src", "main", "java", "com", "acme")
+        os.makedirs(os.path.join(java, "generated", "datadriven"))
+        with open(os.path.join(java, "generated", "datadriven", "DDTHelper.java"), "w") as fh:
+            fh.write('public static x.SharedData.Company getSharedDataCompany(String code) {return new x.SharedData('
+                     'new TestDataProvider().provideDataRecordAsExcelInput("testdata/SharedData.xlsx", "company", code)).getCompany();}\n')
+        with open(os.path.join(java, "SomeStep.java"), "w") as fh:
+            fh.write('class SomeStep { void run() { DDTHelper.getSharedDataCompany("Javaco"); } }\n')
+        self.cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        ddt_refcheck.reset_caches()
+
+    def tearDown(self):
+        os.chdir(self.cwd)
+        self.tmp.cleanup()
+
+    def test_every_way_of_using_a_code_counts(self):
+        used = self.engine.used_codes()
+        self.assertIn("DC column", used["company"]["Acme"])
+        self.assertEqual(used["coverage"]["Liability"], {"relationship hop"})
+        self.assertEqual(used["address"]["NY-NYC"], {"reference sheet"})
+        self.assertEqual(used["company"]["Javaco"], {"Java"})
+        self.assertNotIn("Zed", used["company"])
+        self.assertNotIn("<blank>", used["company"])  # a sentinel, not a code
+        self.assertNotIn("company.name", used)  # an override holds a value
+
 if __name__ == "__main__":
     unittest.main()

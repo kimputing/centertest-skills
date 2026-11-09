@@ -27,3 +27,4 @@ The sheet tables are in `skills/ddt-analyzer/SKILL.md` (Report output, and The f
 - Depends on `openpyxl` — check import with try/except
 - Output goes to `results/DDT_Analysis_<timestamp>.xlsx`
 - Large projects (50+ xlsx files) can take 10-30 seconds
+- `scripts/ddt_refcheck.py` is a vendored copy from ddt-tools (never edit it here): `Unused_Codes` and `Code_Coverage` use its `used_codes()`, so they match `xlsx-cleanup-unused.py` — DC columns, relationship hops, reference sheets and `DDTHelper` calls in Java all count as uses.

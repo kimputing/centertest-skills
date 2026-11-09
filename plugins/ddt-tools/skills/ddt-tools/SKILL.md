@@ -157,7 +157,11 @@ PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Sc
 
 ### 3. Report Unused Codes (`xlsx-cleanup-unused.py`) — fallback when Data Studio is unavailable
 
-Reports codes in Data files that are not referenced by any DC DataCombination sheet. This is a **report-only** tool — it never modifies files.
+Reports codes in Data files that nothing uses. This is a **report-only** tool — it never modifies files.
+A code counts as used when a DC `#Ref` column, a relationship hop (`@Submission.#Coverage`), another
+sheet's `#Ref` column (e.g. `LocationInfo.#Address`) or a `DDTHelper.getSharedDataX("code")` call in
+non-generated Java names it; the report prints how many codes each way accounts for. A code used only
+by an unused reference row is kept until that row is removed — run the report again after a cleanup.
 
 ```bash
 PYTHON=$(for c in "$HOME/.centertest/venv/bin/python" "$HOME/.centertest/venv/Scripts/python.exe" python3 python; do "$c" -c "import openpyxl" >/dev/null 2>&1 && { echo "$c"; break; }; done)

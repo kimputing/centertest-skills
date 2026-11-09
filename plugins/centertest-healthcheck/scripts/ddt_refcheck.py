@@ -18,6 +18,7 @@ is vendored into centertest-healthcheck (rules 14003/14004) so both report the s
 tests keep the copies identical.
 """
 
+import glob
 import json
 import os
 import re
@@ -551,3 +552,80 @@ def find_all_dc_files():
     files = glob.glob("testdata/**/*DC.xlsx", recursive=True) + glob.glob("testdata/*DC.xlsx")
     files = [f for f in files if not os.path.basename(f).startswith("~$")]
     return sorted(set(files))
+
+
+# --- Which reference codes are in use --------------------------------------------
+
+# A generated getter for one reference sheet: getSharedDataActivity(String code) {... provideDataRecordAsExcelInput("testdata/SharedData.xlsx", "activity", code) ...}
+_DATA_GETTER_RE = re.compile(r'public\s+static\s+[\w.]+\s+(get\w+)\s*\(\s*String\s+code\s*\)\s*\{[^\n]*?'
+                             r'provideDataRecordAsExcelInput\(\s*"([^"]+)"\s*,\s*"([^"]+)"')
+
+
+def _cells(rows, index):
+    for row in rows:
+        value = format_value(row[index]) if index < len(row) else ""
+        for code in value.split(","):
+            code = code.strip()
+            if code and not SENTINEL_RE.fullmatch(code):
+                yield code
+
+
+def used_codes(dc_files=None, source_root="src/main/java"):
+    """{normalised sheet: {code: set of ways it is used}} for every reference code in use.
+
+    Ways: "DC column" (#Ref in a DataCombination), "relationship hop" (@Rel.#Ref),
+    "reference sheet" (a #Ref column on any other sheet), "Java" (a DDTHelper getter for the
+    sheet called with that literal code outside generated code). Overrides, joins and
+    sentinels are not uses. Paths are relative to the project root (the current directory).
+    """
+    used = {}
+
+    def add(sheet, code, how):
+        used.setdefault(sheet, {}).setdefault(code, set()).add(how)
+
+    if dc_files is None:
+        dc_files = find_all_dc_files()
+    workbooks = sorted(set(dc_files) | set(glob.glob("testdata/**/*.xlsx", recursive=True)))
+    for path in workbooks:
+        if os.path.basename(path).startswith("~$"):
+            continue
+        try:
+            wb = load_workbook(path, read_only=True, data_only=True)
+        except Exception:
+            continue
+        for ws in wb.worksheets:
+            rows = list(ws.iter_rows(values_only=True))
+            rows = [r for r in rows if any(c not in (None, "") for c in r)]
+            if not rows:
+                continue
+            headers = [format_value(h) for h in rows[0]]
+            refs, _rels, hops = classify_headers(headers)
+            is_dc = ws.title.lower() == "datacombination"
+            for col in refs:
+                for code in _cells(rows[1:], headers.index(col)):
+                    add(_norm_sheet(col[1:]), code, "DC column" if is_dc else "reference sheet")
+            for col, _rel, sheet in hops:
+                for code in _cells(rows[1:], headers.index(col)):
+                    add(sheet, code, "relationship hop")
+        wb.close()
+
+    getters, java = {}, []
+    for root, _dirs, files in os.walk(source_root):
+        generated = "datadriven" in root.replace("\\", "/").split("/")
+        for name in files:
+            if not name.endswith(".java"):
+                continue
+            with open(os.path.join(root, name), encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            if generated:
+                if name == "DDTHelper.java":
+                    for m in _DATA_GETTER_RE.finditer(text):
+                        getters[m.group(1)] = _norm_sheet(m.group(3))
+            else:
+                java.append(text)
+    if getters:
+        call = re.compile(r"\b(" + "|".join(map(re.escape, getters)) + r')\(\s*"([^"]+)"\s*\)')
+        for text in java:
+            for getter, code in call.findall(text):
+                add(getters[getter], code, "Java")
+    return used
