@@ -76,5 +76,40 @@ class WeeklyTest(unittest.TestCase):
         self.assertIn("1 ×", eir_weekly.render_html([week], 7))
 
 
+    def test_a_flow_that_stops_running_is_what_the_run_lost(self):
+        os.remove(os.path.join(self.repo, "src", "main", "java", "com", "x", "tests", "AccountTest.java"))
+        with open(os.path.join(self.repo, "src", "main", "java", "com", "x", "tests", "Other.java"), "w") as fh:
+            fh.write(TEST.format(name="Other", body='Assertions.assertThat(1).isEqualTo(1);'))
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "drop account")
+        with contextlib.redirect_stdout(io.StringIO()):
+            week = eir_weekly.week_of(self.repo, self.config, 7)
+        self.assertEqual(week["flows"], ["AccountTest.run"])
+        html = eir_weekly.render_html([week], 7)
+        self.assertIn("1 lost, 0 coverages gained", html)
+        self.assertIn("flow no longer runs: AccountTest.run", html)
+
+    def test_one_cssids_for_several_projects_goes_only_to_its_own(self):
+        from unittest import mock
+        with open(os.path.join(self.repo, "src", "main", "java", "com", "x", "tests", "New.java"), "w") as fh:
+            fh.write(TEST.format(name="New", body='Assertions.assertThat(1).isEqualTo(1);'))
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "new")
+        other = os.path.join(self.tmp.name, "other-generated", "src", "main", "resources")  # another client's
+        os.makedirs(os.path.join(other, "cssids", "pc"))
+        seen = []
+        with mock.patch("eir_review.compute_review", side_effect=lambda *a: seen.append(a[-1]) or ([], {})):
+            eir_weekly.week_of(self.repo, self.config, 7, other)
+        self.assertEqual(seen, [None])  # the project finds its own generated model, not the other client's
+
+    def test_the_lost_cell_lists_every_kind(self):
+        cell = eir_weekly._lost({"flows": ["A.run"], "lost": [("GLLine", "Pollution")], "gained": 2,
+                                 "states_lost": [("CA", "NV")], "not_offered": [("CPLine", "Fraud / Limit = 20,000")]})
+        self.assertIn("4 lost, 2 coverages gained", cell)
+        for part in ("flow no longer runs: A.run", "coverage no scenario selects: GLLine: Pollution",
+                     "line no longer runs in: CA: NV", "not an option: CPLine: Fraud / Limit = 20,000"):
+            self.assertIn(part, cell)
+
+
 if __name__ == "__main__":
     unittest.main()

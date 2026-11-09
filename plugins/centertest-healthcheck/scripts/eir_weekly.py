@@ -49,7 +49,11 @@ def week_of(path: str, config, days: int, cssids: str | None = None) -> dict:
     cfg = copy.copy(config)
     cfg.repository_dir = repo
     try:
-        changes, meta = compute_review(cfg, since, head, f"{days} days ago", "HEAD", None, cssids)
+        from eir_screens import _belongs_to
+        # one --cssids for several projects: only the project it was generated for gets it (the others find
+        # their own <project>-generated); another client's model would report coverages they never had
+        own = cssids if cssids and _belongs_to(repo, cssids) else None
+        changes, meta = compute_review(cfg, since, head, f"{days} days ago", "HEAD", None, own)
     except Exception as e:  # one broken project must not hide the others
         return dict(out, error=f"{type(e).__name__}: {e}")
     line, code = verdict(changes)
@@ -62,8 +66,25 @@ def week_of(path: str, config, days: int, cssids: str | None = None) -> dict:
         gained=sum(len(c["gained"]) for c in meta.get("coverage") or []),
         rows=sum(len(d["added"]) + len(d["changed"]) + len(d["removed"]) for d in meta.get("data") or []),
         rerun=len(meta.get("rerun") or []), changed=meta.get("changed", 0), scope=meta.get("scope"),
-        authors=_authors(meta.get("blame") or {}))
+        authors=_authors(meta.get("blame") or {}),
+        flows=[s["test"] for s in (meta.get("scope") or {}).get("flows_stopped") or []],
+        states_lost=[(s["line"], j) for s in meta.get("states") or [] for j in s["lost"]],
+        not_offered=[(c["line"], f'{n["coverage"]} / {n["term"]} = {n["value"]}')
+                     for c in meta.get("coverage") or [] for n in c.get("not_offered") or []])
     return out
+
+
+def _lost(w: dict) -> str:
+    """'What the run lost' cell: flows that no longer run, coverages no scenario selects, jurisdictions a line
+    no longer runs in, and term values the product does not offer, newest damage first."""
+    parts = [("flow no longer runs", [f for f in w.get("flows", [])]),
+             ("coverage no scenario selects", [f"{l}: {c}" for l, c in w.get("lost", [])]),
+             ("line no longer runs in", [f"{l}: {j}" for l, j in w.get("states_lost", [])]),
+             ("not an option", [f"{l}: {v}" for l, v in w.get("not_offered", [])])]
+    total = sum(len(items) for _k, items in parts)
+    detail = "".join(f'<div class="kind">{_html_escape(kind)}: {_html_escape(", ".join(items[:4]))}'
+                     f'{" +" + str(len(items) - 4) if len(items) > 4 else ""}</div>' for kind, items in parts if items)
+    return (f'<td class="num {"bad" if total else ""}">{total} lost, {w["gained"]} coverage{"" if w["gained"] == 1 else "s"} gained{detail}</td>')
 
 
 def _scope(w: dict) -> str:
@@ -90,13 +111,11 @@ def render_html(weeks: list[dict], days: int) -> str:
         if w.get("authors"):
             blockers += '<div class="kind">introduced by ' + ", ".join(
                 f"{_html_escape(a)} ({n})" for a, n in w["authors"]) + "</div>"
-        lost = "".join(f'<div class="kind">{_html_escape(l)}: {_html_escape(c)}</div>' for l, c in w["lost"][:6])
-        lost += f'<div class="kind">+{len(w["lost"]) - 6} more</div>' if len(w["lost"]) > 6 else ""
         rows.append(
             f'<tr>{name}<td class="num">{w["landed"]}<div class="kind">{w["since"]}..{w["head"]}</div></td>'
             f'<td class="{"bad" if w["blocked"] else "ok"}">{_html_escape(w["verdict"])}{blockers}</td>'
             f'<td class="num">+{w["added"]} / −{w["fixed"]}</td>'
-            f'<td class="num {"bad" if w["lost"] else ""}">{len(w["lost"])} lost, {w["gained"]} gained{lost}</td>'
+            f'{_lost(w)}'
             f'<td class="num">{w["rows"]}</td><td class="num">{_scope(w)}</td><td class="num">{w["rerun"]}</td></tr>')
     busy = [w for w in weeks if w.get("verdict")]
     return f"""<!DOCTYPE html>
@@ -125,7 +144,7 @@ def render_html(weeks: list[dict], days: int) -> str:
 ago against HEAD, run through the branch review; projects were only read. Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <div class="table"><table>
 <thead><tr><th>Suite</th><th class="num">Commits</th><th>Verdict</th><th class="num">Findings added / fixed</th>
-<th class="num">Product coverage</th><th class="num">Data rows changed</th><th class="num">Scenarios per run</th>
+<th class="num">What the run lost</th><th class="num">Data rows changed</th><th class="num">Scenarios per run</th>
 <th class="num">Tests to rerun</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></div>
 </div></body></html>
@@ -147,9 +166,12 @@ def print_weekly(weeks: list[dict], days: int) -> None:
                 print(f"  {'':<28} !! {n} x {t}")
             if w.get("authors"):
                 print(f"  {'':<28}    introduced by " + ", ".join(f"{a} ({n})" for a, n in w["authors"]))
-            if w["lost"]:
-                print(f"  {'':<28} -- coverages no scenario selects any more: "
-                      + ", ".join(f"{l}: {c}" for l, c in w["lost"][:4]) + (" ..." if len(w["lost"]) > 4 else ""))
+            for label, items in (("flows that no longer run", w.get("flows", [])),
+                                 ("coverages no scenario selects any more", [f"{l}: {c}" for l, c in w["lost"]]),
+                                 ("lines no longer run in", [f"{l}: {j}" for l, j in w.get("states_lost", [])]),
+                                 ("values not an option", [f"{l}: {v}" for l, v in w.get("not_offered", [])])):
+                if items:
+                    print(f"  {'':<28} -- {label}: " + ", ".join(items[:4]) + (" ..." if len(items) > 4 else ""))
             s = w.get("scope") or {}
             print(f"  {'':<28} findings +{w['added']}/-{w['fixed']}, data rows {w['rows']}, rerun {w['rerun']} test(s)"
                   + (f", scenarios {s['before']} -> {s['after']} ({len(s['removed'])} removed, "

@@ -189,10 +189,12 @@ changes or an upgrade touches a wizard. Offer the suite through `suite-builder`,
 ```
 
 Per suite: the mainline commit `--days` ago against HEAD through the branch review — commits landed,
-verdict, new trust blockers by kind, findings added/fixed, product coverages no scenario selects any
-more, data rows changed and tests to rerun; quiet suites say so. Reads the projects only; page in
-`~/.centertest/reports/Weekly_<timestamp>.html`. Report the suites with new trust blockers or lost
-coverages first; offer `--review <sha> HEAD` on one suite for its full PR-style comment.
+verdict, new trust blockers by kind, findings added/fixed, **what the run lost** (flows that no longer
+run, product coverages no scenario selects any more, jurisdictions a line no longer runs in, term values
+that are not an option), data rows changed and tests to rerun; quiet suites say so. One `--cssids` goes
+only to the project it was generated for; the others use their own `<project>-generated`. Reads the
+projects only; page in `~/.centertest/reports/Weekly_<timestamp>.html`. Report the suites with new trust
+blockers or anything lost first; offer `--review <sha> HEAD` on one suite for its full PR-style comment.
 
 ### Portfolio (every client suite on one page)
 
