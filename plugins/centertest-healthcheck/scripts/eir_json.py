@@ -9,7 +9,7 @@ Health check schema (additive only: new keys may appear, existing keys keep thei
    trust: {blockers: [{rule_id, title, consequence, count, samples: [label], locations: [path:line], dormant}],
            not_checked: [rule id], dormant: <findings in data no test runs>},
    rules: [{id, description, category, severity, error, headers, rows}],
-   data, screens, products, since}
+   data, screens, products, since, states: [{line, states: {code: scenarios}, elsewhere}]}
 """
 
 from __future__ import annotations
@@ -40,7 +40,8 @@ def _plain(value):
     return str(value)
 
 
-def health_json(results, project: str, files: int, data=None, screens=None, products=None, since=None) -> dict:
+def health_json(results, project: str, files: int, data=None, screens=None, products=None, since=None,
+                states=None) -> dict:
     from eir_report import health_score, severity_of, trust_blockers
     blockers, not_checked, dormant = trust_blockers(results)
     return {
@@ -51,6 +52,7 @@ def health_json(results, project: str, files: int, data=None, screens=None, prod
                    "severity": severity_of(r), "error": r.error, "headers": _plain(r.headers),
                    "rows": _plain(r.rows)} for r in results],
         "data": _plain(data), "screens": _plain(screens), "products": _plain(products), "since": _plain(since),
+        "states": _plain(states),
     }
 
 

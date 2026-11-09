@@ -46,7 +46,9 @@ The terminal summary ends with the trust blockers, the test data, the screens an
    product's coverages the test data names (lowest first; name the coverages a well-covered line misses),
    how many of their option terms' options (limits, deductibles) the scenarios use, and every **term value
    that is not an option in the product model** (`Coverage / Term = value (options: ...)`) — the dropdown
-   offers no such value, so say which data row to correct.
+   offers no such value, so say which data row to correct. Then the **jurisdictions** (states or provinces)
+   each line's scenarios run in, and for a line with few, the ones the suite uses on other lines but never
+   on it (`not here, on other lines`) — state-specific rules and forms of that line nobody exercises.
 4. **Offer the next step that fits** (and run it only when asked):
    discarded `.equals()` → `--fix 15018` (diff first); suite entries that run nothing → the
    `suite-builder` skill's `doctor`; unused codes → `ddt-tools` cleanup report; a branch to merge →

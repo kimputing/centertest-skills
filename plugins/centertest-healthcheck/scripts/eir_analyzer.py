@@ -320,7 +320,7 @@ def main():
     elapsed = time.time() - start_time
     project_name = os.path.basename(config.repository_dir)
 
-    screens = data = products = since = None
+    screens = data = products = states = since = None
     if not config.has_git_options():
         from eir_data import data_overview
         data = data_overview(config.repository_dir, config.source_root, results)
@@ -329,13 +329,16 @@ def main():
         screens = screen_coverage(config.repository_dir, config.source_root, cssids) if cssids else []
         from eir_products import product_coverage
         products = product_coverage(config.repository_dir, cssids, config.source_root)
+        from eir_states import state_coverage
+        states = state_coverage(config.repository_dir, cssids)
         from eir_since import since_last, snapshot
         since = since_last(output_dir, snapshot(results, total_files, data, products))
 
     # Excel first (appendix — referenced by HTML)
     excel_filename = ""
     if "excel" in config.output_formats:
-        filepath = generate_excel(results, output_dir, total_files=total_files, data=data, products=products)
+        filepath = generate_excel(results, output_dir, total_files=total_files, data=data, products=products,
+                                  states=states)
         if filepath:
             excel_filename = os.path.basename(filepath)
             generated.append(filepath)
@@ -353,6 +356,7 @@ def main():
             screens=screens,
             data=data,
             products=products,
+            states=states,
             since=since,
         )
         if filepath:
@@ -360,7 +364,7 @@ def main():
             print(f"  HTML:     {filepath}")
 
     from eir_json import emit, health_json, write
-    doc = health_json(results, project_name, total_files, data, screens, products, since)
+    doc = health_json(results, project_name, total_files, data, screens, products, since, states)
     emit(doc)
     if "json" in config.output_formats:
         filepath = write(doc, output_dir, "HealthCheck")
@@ -384,6 +388,9 @@ def main():
         if products:
             from eir_products import print_products
             print_products(products)
+        if states:
+            from eir_states import print_states
+            print_states(states)
         if since:
             from eir_since import print_since
             print_since(since)

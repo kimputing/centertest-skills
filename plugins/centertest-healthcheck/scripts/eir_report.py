@@ -98,7 +98,7 @@ def _verdict_sheet(wb, results: list[RuleResult], total_files: int, data) -> Non
 
 
 def generate_excel(results: list[RuleResult], output_dir: str, total_files: int = 0, data=None,
-                   products=None) -> str:
+                   products=None, states=None) -> str:
     """Generate an Excel report: a Verdict sheet first, then the summary and one sheet per rule."""
     if Workbook is None:
         print("  Warning: openpyxl not installed, skipping Excel output.", file=sys.stderr)
@@ -207,6 +207,18 @@ def generate_excel(results: list[RuleResult], output_dir: str, total_files: int 
                 ws.cell(row=r, column=col, value=value)
         for letter, width in zip("ABCDEFG", (22, 60, 20, 10, 60, 80, 80)):
             ws.column_dimensions[letter].width = width
+        ws.auto_filter.ref = ws.dimensions
+
+    if states:
+        from eir_states import excel_rows as state_rows
+        ws = wb.create_sheet(title="States")
+        for col, header in enumerate(["Line", "State", "Scenarios"], 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        for r, values in enumerate(state_rows(states), 2):
+            for col, value in enumerate(values, 1):
+                ws.cell(row=r, column=col, value=value)
         ws.auto_filter.ref = ws.dimensions
 
     # Save
@@ -706,6 +718,33 @@ def _products_panel_html(lines) -> str:
             f'<div class="app-grid">{"".join(cards)}</div></div>\n')
 
 
+def _states_panel_html(lines) -> str:
+    """'States the scenarios run in': per line, the states its scenarios' data names, and the states the
+    suite uses on other lines but never on this one."""
+    if not lines:
+        return ""
+    every = set().union(*(l["states"] for l in lines))
+    cards = []
+    for l in lines:
+        chips = "".join(f'<span class="chip on" title="{n} scenario{"s" if n != 1 else ""}">{_html_escape(s)}</span>'
+                        for s, n in l["states"].items())
+        gap = "".join(f'<span class="chip">{_html_escape(s)}</span>' for s in l["elsewhere"])
+        cards.append(
+            f'<div class="app-card"><div class="app-name">{_html_escape(l["line"])}</div>'
+            f'<div class="app-big">{len(l["states"])}<small> of {len(every)} jurisdictions the suite uses</small></div>'
+            f'<div class="app-bar"><i style="width:{len(l["states"]) / len(every) * 100:.0f}%"></i></div>'
+            f'<div class="chips">{chips}</div>'
+            + (f'<details class="more"><summary>{len(l["elsewhere"])} used on other lines, never here</summary>'
+               f'<div class="chips">{gap}</div></details>' if gap else "")
+            + "</div>")
+    return ('  <div class="screens"><h2>Jurisdictions the scenarios run in</h2>'
+            '<p class="screens-note">Per line of business (the DataCombination workbook\'s prefix): the states or provinces a row '
+            'an enabled scenario reaches names in a State, Jurisdiction or Governing Law column, by the Jurisdiction '
+            'typelist\'s code or name. Addresses count too. Hover one for its scenarios; every line and jurisdiction is '
+            'in the Excel sheet "States".</p>'
+            f'<div class="app-grid">{"".join(cards)}</div></div>\n')
+
+
 def _data_panel_html(d) -> str:
     """'Test data': scenarios a full run executes, unread workbooks, unused codes, broken references."""
     if not d:
@@ -735,7 +774,8 @@ def _data_panel_html(d) -> str:
 def generate_html(results: list[RuleResult], output_dir: str,
                   project_name: str = "", total_files: int = 0,
                   elapsed: float = 0, excel_filename: str = "",
-                  suppressed_count: int = 0, screens=None, data=None, products=None, since=None) -> str:
+                  suppressed_count: int = 0, screens=None, data=None, products=None, since=None,
+                  states=None) -> str:
     """Generate a dashboard-style HTML health check report. screens: eir_screens.screen_coverage()
     output, [] when the generated cssids were not found, None when not measured."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1053,6 +1093,7 @@ def generate_html(results: list[RuleResult], output_dir: str,
     html += _data_panel_html(data)
     html += _screens_panel_html(screens)
     html += _products_panel_html(products)
+    html += _states_panel_html(states)
 
     html += _fix_order_html(results)
 
