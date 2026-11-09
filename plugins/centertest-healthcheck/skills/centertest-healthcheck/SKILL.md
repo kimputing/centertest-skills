@@ -1,6 +1,6 @@
 ---
 name: centertest-healthcheck
-description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "which tests use this coverage", "what exercises <coverage/product/state>", "the product changed <coverage>, what do I rerun", "which tests touch this screen", "the <screen> changed, what do I rerun", "how many scenarios do we run", "compare my clients", "all my suites", "portfolio", "what is not covered", "health trend", "is the suite getting better", "fix the silent assertions", "fix checks that cannot fail", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
+description: Run a health check on CenterTest Java projects — analyze code quality, test automation patterns, and framework compliance. Generates Excel reports with configurable rules. Use when the user says "health check", "run healthcheck", "code quality report", "check CenterTest compliance", "find code smells", "analyze test classes", "code statistics", "test quality report", "CenterTest code review", "review this branch", "review the PR", "what did this branch introduce", "is this branch safe to merge", "what should I rerun for this branch", "which tests does this PR affect", "which screens do we test", "which tests use this coverage", "what exercises <coverage/product/state>", "the product changed <coverage>, what do I rerun", "which tests touch this screen", "the <screen> changed, what do I rerun", "how many scenarios do we run", "compare my clients", "what landed this week", "weekly report across clients", "what changed in my suites", "all my suites", "portfolio", "what is not covered", "health trend", "is the suite getting better", "fix the silent assertions", "fix checks that cannot fail", "monthly quality report", or wants code metrics, naming conventions, duplicate detection, XPath usage, variable substitutions, cyclomatic complexity, or security analysis.
 ---
 
 # centertest-healthcheck
@@ -124,6 +124,18 @@ generated cssids like cssid-finder does). Prints per
 page the tests that reach it (the review's reach: per method, through facades, steps and fields inherited
 from a base class) and a `Touches-<Pattern>` suite with its command. Use it when a Guidewire screen (PCF)
 changes or an upgrade touches a wizard. Offer the suite through `suite-builder`, as for `--uses`.
+
+### Weekly (what landed in every client suite)
+
+```bash
+"$PYTHON" "${CLAUDE_PLUGIN_ROOT}/scripts/eir_analyzer.py" --weekly /path/to/suiteA /path/to/suiteB --days 7
+```
+
+Per suite: the mainline commit `--days` ago against HEAD through the branch review — commits landed,
+verdict, new trust blockers by kind, findings added/fixed, product coverages no scenario selects any
+more, data rows changed and tests to rerun; quiet suites say so. Reads the projects only; page in
+`~/.centertest/reports/Weekly_<timestamp>.html`. Report the suites with new trust blockers or lost
+coverages first; offer `--review <sha> HEAD` on one suite for its full PR-style comment.
 
 ### Portfolio (every client suite on one page)
 

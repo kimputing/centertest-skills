@@ -430,6 +430,21 @@ def run_review(config, base_rev: str, head_rev: str, suppressions, cssids: str |
     if start is None:
         print(f"ERROR: {base_rev} and {head_rev} have no common history", file=sys.stderr)
         return 2
+    changes, meta = compute_review(config, start, head_sha, base_rev, head_rev, suppressions, cssids)
+    out_dir = os.path.join(repo, "healthcheck")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(render_markdown(changes, meta))
+    print_review(changes, meta)
+    print(f"  PR comment: {path}\n")
+    return verdict(changes)[1]
+
+
+def compute_review(config, start: str, head_sha: str, base_rev: str, head_rev: str, suppressions,
+                   cssids: str | None = None) -> tuple[list[dict], dict]:
+    """(finding changes, meta) between two commits; reads the repository only (git archive to a temp dir)."""
+    repo = config.repository_dir
     paths = [config.source_root, "testdata"]
     import suite as suites
     suite_file = suites.find_suite_file(repo)
@@ -468,11 +483,4 @@ def run_review(config, base_rev: str, head_rev: str, suppressions, cssids: str |
             "suites": suites_changed, "coverage": coverage,
             "rerun_suite": {"name": suite_name, "entries": suite_entries, "idle": idle,
                             "command": suite_command(repo, suite_name)} if suite_entries else None}
-    out_dir = os.path.join(repo, "healthcheck")
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(render_markdown(changes, meta))
-    print_review(changes, meta)
-    print(f"  PR comment: {path}\n")
-    return verdict(changes)[1]
+    return changes, meta

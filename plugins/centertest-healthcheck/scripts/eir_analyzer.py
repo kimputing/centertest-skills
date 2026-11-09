@@ -112,6 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Which tests touch a screen: regex over the generated page classes the project uses "
                         "(e.g. PolicyChangeWizard), or Page.getWidget for one widget; prints the tests and a "
                         "suite that runs them")
+    p.add_argument("--weekly", nargs="+", metavar="PROJECT",
+                   help="What landed in each suite in the last --days days (default 7): verdict, new trust "
+                        "blockers, coverages lost, data rows, tests to rerun; reads the projects only; page in "
+                        "~/.centertest/reports/")
+    p.add_argument("--days", type=int, default=7, help="With --weekly: how many days back (default 7)")
     p.add_argument("--review", nargs="+", metavar="REV",
                    help="Branch review: BASE [HEAD] (HEAD defaults to HEAD). Lists only the findings "
                         "the branch introduced or fixed since its merge-base, writes a PR comment and "
@@ -190,6 +195,13 @@ def main():
             config.ruleset = "CenterTestFull"  # a portfolio compares complete verdicts
         print(f"\n  CenterTest portfolio: {len(args.portfolio)} project(s), rules {config.ruleset}")
         sys.exit(run_portfolio(config, args.portfolio))
+
+    if args.weekly:
+        from eir_weekly import run_weekly
+        if not args.ruleset and not args.rules:
+            config.ruleset = "CenterTestFull"
+        print(f"\n  CenterTest weekly: {len(args.weekly)} project(s), last {args.days} days")
+        sys.exit(run_weekly(config, args.weekly, args.days, args.cssids))
 
     if args.uses:
         from eir_impact import suite_command

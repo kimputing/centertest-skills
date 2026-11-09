@@ -10,6 +10,7 @@ scripts/
 ├── eir_git.py           # Non-destructive git (git show/ls-tree, no checkout)
 ├── eir_models.py        # Dataclasses: SourceCodeFile, ClassEntry, Method, Field, CommitInfo, RuleResult
 ├── eir_report.py        # HTML dashboard + Excel appendix + Markdown + terminal output
+├── eir_weekly.py       # --weekly: per project, mainline commit N days ago vs HEAD through eir_review.compute_review (read only)
 ├── eir_portfolio.py     # --portfolio: several projects, read only, one comparison page in ~/.centertest/reports/
 ├── eir_trend.py         # --trend: month-end mainline commits via git archive -> score/blockers/tests chart page
 ├── eir_locate.py        # Adds Location (path:line) to rows with a Class column; HTML renders idea:// links
