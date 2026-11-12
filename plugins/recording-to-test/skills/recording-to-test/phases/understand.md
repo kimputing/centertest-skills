@@ -98,7 +98,7 @@ A recording made with **Record my voice** has spoken notes. `ct.py parse` transc
 
 | `plan.narration.source` | Meaning | What to do |
 |---|---|---|
-| `transcript` | the recorder wrote a transcript next to the audio | use the utterances |
+| `transcript` | a transcript file was next to the audio (the scrubber writes them; the Recorder does not) | use the utterances |
 | `whisper` | transcribed on this machine with ffmpeg and whisper.cpp | use the utterances |
 | `none` | no voice was recorded | nothing |
 | `unavailable` | there is audio, but it could not be read | show `reason`; ask for the key points |

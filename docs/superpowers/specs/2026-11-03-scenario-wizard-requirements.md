@@ -85,11 +85,13 @@ test stays green. Kimputing makes every engine change (§3).
 
 The Recorder stores narration only when **Record my voice** is on: `audio/*.webm` (WebM/Opus,
 32 kbit/s), one file per uninterrupted stretch, listed in `session.json` as
-`audio: [{f, t}]` with `t` = ms since `startedAt`. Each step has an absolute `time`. There is no
-transcript today, and the video (`video/*.jpg` frames) has no sound.
+`audio: [{f, t}]` with `t` = ms since `startedAt`. Each step has an absolute `time`. The Recorder
+writes no transcript (kimputing/centertest-recorder#101, not planned: no speech model may be
+downloaded on client machines), and the video (`video/*.jpg` frames) has no sound.
 
-- **Both sources:** use a transcript written by the Recorder when present (new Recorder feature,
-  §10); otherwise transcribe locally with ffmpeg + whisper.cpp. Audio never leaves the machine.
+- **Local transcription:** transcribe locally with ffmpeg + whisper.cpp. A transcript file next to
+  the audio (`audio/<stem>.transcript.json`, as the scrubber writes for fixtures) is used when
+  present. Audio never leaves the machine.
 - The engine checks the tools are installed and gives install steps per OS when they aren't; without
   them the wizard says the narration can't be read and asks the user for the key points.
 - Each utterance is mapped to the step on screen at its time (`seg.t + offset` against step
@@ -230,7 +232,6 @@ caller of a changed base is listed in the plan and gets a **regression run** in 
 
 | Repo | Change |
 |---|---|
-| `centertest-recorder` | Write a transcript (with timestamps) next to each `audio/*.webm` (§5.3) |
 | The client project with `new-scenario` | `.claude/client-profile.md` from its existing profile, with the `setCustom` rule corrected (§8); enable the plugin in `.claude/settings.json`; retire `.claude/skills/new-scenario` once the wizard passes two of that client's recordings |
 | Each other client | `.claude/client-profile.md` created on first use; `standardsSkill` set where the client has its own review skill |
 
