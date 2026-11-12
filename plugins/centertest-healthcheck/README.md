@@ -31,7 +31,7 @@ python3 -m venv ~/.centertest/venv && ~/.centertest/venv/bin/python -m pip insta
 
 ## Features
 
-- **20+ analysis rules** — code statistics, naming conventions, complexity, security, CenterTest compliance
+- **96 analysis rules** — code statistics, naming, complexity, security, CenterTest compliance, restart points, layering, assertions that check nothing, flakiness, generated getters and typelists, data hardcoded in Java, exceptions, dead code, real Java bugs, roles without a user, suite and workbook hygiene
 - **Excel + HTML + Markdown reports** — summary sheet with one detail sheet per rule, plus a scored HTML dashboard
 - **Branch review** — `--review main feature/x` lists only what the branch introduced or fixed, writes a PR comment that says under its verdict what the run loses (flows, coverages, options, jurisdictions), exits 1 on a new trust blocker, names product coverages and limit/deductible options no scenario selects any more and term values it introduces that are not an option in the product model, and the states a line's scenarios no longer run in; its rerun plan comes as one suite (`Rerun-<sha>`, changed rows only) and one command
 - **Screens the suite opens** — wizards and screens per application, and the wizards no test opens

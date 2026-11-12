@@ -8,7 +8,9 @@ Health check schema (additive only: new keys may appear, existing keys keep thei
   {schema, tool, generated, project, score, files,
    trust: {blockers: [{rule_id, title, consequence, count, samples: [label], locations: [path:line], dormant}],
            not_checked: [rule id], dormant: <findings in data no test runs>},
-   rules: [{id, description, category, severity, error, headers, rows}],
+   rules: [{id, description, category, severity, error, headers, rows, items}],
+     items: every finding of a rule that reports grouped sections (1002-1004, 2001, 2002, 3001, 4001, 4002),
+     as "Section > Subsection > item" strings; [] for table rules
    data, screens, products, since, states: [{line, states: {code: scenarios}, elsewhere}],
    suites: [{suite, scenarios, test, coverage, jurisdiction}] (first row "(full run)")}
 """
@@ -51,10 +53,21 @@ def health_json(results, project: str, files: int, data=None, screens=None, prod
         "trust": {"blockers": _plain(blockers), "not_checked": _plain(not_checked), "dormant": _plain(dormant)},
         "rules": [{"id": r.rule_id, "description": r.description, "category": r.category,
                    "severity": severity_of(r), "error": r.error, "headers": _plain(r.headers),
-                   "rows": _plain(r.rows)} for r in results],
+                   "rows": _plain(r.rows), "items": section_items(r.sections)} for r in results],
         "data": _plain(data), "screens": _plain(screens), "products": _plain(products), "since": _plain(since),
         "states": _plain(states), "suites": _plain(suites),
     }
+
+
+def section_items(sections, trail: str = "") -> list:
+    """Every item (and every row of a section table) of grouped sections, prefixed with its section path."""
+    out = []
+    for sec in sections or []:
+        path = f"{trail} > {sec.title}" if trail else str(sec.title)
+        out += [f"{path} > {item}" for item in sec.items]
+        out += [f"{path} > " + " | ".join(str(c) for c in row) for row in sec.rows]
+        out += section_items(sec.subsections, path)
+    return out
 
 
 def review_json(changes, meta) -> dict:

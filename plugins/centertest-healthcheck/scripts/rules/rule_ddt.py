@@ -51,31 +51,20 @@ def datasource_file_check(commits: CommitsDict, config) -> RuleResult:
             mc = f.main_class
             if mc is None:
                 continue
-
-            # Scan method bodies and annotations for @DataDriven
-            for method in mc.methods:
-                # Check method annotations — javalang extracts annotation names
-                # but not parameters, so we need to scan the body text too
-                datasource = None
-
-                # Search in method body for the full annotation with datasource param
-                if method.body:
-                    m = _DATASOURCE_RE.search(method.body)
-                    if m:
-                        datasource = m.group(1)
-
-                if datasource is None:
+            # The parser keeps annotation arguments (method bodies start at "{" and never hold them).
+            targets = [(mc.class_name, "(class)", mc.annotation_args.get("DataDriven", {}))]
+            for inner in [mc] + list(f.inner_classes):
+                label = mc.class_name if inner is mc else f"{mc.class_name}.{inner.class_name}"
+                if inner is not mc:
+                    targets.append((label, "(class)", inner.annotation_args.get("DataDriven", {})))
+                for method in inner.methods:
+                    targets.append((label, method.name, method.annotation_args.get("DataDriven", {})))
+            for label, method_name, args in targets:
+                datasource = args.get("datasource") or args.get("value")
+                if not isinstance(datasource, str) or not datasource:
                     continue
-
-                # Check if file exists
-                full_path = os.path.join(repo_dir, datasource)
-                if not os.path.isfile(full_path):
-                    result.rows.append([
-                        mc.class_name,
-                        method.name,
-                        datasource,
-                        "File not found",
-                    ])
+                if not os.path.isfile(os.path.join(repo_dir, datasource)):
+                    result.rows.append([label, method_name, datasource, "File not found"])
 
     return result
 

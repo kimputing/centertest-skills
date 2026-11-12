@@ -22,6 +22,8 @@ class Field:
     type: str
     modifiers: list[str] = field(default_factory=list)
     annotations: list[str] = field(default_factory=list)
+    line: int = 0              # 1-based declaration line (0 = unknown); not part of equality
+    initializer: str = ""      # source text after "=" up to ";" (first declarator), "" when none
 
     def __eq__(self, other):
         return isinstance(other, Field) and (self.name, self.type) == (other.name, other.type)
@@ -37,6 +39,12 @@ class Method:
     modifiers: list[str] = field(default_factory=list)
     annotations: list[str] = field(default_factory=list)
     body: str = ""
+    # Not part of equality (rules 2001/2002 compare name + body only):
+    line: int = 0                                      # 1-based declaration line (0 = unknown)
+    annotation_args: dict = field(default_factory=dict)  # {"CenterTestCase": {"testCaseId": "X"}}; literal values only
+    parameters: list = field(default_factory=list)       # [(type, name)]
+    return_type: str = ""                                 # "" for void and constructors
+    is_constructor: bool = False
 
     def __eq__(self, other):
         return isinstance(other, Method) and (self.name, self.body) == (other.name, other.body)
@@ -61,6 +69,10 @@ class ClassEntry:
     interfaces: list[str] = field(default_factory=list)  # simple names, not FQN
     annotations: list[str] = field(default_factory=list)  # simple annotation names
     method_count: int = 0
+    # Not part of equality (rule 2002 compares structure only):
+    line: int = 0                                         # 1-based declaration line (0 = unknown)
+    annotation_args: dict = field(default_factory=dict)  # {"DataDriven": {"datasource": "testdata/x.xlsx"}}
+    kind: str = "class"                                   # class | interface | enum
 
     def __eq__(self, other):
         if not isinstance(other, ClassEntry):
@@ -103,6 +115,9 @@ class SourceCodeFile:
     blank_lines: int = 0
     comment_lines: int = 0
     cannot_compile: bool = False
+    parse_error: str = ""       # why javalang could not parse it (cannot_compile); bodies then come from a regex fallback
+    source: str = ""            # the file's text, so rules never re-read the path (it may not be on disk in git modes)
+    other_types: list[ClassEntry] = field(default_factory=list)  # top-level interfaces/enums (facades, RestartPoints)
 
     def is_test_class(self) -> bool:
         """Check if this file contains a CenterTest or ScenarioContainer class."""

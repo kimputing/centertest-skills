@@ -32,6 +32,8 @@ _STRING_EQ_RE2 = re.compile(r'"\s*==\s*\w+')
 
 # Pattern for empty catch blocks
 _EMPTY_CATCH_RE = re.compile(r"catch\s*\([^)]+\)\s*\{\s*\}", re.DOTALL)
+# A catch block that holds only comments swallows the exception just like an empty one.
+_COMMENT_ONLY_CATCH_RE = re.compile(r"catch\s*\([^)]+\)\s*\{(?:\s*(?://[^\n]*|/\*.*?\*/))*\s*\}", re.DOTALL)
 
 
 @rule(id="15001", description="Potential null pointer risks", category="Quality")
@@ -216,14 +218,15 @@ def empty_catch_blocks(commits: CommitsDict, config) -> RuleResult:
             for method in mc.methods:
                 if not method.body:
                     continue
-                if _EMPTY_CATCH_RE.search(method.body):
+                if _EMPTY_CATCH_RE.search(method.body) or _COMMENT_ONLY_CATCH_RE.search(method.body):
                     result.rows.append([mc.class_name, method.name])
 
     return result
 
 
 # Pattern for variable declarations: var x = ...; or Type x = ...;
-_VAR_DECL_RE = re.compile(r'(?:var|final\s+\w+|\w+(?:<[^>]+>)?)\s+(\w+)\s*=')
+_VAR_DECL_RE = re.compile(r'(?:var|final\s+\w+|\w+(?:<[^>]+>)?)\s+(\w+)\s*=(?!=)')
+_NOT_A_TYPE = {"return", "throw", "new", "else", "case", "yield", "assert", "await"}
 
 
 @rule(id="15006", description="Unused variable detection", category="Quality")
@@ -256,7 +259,7 @@ def unused_variables(commits: CommitsDict, config) -> RuleResult:
                 for i, line in enumerate(lines):
                     stripped = line.strip()
                     m = _VAR_DECL_RE.search(stripped)
-                    if not m:
+                    if not m or stripped.split(None, 1)[0] in _NOT_A_TYPE:
                         continue
                     var_name = m.group(1)
                     if var_name in skip_names or len(var_name) <= 1:

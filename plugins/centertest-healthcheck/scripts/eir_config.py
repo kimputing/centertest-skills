@@ -27,21 +27,43 @@ DEFAULT_RULESETS = {
     "Methods":           ["4001", "4002"],
     "Full":              ["0001", "0002", "1001", "1002", "1003", "1004",
                           "2001", "2002", "3001", "4001", "4002"],
-    "CenterTest":        ["9001", "9003", "9005", "9007", "9008", "9010", "9011", "3001"],
+    "CenterTest":        ["9001", "9003", "9005", "9007", "9008", "9010", "9011", "9012", "9013", "9014", "3001"],
     "DDT":               ["14002", "14003", "14004", "14005"],
     "Quality":           ["5001", "5002", "15001", "15002", "15004", "15006", "15016", "15017", "15018", "7001"],
     "Security":          ["7001"],
-    "CenterTestFull":    ["0001", "0002", "1001", "1002", "1003", "1004",
+    "Restart":           ["16001", "16002", "16003", "16004"],
+    "Architecture":      ["17001", "17002", "17003", "17004", "17005", "17006", "17007", "17008", "17009"],
+    "Assertions":        ["18001", "18002", "18003", "18004", "18005", "18006"],
+    "Flakiness":         ["19001", "19002", "19003", "19004", "19005"],
+    "Widgets":           ["20001", "20002", "20003", "20004"],
+    "TestData":          ["21001", "21002", "21003", "21004", "21005", "21006"],
+    "Exceptions":        ["22001", "22002", "22003", "22004", "22005"],
+    "DeadCode":          ["23001", "23002", "23003", "23004", "23005", "23006", "23007"],
+    "Bugs":              ["24001", "24002", "24003", "24004"],
+    "Config":            ["25001"],
+    "Suites":            ["26001", "26002", "26003", "26004"],
+    "Workbooks":         ["27001", "27002", "27003", "27004"],
+    "CenterTestFull":    ["0001", "0002", "0003", "1001", "1002", "1003", "1004",
                           "2001", "2002", "3001", "4001", "4002",
                           "5001", "5002", "7001",
                           "9001", "9003", "9005", "9007", "9008", "9010", "9011",
                           "14002", "14003", "14004", "14005",
-                          "15001", "15002", "15004", "15005", "15006", "15016", "15017", "15018"],
+                          "15001", "15002", "15004", "15005", "15006", "15016", "15017", "15018",
+                          # issue #47: test identity, restart points, layering, assertions, flakiness, widgets,
+                          # test data in code, exceptions, dead code, bugs, config, suites, workbooks
+                          "9012", "9013", "9014", "16001", "16002", "16003", "16004", "17001",
+                          "17002", "17003", "17004", "17005", "17006", "17007", "17008", "17009",
+                          "18001", "18002", "18003", "18004", "18005", "18006", "19001", "19002",
+                          "19003", "19004", "19005", "20001", "20002", "20003", "20004", "21001",
+                          "21002", "21003", "21004", "21005", "21006", "22001", "22002", "22003",
+                          "22004", "22005", "23001", "23002", "23003", "23004", "23005", "23006",
+                          "23007", "24001", "24002", "24003", "24004", "25001", "26001", "26002",
+                          "26003", "26004", "27001", "27002", "27003", "27004"],
 }
 
 # Default threshold values for configurable rules
 DEFAULT_THRESHOLDS = {
-    "4001": 2,   # variable substitution: min occurrences
+    "4001": 3,   # variable substitution: min occurrences (2 drowned real findings in noise)
     "4002": 2,   # duplicate row selection: min occurrences
     "5001": 10,  # cyclomatic complexity threshold
     "5002": 50,  # method length threshold (lines)
@@ -129,6 +151,7 @@ class EirConfig:
         self.max_commits = 24
         self.compat_comment_lines = True  # bug-compatible with Eir
         self.thresholds = dict(DEFAULT_THRESHOLDS)
+        self.cssids = None  # --cssids: the generated project's resources (rules that compare with generated getters)
 
         # Layer 3: config file
         config = load_config()
@@ -189,6 +212,8 @@ class EirConfig:
                 self.ruleset = cli_args.ruleset
             if cli_args.rules:
                 self.rules = [r.strip() for r in cli_args.rules.split(",") if r.strip()]
+            if getattr(cli_args, "cssids", None):
+                self.cssids = cli_args.cssids
             if cli_args.exclude_package:
                 self.exclude_packages = [p.strip() for p in cli_args.exclude_package.split(",") if p.strip()]
             if cli_args.exclude_file:
