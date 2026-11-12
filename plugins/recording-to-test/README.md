@@ -17,8 +17,8 @@ assertions.
   the Gradle/Maven cache (it bundles `cssids/`), or a `*-generated` checkout next to the project.
 - Optional, for recordings with voice narration: `ffmpeg`, `whisper.cpp` (`whisper-cli`) and a ggml
   model, set as `whisperModel` in `~/.centertest/recording-to-test.json`. Audio never leaves the
-  machine. `ct.py tools` shows what is installed. Without them, narration is skipped, or use the
-  transcript file the Recorder wrote next to the audio.
+  machine. `ct.py tools` shows what is installed. Without them, narration is skipped; the Recorder
+  writes no transcript of its own.
 - Optional, for writing data rows: `openpyxl` (the default `workbookWriter`), or Excel / manual edits.
 - Optional helper skills from this marketplace: `cssid-finder`, `ddt-tools`, `ddt-analyzer`,
   `centertest-healthcheck`.

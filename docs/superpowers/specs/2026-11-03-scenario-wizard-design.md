@@ -128,8 +128,9 @@ is kept in `plan.steps`, like a step with typed notes, so every spoken note's `s
 1. `session.audio = [{f, t}]` (WebM/Opus, `t` ms since `startedAt`). None → `source: "none"`.
 2. For each segment, a transcript next to the audio file wins:
    `audio/<stem>.transcript.json` = `{"segments": [{"start": ms, "end": ms, "text": "…"}]}`, times
-   relative to the segment. **This is the contract proposed to `centertest-recorder`** (its issue
-   is opened separately).
+   relative to the segment. The Recorder does not write these (kimputing/centertest-recorder#101,
+   not planned: no speech model may be downloaded on client machines); the scrubber writes them
+   for fixtures.
 3. Otherwise `ffmpeg -i <seg>.webm -ar 16000 -ac 1 <seg>.wav` then
    `whisper-cli -m <model> -f <seg>.wav -oj -of <seg>`; read `transcription[].offsets.{from,to}`
    and `.text`. The model path: env `RECORDING_TO_TEST_WHISPER_MODEL` > `whisperModel` in
@@ -250,9 +251,9 @@ wizard does not decide them.
    fixtures in this repo; it is public, so only synthetic fixtures live here.
 3. **`xlsx-read.ps1` is not carried over.** The wizard requires Python already; one reader is enough.
 4. **Flat front matter** in profiles (3.6), no nested YAML.
-5. **Transcript contract** for the Recorder: `audio/<stem>.transcript.json` (3.4).
+5. **No Recorder transcript** (3.4): kimputing/centertest-recorder#101 is not planned, so
+   narration is transcribed locally.
 
 ## 7. Outside this repo
 
-- `centertest-recorder`: transcript file per audio segment (3.4 contract).
 - The client project with `new-scenario`: `client-profile.md` and retiring `new-scenario` (R§12).
