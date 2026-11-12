@@ -200,6 +200,63 @@ def _extract_annotations(node) -> list[str]:
     return [a.name for a in node.annotations]
 
 
+def _literal(value):
+    """Source-ish text of an annotation element value: string literals unquoted, references as
+    Qualifier.member, arrays as lists; anything else (expressions) as None."""
+    if value is None:
+        return None
+    if isinstance(value, javalang.tree.Literal):
+        v = value.value
+        if len(v) >= 2 and v[0] == v[-1] == '"':
+            return bytes(v[1:-1], "utf-8").decode("unicode_escape", errors="replace") if "\\" in v else v[1:-1]
+        return v
+    if isinstance(value, javalang.tree.MemberReference):
+        return f"{value.qualifier}.{value.member}" if value.qualifier else value.member
+    if isinstance(value, javalang.tree.ElementArrayValue):
+        return [_literal(v) for v in (value.values or [])]
+    return None
+
+
+def _extract_annotation_args(node) -> dict:
+    """{annotation name: {element: value}} -- a single unnamed element is stored as "value"."""
+    out = {}
+    for a in (getattr(node, "annotations", None) or []):
+        el = a.element
+        if el is None:
+            out[a.name] = {}
+        elif isinstance(el, list):
+            out[a.name] = {pair.name: _literal(pair.value) for pair in el
+                           if isinstance(pair, javalang.tree.ElementValuePair)}
+        else:
+            out[a.name] = {"value": _literal(el)}
+    return out
+
+
+def _type_name(t) -> str:
+    if t is None:
+        return ""
+    name = getattr(t, "name", "") or ""
+    sub = getattr(t, "sub_type", None)
+    while sub is not None:  # Map.Entry -> "Map.Entry"
+        name += "." + sub.name
+        sub = getattr(sub, "sub_type", None)
+    return name + "[]" * len(getattr(t, "dimensions", None) or [])
+
+
+def _initializer_text(source_lines: list[str], line: int) -> str:
+    """Text after the first '=' of a field declaration starting at `line`, up to its ';'."""
+    if line < 1:
+        return ""
+    chunk = []
+    for text in source_lines[line - 1:line + 30]:
+        chunk.append(text.strip())
+        if text.rstrip().endswith(";"):
+            break
+    joined = " ".join(chunk)
+    m = re.search(r"=\s*(.*);\s*(?://.*)?$", joined)
+    return m.group(1).strip() if m else ""
+
+
 # ---------------------------------------------------------------------------
 # javalang-based parsing
 # ---------------------------------------------------------------------------
@@ -219,6 +276,9 @@ def _parse_with_javalang(content: str, sf: SourceCodeFile, repo_dir: str, source
     for type_decl in (tree.types or []):
         if isinstance(type_decl, javalang.tree.ClassDeclaration):
             class_decls.append(type_decl)
+        elif isinstance(type_decl, (javalang.tree.InterfaceDeclaration, javalang.tree.EnumDeclaration)):
+            key = sf.package_name + "." + type_decl.name if sf.package_name else type_decl.name
+            sf.other_types.append(_build_class_entry(type_decl, key, content))
 
     if not class_decls:
         return
@@ -228,12 +288,15 @@ def _parse_with_javalang(content: str, sf: SourceCodeFile, repo_dir: str, source
     parent_key = sf.package_name + "." + main_decl.name if sf.package_name else main_decl.name
     sf.main_class = _build_class_entry(main_decl, parent_key, content)
 
-    # Inner classes: direct ClassDeclaration children of main class
+    # Inner classes: direct ClassDeclaration children of main class. Nested enums and interfaces
+    # (a test's private enum RestartPoints) go to other_types, so rule 2002 does not compare them.
     for member in (main_decl.body or []):
         if isinstance(member, javalang.tree.ClassDeclaration):
             inner_key = parent_key + "." + member.name
             inner = _build_class_entry(member, inner_key, content)
             sf.inner_classes.append(inner)
+        elif isinstance(member, (javalang.tree.InterfaceDeclaration, javalang.tree.EnumDeclaration)):
+            sf.other_types.append(_build_class_entry(member, parent_key + "." + member.name, content))
 
 
 def _build_class_entry(decl, key: str, source: str) -> ClassEntry:
@@ -245,44 +308,71 @@ def _build_class_entry(decl, key: str, source: str) -> ClassEntry:
 
     # Annotations
     ce.annotations = _extract_annotations(decl)
+    ce.annotation_args = _extract_annotation_args(decl)
+    ce.line = decl.position.line if getattr(decl, "position", None) else 0
+    if isinstance(decl, javalang.tree.InterfaceDeclaration):
+        ce.kind = "interface"
+    elif isinstance(decl, javalang.tree.EnumDeclaration):
+        ce.kind = "enum"
+    source_lines = source.splitlines()
 
     # Extensions (simple names)
-    if decl.extends:
+    if getattr(decl, "extends", None):
         if isinstance(decl.extends, list):
             ce.extensions = [ext.name for ext in decl.extends]
         else:
             ce.extensions = [decl.extends.name]
 
     # Interfaces (simple names)
-    if decl.implements:
+    if getattr(decl, "implements", None):
         ce.interfaces = [iface.name for iface in decl.implements]
+
+    body = decl.body or []
+    if isinstance(decl, javalang.tree.EnumDeclaration):
+        # Enum constants become fields of the enum's own type (RestartPoints.ACCOUNT ...)
+        for const in (body.constants or []):
+            line = const.position.line if getattr(const, "position", None) else 0
+            if not line:  # javalang leaves some constants without a position ({ACCOUNT} on one line)
+                start = max(ce.line - 1, 0)
+                line = next((i + 1 for i in range(start, len(source_lines))
+                             if re.search(r"\b" + re.escape(const.name) + r"\b", source_lines[i])), 0)
+            ce.fields.append(Field(name=const.name, type=decl.name, modifiers=["public", "static", "final"], line=line))
+        body = body.declarations or []
 
     # Methods
     method_count = 0
-    for member in (decl.body or []):
+    for member in body:
         if isinstance(member, javalang.tree.MethodDeclaration):
             method_count += 1
             m = Method(name=member.name)
             m.annotations = _extract_annotations(member)
+            m.annotation_args = _extract_annotation_args(member)
             m.modifiers = sorted(member.modifiers) if member.modifiers else []
-            # Extract body via source-position slicing
+            m.parameters = [(_type_name(p.type), p.name) for p in (member.parameters or [])]
+            m.return_type = _type_name(member.return_type)
+            # Extract body via source-position slicing (abstract/interface methods have none)
             if member.position:
-                m.body = _extract_method_body_from_source(source, member.position.line)
+                m.line = member.position.line
+                if member.body is not None:
+                    m.body = _extract_method_body_from_source(source, member.position.line)
             ce.methods.append(m)
         elif isinstance(member, javalang.tree.ConstructorDeclaration):
             method_count += 1
-            m = Method(name=member.name)
+            m = Method(name=member.name, is_constructor=True)
             m.annotations = _extract_annotations(member)
+            m.annotation_args = _extract_annotation_args(member)
             m.modifiers = sorted(member.modifiers) if member.modifiers else []
+            m.parameters = [(_type_name(p.type), p.name) for p in (member.parameters or [])]
             if member.position:
+                m.line = member.position.line
                 m.body = _extract_method_body_from_source(source, member.position.line)
             ce.methods.append(m)
 
     ce.method_count = method_count
 
     # Fields
-    for member in (decl.body or []):
-        if isinstance(member, javalang.tree.FieldDeclaration):
+    for member in body:
+        if isinstance(member, (javalang.tree.FieldDeclaration, javalang.tree.ConstantDeclaration)):
             # Only first variable from multi-variable declarations (matching Eir)
             if member.declarators:
                 var = member.declarators[0]
@@ -292,6 +382,9 @@ def _build_class_entry(decl, key: str, source: str) -> ClassEntry:
                 )
                 f.annotations = _extract_annotations(member)
                 f.modifiers = sorted(member.modifiers) if member.modifiers else []
+                if getattr(member, "position", None):
+                    f.line = member.position.line
+                    f.initializer = _initializer_text(source_lines, f.line) if var.initializer is not None else ""
                 ce.fields.append(f)
 
     return ce
@@ -331,9 +424,9 @@ def _parse_with_regex(content: str, sf: SourceCodeFile):
 
     key = sf.package_name + "." + class_name if sf.package_name else class_name
 
-    # Extract annotations before the class declaration
-    pre_class = content[:cm.start()]
-    annotations = _ANNOTATION_RE.findall(pre_class.split("\n")[-1] if "\n" in pre_class else pre_class)
+    # Annotations are part of the match (the pattern starts at the first one)
+    head = cm.group(0)
+    annotations = _ANNOTATION_RE.findall(head[:head.find("class ")])
 
     sf.main_class = ClassEntry(
         class_name=class_name,
@@ -341,8 +434,94 @@ def _parse_with_regex(content: str, sf: SourceCodeFile):
         extensions=extends,
         interfaces=implements,
         annotations=annotations,
-        method_count=0,
+        line=content.count("\n", 0, cm.start()) + 1,
     )
+    # Method bodies, so the body rules still read files javalang cannot parse (Java 14+ syntax).
+    # Every method of the file goes to the main class: inner classes are not separated here.
+    sf.main_class.methods = _regex_methods(content)
+    sf.main_class.method_count = len(sf.main_class.methods)
+
+
+_METHOD_DECL_RE = re.compile(
+    r"^[ \t]*((?:@\w+(?:\s*\([^)]*\))?\s+)*)"
+    r"((?:(?:public|protected|private|static|final|abstract|synchronized|default|native)\s+)*)"
+    r"(?:<[^>{};]+>\s+)?"
+    r"(?:([\w.]+(?:<[^{};=]*?>)?(?:\[\])*)\s+)?"
+    r"(\w+)\s*\(([^;{}]*)\)\s*(?:throws\s+[\w.,\s]+)?\{",
+    re.MULTILINE)
+_NOT_A_METHOD = {"if", "for", "while", "switch", "catch", "synchronized", "return", "new", "else", "throw",
+                 "try", "do", "case", "yield"}
+
+
+def _depths(content: str) -> list[int]:
+    """Brace depth at each offset, ignoring braces in strings, chars and comments."""
+    depth, out, i, n = 0, [0] * (len(content) + 1), 0, len(content)
+    while i < n:
+        out[i] = depth
+        ch = content[i]
+        nxt = content[i + 1] if i + 1 < n else ""
+        if ch == "/" and nxt == "/":
+            j = content.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = depth
+            i = j
+            continue
+        if ch == "/" and nxt == "*":
+            j = content.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            for k in range(i, j):
+                out[k] = depth
+            i = j
+            continue
+        if ch in "\"'":
+            if content.startswith('"""', i):
+                j = content.find('"""', i + 3)
+                j = n if j < 0 else j + 3
+            else:
+                j = i + 1
+                while j < n and content[j] != ch and content[j] != "\n":
+                    j += 2 if content[j] == "\\" else 1
+                j += 1
+            for k in range(i, min(j, n)):
+                out[k] = depth
+            i = j
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        i += 1
+    out[n] = depth
+    return out
+
+
+def _regex_methods(content: str) -> list[Method]:
+    """Methods declared at class-body depth (1: the top class, 2: its inner classes)."""
+    depths = _depths(content)
+    methods = []
+    for m in _METHOD_DECL_RE.finditer(content):
+        annots, mods, rtype, name, params = m.groups()
+        start = m.start(4)
+        if name in _NOT_A_METHOD or (rtype or "") in _NOT_A_METHOD or depths[start] not in (1, 2):
+            continue
+        line = content.count("\n", 0, start) + 1
+        method = Method(name=name, modifiers=sorted(mods.split()), annotations=_ANNOTATION_RE.findall(annots or ""),
+                        line=line, return_type="" if rtype in (None, "void") else rtype,
+                        is_constructor=rtype is None)
+        method.parameters = [tuple(p.strip().rsplit(None, 1)) for p in re.split(r",(?![^<]*>)", params)
+                             if len(p.split()) >= 2]
+        method.body = _extract_method_body_from_source(content, line)
+        methods.append(method)
+    return methods
+
+
+def _describe_parse_error(exc: Exception) -> str:
+    at = getattr(exc, "at", None)
+    pos = getattr(at, "position", None)
+    where = f" at line {pos.line}" if pos else ""
+    token = f" near '{at.value}'" if getattr(at, "value", None) else ""
+    return f"{type(exc).__name__}{where}{token}"
 
 
 # ---------------------------------------------------------------------------
@@ -365,13 +544,19 @@ def parse_file(content: str, file_path: str, repo_dir: str,
     )
     sf.package_name = get_package_from_path(file_path, repo_dir, source_root)
 
+    sf.source = content
     try:
         if javalang is not None:
             _parse_with_javalang(content, sf, repo_dir, source_root)
         else:
             _parse_with_regex(content, sf)
-    except Exception:
+    except Exception as exc:
         sf.cannot_compile = True
+        sf.parse_error = _describe_parse_error(exc)
+        sf.main_class = None
+        sf.inner_classes = []
+        sf.other_types = []
+        sf.imports = []
         try:
             # Try regex fallback even on javalang failure
             if javalang is not None and sf.main_class is None:

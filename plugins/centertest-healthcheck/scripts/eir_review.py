@@ -136,11 +136,14 @@ def _findings(result: RuleResult):
 
     Row keys drop position columns. Grouped items (rules 1004, 4001, ...) embed counts such as
     "13/14 (93%)" or "6x"; those are replaced by "#" in the key, so adding one more use of an
-    existing pattern is not reported as one finding fixed and another introduced.
+    existing pattern is not reported as one finding fixed and another introduced. The same holds for
+    an "Issue" column ("167 lines", "92% alike", "in 25 tests").
     """
     keep = [i for i, h in enumerate(result.headers) if str(h) not in _POSITION_COLUMNS]
+    issue = result.headers.index("Issue") if "Issue" in result.headers else -1
     for row in result.rows:
-        yield (("row", tuple(str(row[i]) for i in keep if i < len(row))),
+        yield (("row", tuple(_DIGITS.sub("#", str(row[i])) if i == issue else str(row[i])
+                             for i in keep if i < len(row))),
                _finding_label(result.headers, row) + (" (not run)" if is_dormant(result.headers, row) else ""))
     for section in result.sections:
         # Snapshot rules title their single section after the commit ("Commit local"): no information.

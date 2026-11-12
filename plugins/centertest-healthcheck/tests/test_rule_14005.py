@@ -24,13 +24,16 @@ class Rule14005Test(unittest.TestCase):
             res = os.path.join(tmp, "src", "main", "resources")
             os.makedirs(res)
             doc = {"CenterTestSuites": [{"Name": "Smoke", "List": ["logintest RUN", "LoginTest renamedMethod"]},
-                                        {"Name": "All", "Suites": ["Smoke", "Gone"]}]}
+                                        {"Name": "All", "Suites": ["Smoke", "Gone", "smoke"]}]}
             with open(os.path.join(res, "CenterTestSuiteList.json"), "w") as fh:
                 fh.write(json.dumps(doc, indent=2))
             rows = rs.suite_entries_that_run_nothing({}, SimpleNamespace(repository_dir=tmp, source_root="src/main/java")).rows
             self.assertEqual([(r[0], r[1], r[3]) for r in rows],
                              [("Smoke", "LoginTest renamedMethod", "src/main/resources/CenterTestSuiteList.json:7"),
-                              ("All", "Gone", "src/main/resources/CenterTestSuiteList.json:14")])
+                              ("All", "Gone", "src/main/resources/CenterTestSuiteList.json:14"),
+                              ("All", "smoke", "src/main/resources/CenterTestSuiteList.json:15")])
+            # CenterTest matches child suite names exactly (TestDataProvider.readFilterList)
+            self.assertIn("the suite is 'Smoke'", rows[2][2])
         finally:
             shutil.rmtree(tmp)
 

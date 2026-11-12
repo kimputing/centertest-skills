@@ -316,7 +316,19 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 | **FixSet** | 1002-2002 | Code improvement suggestions |
 | **XPath** | 3001 | Selenium XPath optimization |
 | **Methods** | 4001, 4002 | Method-level analysis |
-| **CenterTest** | 9001, 9003, 9007, 3001 | CenterTest framework compliance |
+| **CenterTest** | 9001-9014, 3001 | CenterTest framework compliance |
+| **Restart** | 16001-16004 | Restart points: login inside a block, points never completed or never used, long flows without one |
+| **Architecture** | 17001-17009 | Layering: tests driving widgets, large step overrides in tests, copied tests and helper lines |
+| **Assertions** | 18001-18006 | Checks that check nothing or too little |
+| **Flakiness** | 19001-19005 | Retry loops, races after a click, unfiltered first rows, random data, machine-clock dates |
+| **Widgets** | 20001-20004 | Raw ids/selectors where generated getters and TC_ typelists exist (needs the generated project) |
+| **TestData** | 21001-21006 | Data hardcoded in Java: constants, placeholders, policy numbers, pinned codes, one province |
+| **Exceptions** | 22001-22005 | Broad catches used as branches, lost causes, copied messages, log formatting |
+| **DeadCode** | 23001-23007 | Commented-out code and annotations, `if (true)`, TODOs without a ticket, unread fields |
+| **Bugs** | 24001-24004 | Widgets concatenated as text, duplicated format arguments, money as float, a value stored twice |
+| **Config** | 25001 | Roles no environment defines a user for |
+| **Suites** | 26001-26004 | Suite hygiene: redundant entries, aggregates missing suites, unclear names, cycles |
+| **Workbooks** | 27001-27004 | Workbook hygiene: header casing, duplicate codes, case-only references, whitespace |
 | **Quality** | 5001, 5002, 15001, 15004, 15017, 15018, 7001 | Code quality and security |
 | **Security** | 7001 | Hardcoded credentials detection |
 | **CenterTestFull** | Every rule | **Default.** Complete health check, trust verdict included |
@@ -355,12 +367,77 @@ ruleset left out. Lead the summary with the direction of trust blockers and test
 | 15005 | Quality | Empty catch blocks |
 | 15017 | Quality | Unbounded busy-waits and recursion (no deadline / no iteration cap) |
 | 15018 | Quality | Discarded .equals() return value (silent assertion bug — likely meant .assertEquals()) |
+| 0003 | Statistics | Java files the analyzer could not fully parse |
+| 9012 | CenterTest | Two tests share a testCaseId |
+| 9013 | CenterTest | @CenterTest class that CenterTest can't run (trust) |
+| 9014 | CenterTest | Mutable instance field on a test class |
+| 16001 | Restart | Login inside a restart block |
+| 16002 | Restart | restart() without a matching restartComplete() |
+| 16003 | Restart | RestartPoints constant never used |
+| 16004 | Restart | Long flow with no restart points |
+| 17001 | Architecture | Test drives widgets directly |
+| 17002 | Architecture | Large step override inside a test |
+| 17003 | Architecture | Widget access outside the steps package |
+| 17004 | Architecture | Override that only calls super |
+| 17005 | Architecture | Field re-declared in a subclass |
+| 17006 | Architecture | Page object re-created inside a step |
+| 17007 | Architecture | Step logs in as another user behind the test's back |
+| 17008 | Architecture | Near-duplicate test classes |
+| 17009 | Architecture | Same private helper line in many tests |
+| 18001 | Assertions | Verification step short-circuited (trust) |
+| 18002 | Assertions | Empty step or assert method |
+| 18003 | Assertions | AssertJ check without a description |
+| 18004 | Assertions | Assertion on formatted money text |
+| 18005 | Assertions | Value compared with itself (trust) |
+| 18006 | Assertions | Soft assertions never asserted |
+| 19001 | Flakiness | Retry loop re-clicks with no pause or limit |
+| 19002 | Flakiness | Page-changing click with no wait after it |
+| 19003 | Flakiness | First search result taken unfiltered |
+| 19004 | Flakiness | Unseeded Random in a step |
+| 19005 | Flakiness | LocalDate.now() in business-date logic |
+| 20001 | Widgets | Raw CSS id where a generated getter exists |
+| 20002 | Widgets | CSS selector passed as a widget id |
+| 20003 | Widgets | Same raw id or selector in several files |
+| 20004 | Widgets | Typelist set by display text when a TC_ constant exists |
+| 21001 | TestData | Test data hardcoded as constants in a step |
+| 21002 | TestData | Literal value set beside data-driven lines |
+| 21003 | TestData | Placeholder junk values in code |
+| 21004 | TestData | Hardcoded policy, job or account number |
+| 21005 | TestData | Pinned DDTHelper code missing from its DC (trust) |
+| 21006 | TestData | One province or state hardcoded |
+| 22001 | Exceptions | catch (Exception) used as a branch |
+| 22002 | Exceptions | Rethrow that drops the cause |
+| 22003 | Exceptions | Generic RuntimeException for a test failure |
+| 22004 | Exceptions | Failure message copied from another class |
+| 22005 | Exceptions | Log message built with formatted() or + |
+| 23001 | DeadCode | Commented-out code |
+| 23002 | DeadCode | Commented-out annotation |
+| 23003 | DeadCode | Commented-out forced failure or debug switch |
+| 23004 | DeadCode | if (true) and the code it makes unreachable |
+| 23005 | DeadCode | TODO with no ticket |
+| 23006 | DeadCode | Debugger anchor statements |
+| 23007 | DeadCode | Field never read |
+| 24001 | Bugs | Data field concatenated without getValue() |
+| 24002 | Bugs | Same argument twice in a format call |
+| 24003 | Bugs | Money parsed as float |
+| 24004 | Bugs | Same Helper value set twice, or stored under the wrong key |
+| 25001 | Config | Role not defined in any environment |
+| 26001 | Suites | Suite entry repeated or already covered |
+| 26002 | Suites | Aggregate suite misses sibling suites |
+| 26003 | Suites | Suite name that doesn't say what it runs |
+| 26004 | Suites | Suite includes itself |
+| 27001 | Workbooks | Header casing drifts across workbooks |
+| 27002 | Workbooks | Duplicate code in a sheet |
+| 27003 | Workbooks | Reference differs from its target only by case |
+| 27004 | Workbooks | Whitespace defects in cells |
 
 ## Trust verdict
 
 Every report opens with **"Can these tests be trusted?"**: findings that mean a test can pass while
 the application is broken, or cannot run its data at all — checks that can never fail (15018),
-swallowed failures (15005), tests that open screens but check nothing (9010), tests that read data they never load (9003), missing datasources (14002), suite entries that run nothing (14005), missing data codes (14003) and missing
+swallowed failures (15005), tests that open screens but check nothing (9010), tests that read data they never load (9003), test classes CenterTest cannot run (9013), verification
+steps that return before their first check (18001), comparisons of a value with itself (18005), pinned
+`DDTHelper` codes their workbook does not have (21005), missing datasources (14002), suite entries that run nothing (14005), missing data codes (14003) and missing
 related rows (14004). A data finding is a blocker only when a test runs it: rules 14003/14004 add a
 **Runs in** column naming the classes that read the workbook (through `@DataDriven`, a `DDTHelper`
 getter, the DC class, or an `@Rel` relationship from a DC they read); findings in workbooks no test

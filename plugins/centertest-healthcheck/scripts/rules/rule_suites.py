@@ -47,7 +47,10 @@ def suite_entries_that_run_nothing(commits: CommitsDict, config) -> RuleResult:
     tests = suites.scan(repo, getattr(config, "source_root", "src/main/java"))
     scenarios = suites.scenarios_of(tests)
     rel = os.path.relpath(path, repo).replace("\\", "/")
-    names = {str(s.get("Name", "")).lower() for s in doc["CenterTestSuites"]}
+    # CenterTest finds a child suite by exact name (TestDataProvider.readFilterList: filter.contains(name)),
+    # so "regression" does not reach the suite "Regression".
+    exact = {str(s.get("Name", "")) for s in doc["CenterTestSuites"]}
+    folded = {n.lower(): n for n in exact}
     for s in doc["CenterTestSuites"]:
         name = str(s.get("Name", ""))
         start = text.find(json.dumps(name, ensure_ascii=False))
@@ -61,9 +64,11 @@ def suite_entries_that_run_nothing(commits: CommitsDict, config) -> RuleResult:
                 result.rows.append([name, pattern, "package pattern matches no test class",
                                     f"{rel}:{_line_of(text, max(start, 0), pattern)}"])
         for child in s.get("Suites", []) or []:
-            if str(child).lower() not in names:
-                result.rows.append([name, child, "names a suite that does not exist",
-                                    f"{rel}:{_line_of(text, max(start, 0), child)}"])
+            if str(child) not in exact:
+                near = folded.get(str(child).lower())
+                issue = (f"names suite '{child}', but the suite is '{near}': CenterTest matches suite names exactly, "
+                         "so this part runs nothing") if near else "names a suite that does not exist"
+                result.rows.append([name, child, issue, f"{rel}:{_line_of(text, max(start, 0), child)}"])
     return result
 
 

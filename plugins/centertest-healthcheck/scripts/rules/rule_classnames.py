@@ -10,6 +10,7 @@ Rules 1001-1004: Class naming analysis.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections import defaultdict
 
@@ -128,6 +129,11 @@ def package_name_in_class(commits: CommitsDict, config) -> RuleResult:
             parent_folder = os.path.basename(os.path.dirname(path)).lower()
             file_name = os.path.basename(path).replace(".java", "").lower()
 
+            # PA_SubmissionTest in .../submission/: a <LOB>_<Transaction>Test name repeats the folder on
+            # purpose (the LOB prefix makes it unique across lines), so it is not a redundant package name.
+            raw_name = os.path.basename(path).replace(".java", "")
+            if re.match(r"[A-Za-z0-9]{1,8}_" + re.escape(parent_folder), raw_name, re.IGNORECASE):
+                continue
             if parent_folder and parent_folder in file_name:
                 by_folder[parent_folder].append(f.main_class.key if f.main_class else f.file_name)
 

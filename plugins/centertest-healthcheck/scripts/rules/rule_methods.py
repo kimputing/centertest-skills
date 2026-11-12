@@ -8,6 +8,7 @@ Rules 4001 and 4002: Method-level analysis.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections import defaultdict
 
@@ -85,7 +86,10 @@ def _is_extractable(prefix: str) -> bool:
     return (p.count("(") == p.count(")") and "(" in p and not p.endswith(";")
             and head.isidentifier() and head not in _KEYWORDS
             and ".execute(" not in p and "restart" not in p.lower()
-            and not p.startswith("CenterTestAssertion"))
+            and not p.startswith("CenterTestAssertion")
+            # an assertion is built per check, and Helper.getData(ctx) / Foo.of(...) are cheap lookups
+            and not re.match(r"(?:Assertions|SoftAssertions|Assert)\.|assertThat\(", p)
+            and not re.fullmatch(r"[A-Z]\w*\.\w+\([^()]*\)", p))
 
 
 def _longest(prefix_counts: dict[str, int]) -> dict[str, int]:
@@ -103,7 +107,7 @@ def variable_substitutions(commits: CommitsDict, config) -> RuleResult:
     the longest of a chain's prefixes repeated equally often is suggested.
     Threshold configurable via eir.rule.4001.threshold (default: 2).
     """
-    threshold = config.get_threshold("4001", 2)
+    threshold = config.get_threshold("4001", 3)
 
     result = RuleResult(
         rule_id="4001",

@@ -426,6 +426,15 @@ TRUST_RULES = {
               "a row references a code no sheet in its scope has, so that scenario fails on load"),
     "14004": ("Related test data rows that do not exist",
               "an @-relationship points at a DC row or file that is not there"),
+    "9013": ("Tests CenterTest cannot run",
+             "CenterTest cannot create the class or call its @CenterTestCase method (not public, wrong parameters, "
+             "or none declared), so the test never runs a step"),
+    "18001": ("Verification steps that check nothing",
+              "the assert step returns before its first check, so every test that calls it passes"),
+    "18005": ("Comparisons that are always true",
+              "a value is compared with itself, so the check passes whatever the app shows"),
+    "21005": ("Pinned test data codes that do not exist",
+              "DDTHelper loads a row code its workbook does not have, so the test runs with no data"),
 }
 
 # A blocker caps the score here: one notch below "Healthy" (80) and "Needs Attention" (60).
@@ -511,13 +520,30 @@ _SEVERITY = {
     "CenterTest": "medium",
     "Quality":    "high",
     "Security":   "high",
+    # issue #47 categories; each rule's own severity is in _RULE_SEVERITY
+    "Restart": "medium", "Architecture": "medium", "Assertions": "medium", "Flakiness": "medium",
+    "Widgets": "medium", "TestData": "medium", "Exceptions": "medium", "DeadCode": "low", "Bugs": "medium",
+    "Config": "medium", "Suites": "medium", "Workbooks": "medium",
 }
 _WEIGHT = {"low": 1, "medium": 2, "high": 3}
 
 # Rules whose consequence in a test suite differs from their category's: an index or null error
 # in a test fails it loudly (with an unhelpful message: assert the precondition first), and an
 # unused variable is clutter. A busy-wait that can hang (15017) keeps its category's "high".
-_RULE_SEVERITY = {"15001": "medium", "15002": "medium", "15006": "low"}
+_RULE_SEVERITY = {"15001": "medium", "15002": "medium", "15006": "low",
+                  # issue #47 rules
+                  "9012": "high", "9013": "high", "9014": "high", "16001": "high", "16002": "high", "16003": "low",
+                  "16004": "medium", "17001": "high", "17002": "medium", "17003": "medium", "17004": "low", "17005": "medium",
+                  "17006": "low", "17007": "medium", "17008": "medium", "17009": "medium", "18001": "high", "18002": "high",
+                  "18003": "low", "18004": "medium", "18005": "high", "18006": "high", "19001": "high", "19002": "medium",
+                  "19003": "medium", "19004": "low", "19005": "high", "20001": "medium", "20002": "medium", "20003": "low",
+                  "20004": "medium", "21001": "medium", "21002": "low", "21003": "medium", "21004": "high", "21005": "high",
+                  "21006": "medium", "22001": "high", "22002": "medium", "22003": "low", "22004": "medium", "22005": "low",
+                  "23001": "low", "23002": "high", "23003": "medium", "23004": "high", "23005": "low", "23006": "low",
+                  "23007": "low", "24001": "high", "24002": "medium", "24003": "medium", "24004": "medium", "25001": "high",
+                  "26001": "low", "26002": "medium", "26003": "low", "26004": "high", "27001": "low", "27002": "high",
+                  "27003": "low", "27004": "low",
+}
 
 
 def severity_of(result: RuleResult):

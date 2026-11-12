@@ -35,6 +35,8 @@ scripts/
 ├── eir_review.py        # --review: merge-base vs branch tip via git archive, findings diff, PR comment
 ├── eir_rules.py         # @rule decorator registry, auto-discovery, periodic vs snapshot execution
 ├── rule_core.py         # Shared utilities: get_test_list, divide_by_package, split_camel_case
+├── rule_helpers.py      # Shared helpers for the #47 rules: ProjectIndex (ancestors, is_step, facades), code_only/
+│                        # strip_comments/string_literals, comment_blocks, body_line, location(), blocks_after, generated_resources
 └── rules/
     ├── __init__.py      # Auto-imports rule_*.py via pkgutil
     ├── rule_statistics.py   # 0001, 0002 (periodic=True)
@@ -46,8 +48,22 @@ scripts/
     ├── rule_security.py     # 7001
     ├── rule_centertest.py   # 9001, 9003, 9005, 9007, 9008, 9010
     ├── rule_quality.py      # 15001, 15002, 15004, 15005, 15006, 15016, 15017, 15018
-    ├── rule_suites.py       # 14005 via the vendored suite.py (suite-builder)
-    └── rule_ddt.py          # 14002, 14003, 14004 (14003/14004 via the vendored ddt_refcheck.py)
+    ├── rule_suites.py       # 14005, 9011 via the vendored suite.py (suite-builder)
+    ├── rule_ddt.py          # 14002, 14003, 14004 (14003/14004 via the vendored ddt_refcheck.py)
+    ├── rule_parsing.py      # 0003 files javalang cannot parse (Java 14+): listed, bodies still checked via the regex fallback
+    ├── rule_testcase.py     # 9012-9014 testCaseId clashes, classes CenterTest cannot run, shared mutable test fields
+    ├── rule_restart.py      # 16001-16004 restart points
+    ├── rule_architecture.py # 17001-17009 layering, copied tests and helper lines
+    ├── rule_assertions.py   # 18001-18006 checks that check nothing (also the text helpers rule_bugs imports)
+    ├── rule_bugs.py         # 24001-24004
+    ├── rule_flakiness.py    # 19001-19005 (helpers rule_widgets imports)
+    ├── rule_widgets.py      # 20001-20004 against the generated project (cssids via find_getter, TC_ typelists)
+    ├── rule_testdata.py     # 21001-21006 data hardcoded in Java, pinned DDTHelper codes (helpers rule_config imports)
+    ├── rule_config.py       # 25001 roles with no centertest.user.<role>.<env> key
+    ├── rule_exceptions.py   # 22001-22005 (helpers rule_deadcode imports)
+    ├── rule_deadcode.py     # 23001-23007
+    ├── rule_suite_hygiene.py # 26001-26004 via suite.py
+    └── rule_workbooks.py    # 27001-27004 via ddt_refcheck
 ```
 
 ## Adding a New Rule
@@ -71,7 +87,7 @@ scripts/
 - **Location** is added after the rules run (local mode and `--review`), not by each rule: a new rule with `Class`/`Method` (and optionally `Line`/`Snippet` code) columns gets it for free. `--review` ignores it when matching findings.
 - **Severity** is per category (`_SEVERITY`) with per-rule overrides (`_RULE_SEVERITY`: 15001/15002 medium — a loud failure with an unhelpful message, 15006 low — clutter); `severity_of()` feeds both the score and the fix order.
 - **`health_score()`** in `eir_report.py` is the only score formula; the dashboard and `--trend` both call it.
-- **Trust blockers** (`TRUST_RULES` in `eir_report.py`: 15018, 15005, 14002-14005, 9003, 9010) are listed first in HTML, Markdown and terminal and cap the score at `TRUST_SCORE_CAP` (59). Only add a rule there when a finding means a test can pass while the app is broken, or cannot run.
+- **Trust blockers** (`TRUST_RULES` in `eir_report.py`: 15018, 15005, 14002-14005, 9003, 9010, 9013, 18001, 18005, 21005) are listed first in HTML, Markdown and terminal and cap the score at `TRUST_SCORE_CAP` (59). Only add a rule there when a finding means a test can pass while the app is broken, or cannot run.
 - **Score calculation** uses severity weights (Security/Quality=3x, CenterTest=2x, ClassNames=1x) with proportional penalty (few findings in big project = partial credit)
 
 ## Running
@@ -103,11 +119,29 @@ Output goes to `{project}/healthcheck/` — HTML (primary) + Excel (appendix).
 | 4001-4002 | Methods | Variable substitution, row selection |
 | 5001-5002 | Complexity | Cyclomatic complexity, method length |
 | 7001 | Security | Hardcoded credentials |
-| 9001-9008 | CenterTest | Widget compliance, assertions, sleep |
-| 14002-14003 | DDT | Datasource existence, reference integrity |
+| 0003 | Statistics | Files the parser could not fully read (informational) |
+| 9001-9014 | CenterTest | Widget compliance, assertions, sleep, testCaseId clashes, classes CenterTest cannot run, shared test fields |
+| 14002-14005 | DDT | Datasource existence, reference integrity, suite entries that run nothing |
 | 15001-15018 | Quality | NPE, IndexOOB, catch, unused vars, logging, unbounded loops/recursion, discarded .equals() |
+| 16001-16004 | Restart | Restart points |
+| 17001-17009 | Architecture | Layering, copied tests and helper lines |
+| 18001-18006 | Assertions | Checks that check nothing or too little |
+| 19001-19005 | Flakiness | Retry loops, races after clicks, unfiltered rows, random data, machine-clock dates |
+| 20001-20004 | Widgets | Raw ids/selectors vs generated getters and TC_ typelists |
+| 21001-21006 | TestData | Data hardcoded in Java, pinned codes missing from their DC |
+| 22001-22005 | Exceptions | Broad catches, lost causes, copied messages, log formatting |
+| 23001-23007 | DeadCode | Commented-out code, `if (true)`, TODOs, unread fields |
+| 24001-24004 | Bugs | Widgets as text, duplicated format args, money as float, value stored twice |
+| 25001 | Config | Roles without a user |
+| 26001-26004 | Suites | Suite hygiene |
+| 27001-27004 | Workbooks | Workbook hygiene |
 
 ## Gotchas
+
+- **Parsed model (#47)**: `SourceCodeFile.source` holds the text — rules read it, never `open(f.key)` (the path is not on disk in git/--review modes). `ClassEntry/Method.annotation_args` hold literal annotation arguments, `Method.line/parameters/return_type`, `Field.line/initializer`; `other_types` holds interfaces and enums (facades like `PC`, a test's nested `RestartPoints`) so they stay out of `inner_classes` and rule 2002. When javalang fails (`cannot_compile`, `parse_error`), `_regex_methods` still slices method bodies (all on the main class); rule 0003 lists those files.
+- Some #47 rule files import private helpers from a sibling rule file (`rule_bugs` <- `rule_assertions`, `rule_widgets` <- `rule_flakiness`, `rule_config` <- `rule_testdata`, `rule_deadcode` <- `rule_exceptions`); each keeps its own offset-preserving mask, unlike `rule_helpers.code_only` which shortens literals.
+- `--review` replaces digits in an `Issue` column with `#` in the finding key, as for grouped items, so "167 lines" -> "170 lines" is not a new finding.
+- Framework facts the rules rely on (centertest-platform): one test-class instance serves every DC row and thread (9014); `@CenterTestCase` methods must be declared in the class, public, one `ScenarioContext`/`Object` parameter (9013); `restart()` needs a nested enum named exactly `RestartPoints` (16xxx); child suites match by exact name (`TestDataProvider.readFilterList`, 14005/26004); codes and references match case-insensitively and cells are trimmed (`ExcelDataReader`, so 27003/27004 are consistency findings); a DataField's `toString()` is its value but a widget's is `WidgetX[cssid]` (24001); the context's own `AnkrPtSoftAssertions` is asserted at scenario end (18006); `click()` waits for Ajax but `getPageTitle()` does not (19002); users resolve `centertest.user.<role>.<env>` with `*` wildcards (25001).
 
 - `--review` keys findings without position columns (`Row`) and with digits in grouped items replaced by `#`, so a moved row or a count going from 2x to 3x is not "new". Rules that error on either side are listed as not compared; an uncompared trust rule makes the verdict "Not verified" (exit 1).
 - `eir_analyzer.py` name is historical — the skill is centertest-healthcheck
