@@ -59,6 +59,7 @@ public interface PC {
 MODERN = """package com.acme.util;
 @CenterTest
 public class Modern {
+  private static final int SIZE = switch (1) { case 1 -> 2; default -> 3; };  // still unreadable: not in a body
   public String pick(Object o) {
     return switch (o) { case String s -> s; default -> ""; };
   }

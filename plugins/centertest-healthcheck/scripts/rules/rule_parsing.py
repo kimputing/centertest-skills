@@ -1,10 +1,13 @@
 """
 Rule 0003: Java files the analyzer could not parse.
 
-javalang reads Java up to 8: a file with newer syntax (switch expressions, records, instanceof
-patterns, text blocks) falls back to a regex parse that finds the class and slices method bodies,
-but inner classes, fields and annotation arguments are lost there. The rule lists those files so a
-reader knows which findings may be missing, instead of the files dropping out silently.
+javalang reads Java up to 8. Newer syntax inside method bodies (switch expressions, yield,
+instanceof patterns, text blocks) and records are handled by parsing a lowered copy
+(eir_parser._lower_for_javalang), so those files are read in full. What is left -- Java 14+ syntax
+outside a body (a switch expression in a field initializer, sealed/permits), or a real syntax
+error -- falls back to a regex parse that finds the class and slices method bodies, but inner
+classes, fields and annotation arguments are lost there. The rule lists those files so a reader
+knows which findings may be missing, instead of the files dropping out silently.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ def unparsed_files(commits: CommitsDict, config) -> RuleResult:
                 pass
         result.rows.append([f.file_name, f.parse_error or "unreadable", methods, location(f, line, config)])
     if result.rows:
-        result.summary = (f"{len(result.rows)} file(s) use syntax the parser does not read (Java 14+); their method "
+        result.summary = (f"{len(result.rows)} file(s) use syntax the parser does not read (Java 14+ outside a "
+                          "method body, or a syntax error); their method "
                           "bodies are still checked, but inner classes, fields and annotation arguments are not")
     return result

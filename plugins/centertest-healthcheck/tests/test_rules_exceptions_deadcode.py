@@ -213,16 +213,16 @@ public class ConcreteChange extends AbstractChange {
 }
 """
 
-# Java 14+ syntax: javalang cannot parse it (regex fallback, no fields). Its own field of the same
-# name must not count as a read of AbstractChange.vehicleClassification.
+# Java 14+ syntax outside a method body: javalang cannot parse it even lowered (regex fallback, no
+# fields). Its own field of the same name must not count as a read of AbstractChange.vehicleClassification.
 MODERN = """package com.acme.other;
 
 public class Modern {
     private final String vehicleClassification = "x";
+    private static final String Y = switch (1) { case 1 -> "a"; default -> "b"; };
 
     String kind(int k) {
-        var y = switch (k) { case 1 -> "a"; default -> "b"; };
-        return vehicleClassification + y;
+        return vehicleClassification + Y;
     }
 }
 """
