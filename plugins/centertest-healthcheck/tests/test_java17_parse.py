@@ -80,8 +80,8 @@ public record Pair<A, B>(A first,
 class Java17ParseTest(unittest.TestCase):
     def parse(self, rel, text):
         from eir_parser import parse_file
-        repo = "/repo"
-        return parse_file(text, os.path.join(repo, "src/main/java", rel), repo)
+        repo = "/repo"  # path built as parse_directory builds it (os.walk under repo/src/main/java), so Windows too
+        return parse_file(text, os.path.join(repo, "src/main/java", *rel.split("/")), repo)
 
     def test_switch_expressions_yield_patterns_and_text_blocks_parse(self):
         f = self.parse("com/acme/exits/ValueGeneratorExit.java", EXIT)
