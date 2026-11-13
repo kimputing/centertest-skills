@@ -72,7 +72,7 @@ class ClassEntry:
     # Not part of equality (rule 2002 compares structure only):
     line: int = 0                                         # 1-based declaration line (0 = unknown)
     annotation_args: dict = field(default_factory=dict)  # {"DataDriven": {"datasource": "testdata/x.xlsx"}}
-    kind: str = "class"                                   # class | interface | enum
+    kind: str = "class"                                   # class | interface | enum | record
 
     def __eq__(self, other):
         if not isinstance(other, ClassEntry):

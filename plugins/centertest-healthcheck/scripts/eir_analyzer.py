@@ -372,7 +372,7 @@ def main():
     print(f"  Parsed {total_files} file(s) across {len(commits)} commit(s)")
     if total_unparsed > 0:
         print(f"  WARNING: {total_unparsed} file(s) could not be parsed "
-              f"(Java 14+ syntax or errors). Results may be incomplete.")
+              f"(Java 14+ syntax outside a method body, or errors). Results may be incomplete.")
 
     if total_files == 0:
         print("\n  No Java files found. Check --path and --source-root settings.")
